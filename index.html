@@ -927,7 +927,7 @@ function oppMeta(ms,dir,yrsMax=5){const t=ms.t,a=ms.a;let L=a.length-1;while(L>0
   const w=side==='lo'?'lowest':'highest',sinceTxt=R.since?`the ${w} since ${dU(R.since)}`:`the ${w} in the data (since ${new Date(R.first).getUTCFullYear()})`;
   return{cur,last,side,share,ext:100-share,z,yrs,from:fromL,startT,pctTxt,since:R.since,sinceTxt,sinceDays:R.since?(last-R.since)/DAY:Infinity,zoneDays,n:win.length}}
 function oppScore(s){const c={},m=s.om;
-  if(m){c.rar=[clamp(m.ext,0,100),`${m.pctTxt}; ${m.sinceTxt}`];c.str=[clamp(Math.abs(m.z)/3*100,0,100),`${Math.abs(m.z).toFixed(1)}σ (robust) ${m.z>=0?'above':'below'} the median since ${m.from}`];
+  if(m){const span=(m.last-m.startT)/DAY,sf=Math.min(1,span/365);c.rar=[clamp(m.ext*sf,0,100),`${m.pctTxt}; ${m.sinceTxt}${sf<1?`; scaled ×${sf.toFixed(2)} because the window is only ${Math.round(span)} days`:''}`];c.str=[clamp(Math.abs(m.z)/3*100,0,100),`${Math.abs(m.z).toFixed(1)}σ (robust) ${m.z>=0?'above':'below'} the median since ${m.from}`];
     const zd=m.zoneDays;c.rec=zd==null?[25,`Not in an extreme zone (outside the ${m.side==='lo'?'bottom':'top'} 20% of readings since ${m.from})`]:zd<=7?[100,zd<1?'Entered its extreme zone with the latest reading':`Entered its extreme zone ${Math.round(zd)} day${Math.round(zd)===1?'':'s'} ago`]:zd<=30?[75,`In its extreme zone for ${Math.round(zd)} days`]:zd<=90?[50,`In its extreme zone for ${Math.round(zd)} days`]:[30,`In its extreme zone for ${Math.round(zd)} days (old news)`]}
   else{c.rar=[35,'Context chart: no single metric to rank'];c.str=[30,'Context chart'];c.rec=[30,'Context chart']}
   const age=s.lastT?(Date.now()-s.lastT)/DAY:null;
