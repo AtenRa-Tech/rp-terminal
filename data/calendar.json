@@ -1,0 +1,221 @@
+{
+ "updated": "2026-10-01T18:53:19Z",
+ "timezone": "All date_utc values are UTC (converted from US Eastern, DST-aware)",
+ "valid_through": "2026-12-31",
+ "coverage": {
+  "fomc_decision": {
+   "valid_through": "2027-12-08",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "checked": "2026-10-01T18:53:19Z"
+  },
+  "fomc_minutes": {
+   "valid_through": "2026-12-30",
+   "source": "https://www.federalreserve.gov/json/calendar.json (Fed 'Upcoming Dates' calendar)",
+   "checked": "2026-10-01T18:53:19Z"
+  },
+  "cpi": {
+   "valid_through": "2026-12-10",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm",
+   "checked": "2026-10-01T18:53:19Z"
+  },
+  "jobs": {
+   "valid_through": "2026-12-04",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm",
+   "checked": "2026-10-01T18:53:19Z"
+  }
+ },
+ "last_date": "2027-12-08",
+ "unpublished": [
+  {
+   "type": "cpi",
+   "period": "2027 releases",
+   "status": "not_published",
+   "note": "BLS has not yet published its 2027 schedule (cpi.htm lists through Dec 10, 2026; bls.gov/schedule/2027/ returns 404)",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm"
+  },
+  {
+   "type": "jobs",
+   "period": "2027 releases",
+   "status": "not_published",
+   "note": "BLS has not yet published its 2027 schedule (empsit.htm lists through Dec 4, 2026; bls.gov/schedule/2027/ returns 404)",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm"
+  },
+  {
+   "type": "fomc_minutes",
+   "period": "2027 meetings",
+   "status": "not_published",
+   "note": "Minutes are usually released 3 weeks after each meeting; 2027 minutes dates are not on the Fed calendar yet"
+  }
+ ],
+ "notes": "Fed: next two-day meeting after 2027 is Jan 25-26, 2028 (per federalreserve.gov).",
+ "items": [
+  {
+   "date_utc": "2026-10-02T12:30Z",
+   "local_et": "2026-10-02 08:30 ET",
+   "type": "jobs",
+   "title": "US Employment Situation (Sep 2026)",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm",
+   "verification": "verified",
+   "reference_period": "2026-09"
+  },
+  {
+   "date_utc": "2026-10-07T18:00Z",
+   "local_et": "2026-10-07 14:00 ET",
+   "type": "fomc_minutes",
+   "title": "FOMC minutes (Sep 15-16 meeting)",
+   "source": "https://www.federalreserve.gov/json/calendar.json (Fed 'Upcoming Dates' calendar)",
+   "verification": "verified"
+  },
+  {
+   "date_utc": "2026-10-14T12:30Z",
+   "local_et": "2026-10-14 08:30 ET",
+   "type": "cpi",
+   "title": "US CPI (Sep 2026)",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm",
+   "verification": "verified",
+   "reference_period": "2026-09"
+  },
+  {
+   "date_utc": "2026-10-28T18:00Z",
+   "local_et": "2026-10-28 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision (Oct 27-28)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm ; time: https://www.federalreserve.gov/json/calendar.json (Fed 'Upcoming Dates' calendar)",
+   "verification": "verified",
+   "note": "Press conference 14:30 ET"
+  },
+  {
+   "date_utc": "2026-11-06T13:30Z",
+   "local_et": "2026-11-06 08:30 ET",
+   "type": "jobs",
+   "title": "US Employment Situation (Oct 2026)",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm",
+   "verification": "verified",
+   "reference_period": "2026-10"
+  },
+  {
+   "date_utc": "2026-11-10T13:30Z",
+   "local_et": "2026-11-10 08:30 ET",
+   "type": "cpi",
+   "title": "US CPI (Oct 2026)",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm",
+   "verification": "verified",
+   "reference_period": "2026-10"
+  },
+  {
+   "date_utc": "2026-11-18T19:00Z",
+   "local_et": "2026-11-18 14:00 ET",
+   "type": "fomc_minutes",
+   "title": "FOMC minutes (Oct 27-28 meeting)",
+   "source": "https://www.federalreserve.gov/json/calendar.json (Fed 'Upcoming Dates' calendar)",
+   "verification": "verified"
+  },
+  {
+   "date_utc": "2026-12-04T13:30Z",
+   "local_et": "2026-12-04 08:30 ET",
+   "type": "jobs",
+   "title": "US Employment Situation (Nov 2026)",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm",
+   "verification": "verified",
+   "reference_period": "2026-11"
+  },
+  {
+   "date_utc": "2026-12-09T19:00Z",
+   "local_et": "2026-12-09 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision + SEP (Dec 8-9)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm ; time: https://www.federalreserve.gov/json/calendar.json (Fed 'Upcoming Dates' calendar)",
+   "verification": "verified",
+   "note": "Summary of Economic Projections; press conference 14:30 ET"
+  },
+  {
+   "date_utc": "2026-12-10T13:30Z",
+   "local_et": "2026-12-10 08:30 ET",
+   "type": "cpi",
+   "title": "US CPI (Nov 2026)",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm",
+   "verification": "verified",
+   "reference_period": "2026-11"
+  },
+  {
+   "date_utc": "2026-12-30T19:00Z",
+   "local_et": "2026-12-30 14:00 ET",
+   "type": "fomc_minutes",
+   "title": "FOMC minutes (Dec 8-9 meeting)",
+   "source": "https://www.federalreserve.gov/json/calendar.json (Fed 'Upcoming Dates' calendar)",
+   "verification": "verified"
+  },
+  {
+   "date_utc": "2027-01-27T19:00Z",
+   "local_et": "2027-01-27 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision (Jan 26-27)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "verification": "date_verified_time_assumed",
+   "note": "Meeting dates verified on federalreserve.gov (tentative until confirmed at the preceding meeting); 14:00 ET statement time assumed per standard practice, not yet on the Fed calendar"
+  },
+  {
+   "date_utc": "2027-03-17T18:00Z",
+   "local_et": "2027-03-17 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision + SEP (Mar 16-17)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "verification": "date_verified_time_assumed",
+   "note": "Meeting dates verified on federalreserve.gov (tentative until confirmed at the preceding meeting); 14:00 ET statement time assumed per standard practice, not yet on the Fed calendar"
+  },
+  {
+   "date_utc": "2027-04-28T18:00Z",
+   "local_et": "2027-04-28 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision (Apr 27-28)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "verification": "date_verified_time_assumed",
+   "note": "Meeting dates verified on federalreserve.gov (tentative until confirmed at the preceding meeting); 14:00 ET statement time assumed per standard practice, not yet on the Fed calendar"
+  },
+  {
+   "date_utc": "2027-06-09T18:00Z",
+   "local_et": "2027-06-09 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision + SEP (Jun 8-9)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "verification": "date_verified_time_assumed",
+   "note": "Meeting dates verified on federalreserve.gov (tentative until confirmed at the preceding meeting); 14:00 ET statement time assumed per standard practice, not yet on the Fed calendar"
+  },
+  {
+   "date_utc": "2027-07-28T18:00Z",
+   "local_et": "2027-07-28 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision (Jul 27-28)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "verification": "date_verified_time_assumed",
+   "note": "Meeting dates verified on federalreserve.gov (tentative until confirmed at the preceding meeting); 14:00 ET statement time assumed per standard practice, not yet on the Fed calendar"
+  },
+  {
+   "date_utc": "2027-09-15T18:00Z",
+   "local_et": "2027-09-15 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision + SEP (Sep 14-15)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "verification": "date_verified_time_assumed",
+   "note": "Meeting dates verified on federalreserve.gov (tentative until confirmed at the preceding meeting); 14:00 ET statement time assumed per standard practice, not yet on the Fed calendar"
+  },
+  {
+   "date_utc": "2027-10-27T18:00Z",
+   "local_et": "2027-10-27 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision (Oct 26-27)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "verification": "date_verified_time_assumed",
+   "note": "Meeting dates verified on federalreserve.gov (tentative until confirmed at the preceding meeting); 14:00 ET statement time assumed per standard practice, not yet on the Fed calendar"
+  },
+  {
+   "date_utc": "2027-12-08T19:00Z",
+   "local_et": "2027-12-08 14:00 ET",
+   "type": "fomc_decision",
+   "title": "FOMC rate decision + SEP (Dec 7-8)",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "verification": "date_verified_time_assumed",
+   "note": "Meeting dates verified on federalreserve.gov (tentative until confirmed at the preceding meeting); 14:00 ET statement time assumed per standard practice, not yet on the Fed calendar"
+  }
+ ]
+}
