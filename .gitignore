@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+node_modules
+qa/caption-sweep.last.json
+tests/*.png
+tests/*.jpg

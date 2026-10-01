@@ -1,0 +1,226 @@
+{
+ "_note": "Ages are minutes before test 'now'. Expected 'tag' = whether BREAKING/confirmed may appear. 'clusters' = expected cluster count.",
+ "breaking": [
+  {
+   "id": "B1_one_outlet_fresh",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 20,
+     "title": "Exchange X halts withdrawals after $40M hot-wallet exploit"
+    }
+   ],
+   "tag": false,
+   "clusters": 1
+  },
+  {
+   "id": "B2_two_outlets_fresh",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 25,
+     "title": "Exchange X halts withdrawals after $40M hot-wallet exploit"
+    },
+    {
+     "src": "The Block",
+     "ageMin": 15,
+     "title": "Exchange X suspends withdrawals following $40 million hack"
+    }
+   ],
+   "tag": true,
+   "clusters": 1
+  },
+  {
+   "id": "B3_two_outlets_stale",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 95,
+     "title": "Exchange X halts withdrawals after $40M hot-wallet exploit"
+    },
+    {
+     "src": "The Block",
+     "ageMin": 70,
+     "title": "Exchange X suspends withdrawals following $40 million hack"
+    }
+   ],
+   "tag": false,
+   "clusters": 1
+  },
+  {
+   "id": "B4_primary_alone_fresh",
+   "items": [
+    {
+     "src": "SEC.gov",
+     "primary": true,
+     "ageMin": 10,
+     "title": "SEC approves rule change for generic listing standards"
+    }
+   ],
+   "tag": true,
+   "clusters": 1
+  },
+  {
+   "id": "B5_primary_alone_stale",
+   "items": [
+    {
+     "src": "SEC.gov",
+     "primary": true,
+     "ageMin": 75,
+     "title": "SEC approves rule change for generic listing standards"
+    }
+   ],
+   "tag": false,
+   "clusters": 1
+  },
+  {
+   "id": "B6_two_outlets_exactly_60",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 60,
+     "title": "Exchange X halts withdrawals after $40M hot-wallet exploit"
+    },
+    {
+     "src": "The Block",
+     "ageMin": 60,
+     "title": "Exchange X suspends withdrawals following $40 million hack"
+    }
+   ],
+   "tag": false,
+   "clusters": 1
+  },
+  {
+   "id": "B7_two_outlets_59",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 59,
+     "title": "Exchange X halts withdrawals after $40M hot-wallet exploit"
+    },
+    {
+     "src": "The Block",
+     "ageMin": 59,
+     "title": "Exchange X suspends withdrawals following $40 million hack"
+    }
+   ],
+   "tag": true,
+   "clusters": 1
+  }
+ ],
+ "merge": [
+  {
+   "id": "M1_near_exploit_4_outlets",
+   "items": [
+    {
+     "src": "Cointelegraph",
+     "ageMin": 300,
+     "title": "NEAR Intents hit by $3.8M exploit, team pauses solver"
+    },
+    {
+     "src": "Decrypt",
+     "ageMin": 280,
+     "title": "Hacker drains $3.8 million from NEAR Intents"
+    },
+    {
+     "src": "CoinDesk",
+     "ageMin": 260,
+     "title": "NEAR's Intents protocol loses $3.8M in attack"
+    },
+    {
+     "src": "The Block",
+     "ageMin": 240,
+     "title": "NEAR Intents exploited for about $3.8 million"
+    }
+   ],
+   "clusters": 1,
+   "outlets": 4,
+   "auditVerdict": "not 'Unconfirmed'",
+   "caption": "must not say 'Single source' or 'Only <outlet> so far'"
+  },
+  {
+   "id": "M2_negative_same_amount_different_story",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 120,
+     "title": "Solana DEX Orca raises $3.8M seed round"
+    },
+    {
+     "src": "Decrypt",
+     "ageMin": 100,
+     "title": "NEAR Intents hit by $3.8M exploit"
+    }
+   ],
+   "clusters": 2
+  },
+  {
+   "id": "M3_negative_same_name_over_24h",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 1700,
+     "title": "NEAR Intents hit by $3.8M exploit"
+    },
+    {
+     "src": "Decrypt",
+     "ageMin": 60,
+     "title": "NEAR Intents repays $3.8M to users"
+    }
+   ],
+   "clusters": 2
+  },
+  {
+   "id": "M4_amount_under_1M_no_amount_merge",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 60,
+     "title": "Citi sees bitcoin at $113K by year-end"
+    },
+    {
+     "src": "Decrypt",
+     "ageMin": 50,
+     "title": "Standard Chartered targets $113K for bitcoin"
+    }
+   ],
+   "clusters": 2,
+   "_why": "price targets aren't deal amounts; different outlets' forecasts"
+  },
+  {
+   "id": "M5_negative_two_different_3.8M_exploits",
+   "items": [
+    {
+     "src": "CoinDesk",
+     "ageMin": 120,
+     "title": "NEAR Intents hit by $3.8M exploit"
+    },
+    {
+     "src": "Decrypt",
+     "ageMin": 90,
+     "title": "Exploit drains $3.8M from Arbitrum lender Radiant"
+    }
+   ],
+   "clusters": 2
+  }
+ ],
+ "opinion_penalty_minus15": [
+  "Mark Moss: The Bitcoin Endgame – BTC to $1 Million by 2030",
+  "Bitcoin Privacy Breakthrough a Zcash Killer? | Misha Komorov on the podcast",
+  "Analyst price target: ETH to $10K by 2027"
+ ],
+ "abbreviation_split": [
+  {
+   "desc": "Meanwhile, U.S. spot ETFs took in $400M as Corp. treasuries kept buying in Oct. trading.",
+   "mustContain": "spot ETFs"
+  },
+  {
+   "desc": "Armada Acquisition Corp. said it will merge with a crypto miner.",
+   "mustContain": "merge"
+  }
+ ],
+ "opinion_no_penalty": [
+  "SEC will rule on spot SOL ETF by Friday",
+  "US? No: Bitcoin hashrate hits record"
+ ]
+}

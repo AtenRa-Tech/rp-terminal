@@ -1,0 +1,1 @@
+{ "name": "rp-terminal-tests", "private": true, "dependencies": { "puppeteer-core": "^22.15.0", "playwright-core": "^1.55.0" } }

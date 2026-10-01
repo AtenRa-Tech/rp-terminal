@@ -1,0 +1,218 @@
+{
+ "as_of": "2026-09-30",
+ "frozen_dir": "frozen-2026-09-30",
+ "rule": "Cut every series at 2026-09-30 (daily) / 2026-09-27 (weekly, Sun close) before computing. Fail if |app - expected| > tol.",
+ "values": [
+  {
+   "id": "btc_ath_close",
+   "expected": 124658.54,
+   "display": "$124.7k",
+   "date": "2025-10-06",
+   "tol": 0.01,
+   "source": "Binance spot BTCUSDT daily close (data-api.binance.vision), frozen-2026-09-30/binance_daily.json",
+   "note": "Binance ATH close is 124,658.54 (Coinbase 124,720.09). 124,777 is not a Binance close. N3 withdrawn; rounding test stays."
+  },
+  {
+   "id": "btc_close",
+   "expected": 83623.6,
+   "date": "2026-09-30",
+   "tol": 0.01,
+   "source": "Binance spot BTCUSDT daily close (data-api.binance.vision), frozen-2026-09-30/binance_daily.json"
+  },
+  {
+   "id": "btc_drawdown_pct",
+   "expected": -32.9,
+   "tol": 0.05,
+   "source": "Binance spot BTCUSDT daily close (data-api.binance.vision), frozen-2026-09-30/binance_daily.json",
+   "note": "From ATH daily close 124,658.54; same on every tab"
+  },
+  {
+   "id": "btc_q3_return_pct",
+   "expected": 42.6,
+   "tol": 0.05,
+   "source": "Binance spot BTCUSDT daily close (data-api.binance.vision), frozen-2026-09-30/binance_daily.json",
+   "note": "58,624.71 (30 Jun) to 83,623.60 (30 Sep). Coinbase basis gives 42.8."
+  },
+  {
+   "id": "btc_2y_ma_ratio",
+   "expected": 0.94,
+   "tol": 0.005,
+   "source": "Binance spot BTCUSDT daily close (data-api.binance.vision), frozen-2026-09-30/binance_daily.json",
+   "note": "730 daily closes ending 30 Sep; MA 88,680.8. 0.96 only appears with the open 1 Oct candle."
+  },
+  {
+   "id": "btc_mayer_multiple",
+   "expected": 1.17,
+   "tol": 0.005,
+   "source": "Binance spot BTCUSDT daily close (data-api.binance.vision), frozen-2026-09-30/binance_daily.json",
+   "note": "200 daily closes, MA 71,299.7"
+  },
+  {
+   "id": "btc_weekly_rsi14",
+   "expected": 61.6,
+   "tol": 0.1,
+   "date": "2026-09-27",
+   "source": "Binance spot BTCUSDT daily close (data-api.binance.vision), frozen-2026-09-30/binance_daily.json, Wilder RSI on Sunday closes",
+   "since": "highest since 2025-10-05 (64.3)"
+  },
+  {
+   "id": "stablecoins_usd_bn",
+   "expected": 311.2,
+   "tol": 0.05,
+   "source": "DefiLlama via frozen market.json"
+  },
+  {
+   "id": "stablecoins_30d_pct",
+   "expected": 1.26,
+   "tol": 0.01,
+   "source": "DefiLlama, 30 Sep vs 31 Aug"
+  },
+  {
+   "id": "real_yield_10y",
+   "expected": 2.93,
+   "tol": 0.0,
+   "source": "FRED via frozen-2026-09-30/macro.json DFII10",
+   "since": "highest since 2008-11-24 (3.11)"
+  },
+  {
+   "id": "ust_10y",
+   "expected": 5.29,
+   "tol": 0.0,
+   "source": "FRED via frozen-2026-09-30/macro.json DGS10"
+  },
+  {
+   "id": "ust_2y",
+   "expected": 4.88,
+   "tol": 0.0,
+   "source": "FRED via frozen-2026-09-30/macro.json DGS2"
+  },
+  {
+   "id": "t10y2y",
+   "expected": 0.41,
+   "tol": 0.0,
+   "source": "FRED via frozen-2026-09-30/macro.json T10Y2Y"
+  },
+  {
+   "id": "t10y2y_last_inversion",
+   "expected": {
+    "start": "2022-07-06",
+    "end": "2024-08-26"
+   },
+   "source": "FRED via frozen-2026-09-30/macro.json T10Y2Y, runs < 5 trading days ignored",
+   "note": "27 Aug 2024 = 0.00; 3 Sep (-0.04) and 5 Sep (-0.02) are single-day dips, ignored."
+  },
+  {
+   "id": "net_liquidity_bn",
+   "expected": 5747.4,
+   "tol": 0.1,
+   "date": "2026-09-30",
+   "source": "FRED via frozen-2026-09-30/macro.json WALCL - WDTGAL - RRPONTSYD (Wed)"
+  },
+  {
+   "id": "global_m2_yoy_usd_pct",
+   "expected": 8.6,
+   "tol": 0.05,
+   "date": "2026-08",
+   "source": "frozen macro.json global_m2"
+  },
+  {
+   "id": "global_m2_yoy_cc_pct",
+   "expected": 6.0,
+   "tol": 0.05,
+   "date": "2026-08",
+   "source": "frozen macro.json global_m2 total_cc"
+  },
+  {
+   "id": "ethbtc_close",
+   "expected": 0.03212,
+   "tol": 1e-05,
+   "source": "Binance ETHUSDT/BTCUSDT",
+   "percentile_by_window": {
+    "2y_market_json": 56.2,
+    "1y": 63.8,
+    "3y": 39.0,
+    "4y": 29.2,
+    "all_since_2017": 32.9
+   },
+   "note": "No window gives bottom 23%; card must state its window.",
+   "card_percentile": {
+    "window": "since 2017",
+    "expected": "bottom 33%",
+    "value": 32.9,
+    "tol": 0.5
+   }
+  },
+  {
+   "id": "btc_30d_change_pct",
+   "expected": 6.4,
+   "tol": 0.05,
+   "source": "Binance BTCUSDT daily closes, 78,581.29 (31 Aug) to 83,623.60 (30 Sep)",
+   "note": "E1; show '\u2014' if closes unavailable"
+  }
+ ],
+ "staleness": {
+  "daily_prices": {
+   "series": [
+    "Binance closes",
+    "derivs",
+    "market"
+   ],
+   "max_age": "36h"
+  },
+  "daily_rates": {
+   "series": [
+    "DGS10",
+    "DGS2",
+    "DFII10",
+    "T10Y2Y",
+    "SP500"
+   ],
+   "max_age": "2 US business days"
+  },
+  "fx_h10": {
+   "series": [
+    "DEXUSEU",
+    "DEXJPUS",
+    "DEXCHUS",
+    "DTWEXBGS"
+   ],
+   "max_age": "8 calendar days (H.10 posts weekly, Mon)"
+  },
+  "weekly_fed": {
+   "series": [
+    "WALCL",
+    "WDTGAL",
+    "WTREGEN"
+   ],
+   "max_age": "9 calendar days (Wed data, Thu release)"
+  },
+  "monthly_m2": {
+   "series": [
+    "M2SL",
+    "EA/JP/CN M2"
+   ],
+   "max_age": "75 days after month start"
+  },
+  "etf": {
+   "max_age": "2 US business days; pending day = null, never 0"
+  }
+ },
+ "cross_check": {
+  "rule": "|Binance_close * USDTUSD_close - Coinbase_close| / Coinbase_close <= 0.5%, else footer 'fallback in use: <feed>'",
+  "example_2026_09_30": {
+   "btc_binance_usdt": 83623.6,
+   "usdtusd_coinbase": 0.99964,
+   "btc_binance_usd": 83593.5,
+   "btc_coinbase_usd": 83556.14,
+   "diff_pct": 0.045,
+   "eth_binance_usdt": 2686.01,
+   "eth_coinbase_usd": 2700.48,
+   "eth_diff_pct": -0.57,
+   "note": "ETH 30 Sep diff is ~0.57% -> would trip a 0.5% gate on a normal day; use 1.0% for ETH or compare against Coinbase USDT pairs."
+  },
+  "tolerance": {
+   "BTC": 0.5,
+   "ETH": 1.0
+  }
+ }
+}

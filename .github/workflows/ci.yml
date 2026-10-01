@@ -1,0 +1,139 @@
+name: CI and deploy
+
+# Tests every push/PR to main, then deploys to GitHub Pages via Actions, then smoke-tests the live site
+# and rolls back to the last good commit if the smoke test fails.
+# NOTE: Pages must be switched to "GitHub Actions" as its source (Settings -> Pages -> Build and deployment),
+# or: gh api -X PUT repos/AtenRa-Tech/rp-terminal/pages -f build_type=workflow
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # data commits are pushed with GITHUB_TOKEN, which does not trigger "push" workflows; redeploy after each data run instead
+  workflow_run:
+    workflows: ["Refresh data"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://atenra-tech.github.io/rp-terminal/
+  NODE_PATH: ${{ github.workspace }}/tests/node_modules
+
+jobs:
+  test:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || '' }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Scan - no India / INR / rupee / en-IN anywhere in the app
+        run: |
+          # case-sensitive on purpose: the app's own filters (lowercase india/inr regexes that drop such news items and clear old keys) are allowed
+          if grep -nE 'en-IN|\bINR\b|₹|\bIndia|\bRupee' index.html sw.js manifest.webmanifest; then echo "::error::India/INR content found"; exit 1; fi
+          if [ -e india.json ] || [ -e data/india.json ]; then echo "::error::india.json must not exist"; exit 1; fi
+      - name: Install test deps
+        run: cd tests && npm install --no-audit --no-fund
+      - name: Serve the site locally
+        run: |
+          python3 -m http.server 8765 >/dev/null 2>&1 &
+          for i in $(seq 1 20); do curl -sf http://localhost:8765/index.html >/dev/null && break; sleep 1; done
+      - name: Node test suites (headless Chrome; skipped on hourly data redeploys to save minutes)
+        if: github.event_name != 'workflow_run'
+        run: tests/run-all.sh
+      - name: Known-answer tests (frozen 30 Sep 2026 snapshot, data-golden.json)
+        run: GOLD=tests/fixtures node tests/tgolden.js
+      - name: Caption sweep gate (blocking)
+        run: node qa/caption-sweep.js http://localhost:8765/index.html
+      - name: News replay diff (report only)
+        continue-on-error: true
+        run: node qa/news-replay.js run http://localhost:8765/index.html
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.dep.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || '' }}
+      - name: Build site folder (app only, no tests)
+        run: mkdir _site && cp -r index.html sw.js manifest.webmanifest icons data _site/ && cp README.md _site/ 2>/dev/null || true
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: dep
+        uses: actions/deploy-pages@v4
+
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: cd tests && npm install --no-audit --no-fund
+      - name: Wait for Pages CDN
+        run: sleep 60
+      - name: Smoke test the live site
+        run: node tests/tsmoke.js "$SITE_URL"
+      - name: Data job fallback - dispatch "Refresh data" if a data file is stale (GitHub cron is best-effort)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          age=$(curl -s "${SITE_URL}data/derivs.json?v=$(date +%s)" | python3 -c "import json,sys,datetime as d;u=json.load(sys.stdin)['updated'];print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" || echo 999)
+          echo "derivs.json age ${age}h"
+          if [ "$age" -ge 3 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
+
+  rollback:
+    needs: smoke
+    if: failure() && needs.smoke.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      actions: read
+      contents: read
+    environment:
+      name: github-pages
+    steps:
+      - name: Find the last commit whose CI run succeeded
+        id: good
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json headSha -q '.[0].headSha')
+          [ -n "$sha" ] || { echo "::error::no previous good commit"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "rolling back to $sha"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.good.outputs.sha }}
+      - run: mkdir _site && cp -r index.html manifest.webmanifest icons data _site/ && (cp sw.js _site/ 2>/dev/null || true)
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - uses: actions/deploy-pages@v4
