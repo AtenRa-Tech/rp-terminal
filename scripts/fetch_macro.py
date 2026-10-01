@@ -22,7 +22,6 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 NOW = dt.datetime.now(dt.timezone.utc)
 TODAY = NOW.date()
 MONTHLY_START = "2012-01-01"
-DAILY_START = (TODAY - dt.timedelta(days=3 * 365 + 5)).isoformat()
 STALE_DAYS = 75
 
 FRED = {
@@ -35,6 +34,10 @@ FRED = {
     "DGS10":    ("US 10-year Treasury yield", "Percent", "Daily"),
     "DFII10":   ("US 10-year TIPS real yield", "Percent", "Daily"),
     "WALCL":    ("Fed total assets (balance sheet)", "Millions of USD", "Weekly (Wed)"),
+    "WTREGEN":  ("Treasury General Account (TGA), week average", "Millions of USD", "Weekly (Wed)"),
+    "RRPONTSYD": ("Fed overnight reverse repo (ON RRP)", "Billions of USD", "Daily"),
+    "DGS2":     ("US 2-year Treasury yield", "Percent", "Daily"),
+    "T10Y2Y":   ("10-year minus 2-year Treasury spread (2s10s)", "Percentage points", "Daily"),
     "SP500":    ("S&P 500 index", "Index", "Daily"),
 }
 
@@ -195,8 +198,8 @@ def main():
         try:
             pts = fred(sid)
             full[sid] = pts
-            start = DAILY_START if freq == "Daily" else MONTHLY_START
-            put(sid, title, units, freq, f"FRED {sid}", pts, start)
+            # full history for every FRED series (daily ones too), so rarity scans see the real record
+            put(sid, title, units, freq, f"FRED {sid}", pts, "")
         except Exception as e:
             keep_prev(sid, e)
 
@@ -288,11 +291,54 @@ def main():
         "points": pts,
     }
 
+    # ---- constant-currency global M2 (FX held at the 2015 average) ----------
+    fxbase = {}
+    for f in ("DEXUSEU_MAVG", "DEXJPUS_MAVG", "DEXCHUS_MAVG"):
+        v = [x for d, x in series.get(f, {}).get("points", []) if d.startswith("2015-")]
+        if len(v) == 12:
+            fxbase[f] = sum(v) / 12
+    if len(fxbase) == 3:
+        cc = {"US": lambda v: v, "EA": lambda v: v / 1e3 * fxbase["DEXUSEU_MAVG"],
+              "JP": lambda v: v / 10 / fxbase["DEXJPUS_MAVG"], "CN": lambda v: v / 10 / fxbase["DEXCHUS_MAVG"]}
+        m2d = {k: asdict(comp_def[k][0]) for k in cc}
+        for row in pts:
+            mth = row[0]
+            row.append(round(sum(cc[k](m2d[k][mth]) for k in cc), 3))
+        global_m2["columns"].append("total_cc")
+        global_m2["constant_currency"] = {
+            "column": "total_cc", "fx_base": "2015 average of the monthly-average FX rates",
+            "fx": {k: round(v, 6) for k, v in fxbase.items()},
+            "why": "Holding FX fixed removes the dollar's effect on the USD total, so changes reflect local money growth only."}
+
+    # ---- US net liquidity = Fed balance sheet - TGA - ON RRP (weekly, Wednesdays) ----
+    net_liq = None
+    if all(k in full for k in ("WALCL", "WTREGEN", "RRPONTSYD")):
+        tga = {d: v for d, v in full["WTREGEN"]}
+        rrp = sorted(full["RRPONTSYD"])
+        import bisect
+        rd = [d for d, _ in rrp]
+        nl = []
+        for d, w in full["WALCL"]:
+            if d not in tga:
+                continue
+            i = bisect.bisect_right(rd, d) - 1          # RRP on that Wednesday, or the last day before it
+            if i < 0 or (dt.date.fromisoformat(d) - dt.date.fromisoformat(rd[i])).days > 5:
+                continue
+            nl.append([d, round(w / 1e3 - tga[d] / 1e3 - rrp[i][1], 1), round(w / 1e3, 1), round(tga[d] / 1e3, 1), round(rrp[i][1], 1)])
+        if nl:
+            net_liq = {"title": "US net liquidity (Fed balance sheet - TGA - ON RRP)", "units": "Billions of USD",
+                       "freq": "Weekly (Wednesday)", "columns": ["date", "net_liquidity", "walcl", "tga", "rrp"],
+                       "method": ("WALCL (Wednesday level, $mn) / 1000 - WTREGEN (TGA, week average ending Wednesday, $mn) / 1000 "
+                                  "- RRPONTSYD (ON RRP, $bn, value on that Wednesday or the last business day before it, max 5 days). "
+                                  "Mixes a level with a week average, the usual public approximation."),
+                       "source": "FRED WALCL, WTREGEN, RRPONTSYD", "last_date": nl[-1][0], "points": nl}
+
     out = {"updated": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
            "stale_threshold_days": STALE_DAYS,
            "failed": failed,
            "series": series,
-           "global_m2": global_m2}
+           "global_m2": global_m2,
+           "net_liquidity": net_liq}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     # Only rewrite when content (ignoring 'updated') changed
     if prev:
@@ -307,6 +353,8 @@ def main():
         print(f"  {sid:14s} last_date={s.get('last_date')} n={len(s.get('points', []))}")
     if latest:
         print("  GLOBAL_M2", latest, sum_check, "stale:", global_m2["stale_components"])
+    if net_liq:
+        print("  NET_LIQ", net_liq["points"][-1], "n", len(net_liq["points"]))
 
 
 if __name__ == "__main__":

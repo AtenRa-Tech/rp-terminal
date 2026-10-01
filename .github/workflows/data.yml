@@ -2,12 +2,12 @@ name: Refresh data
 
 on:
   schedule:
-    # hourly at :17 (India prices); the macro + ETF fetch runs when the UTC hour is 0/6/12/18
+    # hourly at :17 (India prices + derivatives); macro, ETF and market breadth run when the UTC hour is 0/6/12/18
     - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       full:
-        description: 'Also run the 6-hourly macro + ETF fetch'
+        description: 'Also run the 6-hourly macro + ETF + market fetch'
         type: boolean
         default: true
 
@@ -21,7 +21,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +46,10 @@ jobs:
       - name: India prices (hourly)
         run: python scripts/fetch_india.py
 
+      - name: Derivatives OI / funding / basis (hourly)
+        continue-on-error: true
+        run: python scripts/fetch_derivs.py
+
       - name: Macro data (every 6h)
         if: steps.plan.outputs.full == 'true'
         run: python scripts/fetch_macro.py
@@ -53,6 +57,11 @@ jobs:
       - name: ETF flows (every 6h)
         if: steps.plan.outputs.full == 'true'
         run: python scripts/fetch_etf.py
+
+      - name: Market breadth, dominance, TOTAL2/3 (every 6h)
+        if: steps.plan.outputs.full == 'true'
+        continue-on-error: true
+        run: python scripts/fetch_market.py
 
       - name: Commit if changed
         run: |
