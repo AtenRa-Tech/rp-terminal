@@ -8,8 +8,7 @@ https://atenra-tech.github.io/rp-terminal/
 | File | Refresh | Contents |
 | --- | --- | --- |
 | `data/macro.json` | every 6h | FRED series, euro area / Japan / China M2 from ECB / BOJ / PBoC, computed global M2 in USD |
-| `data/etf.json` | every 6h | US spot BTC & ETH ETF daily net flows (US$m) from Farside |
-| `data/india.json` | hourly | CoinDCX BTCINR/USDTINR, Coinbase BTC-USD, USD/INR, premiums, 30-day hourly history |
+| `data/etf.json` | every 6h | US spot BTC & ETH ETF daily net flows (US$m) from Farside, total and per fund (tickers mapped from Farside's header row) |
 | `data/calendar.json` | static | FOMC / CPI / jobs dates in UTC with sources and verification status |
 
 Every file has a top-level `updated` (ISO UTC) plus `last_date` per dataset so the app can flag stale data.

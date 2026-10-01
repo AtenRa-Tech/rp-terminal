@@ -2,7 +2,7 @@ name: Refresh data
 
 on:
   schedule:
-    # hourly at :17 (India prices + derivatives); macro, ETF and market breadth run when the UTC hour is 0/6/12/18,
+    # hourly at :17 (derivatives); macro, ETF and market breadth run when the UTC hour is 0/6/12/18,
     # plus Thursday 21:00 and 22:00 UTC (after the Fed's H.4.1 release at 16:30 ET, so WALCL/WDTGAL land the same day)
     - cron: '17 * * * *'
     - cron: '0 21 * * 4'
@@ -46,10 +46,6 @@ jobs:
           fi
           echo "full=$FULL" >> "$GITHUB_OUTPUT"
           echo "UTC hour $H -> full=$FULL"
-
-      - name: India prices (hourly)
-        continue-on-error: true
-        run: python scripts/fetch_india.py
 
       - name: Derivatives OI / funding / basis (hourly)
         continue-on-error: true
