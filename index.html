@@ -708,7 +708,7 @@ function makeDraft(){const t=$('#stType').value,c=stCoin(),mk=D.mk[c.id]||{},a=D
   $('#draft').value=txt;countChars()}
 function countChars(){const v=$('#draft').value,first=v.split(/\n\n(?=\d+\/)/)[0];$('#cc').textContent=(DMODE==='thread'?'first post ':'')+[...first].length+'/280'}
 // ---------- tabs & events
-let TAB='markets';function tab(t){TAB=t;$$('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t));$$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));scrollTo(0,0);
+let TAB='markets';function tab(t,keep){const y=scrollY;TAB=t;$$('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t));$$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));if(!keep)scrollTo(0,0);else requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)});
   if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart()}if(t==='insights'){renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(t==='news'){renderNews();if(!D.news.length)loadNews().then(renderNews)}if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
 document.addEventListener('click',e=>{const b=e.target.closest('button,[data-i]');if(!b)return;const ds=b.dataset;
   if(ds.t)tab(ds.t);
@@ -743,14 +743,14 @@ $('#audBtn').onclick=runDraftAudit;
 $('#cpy').onclick=async()=>{try{await navigator.clipboard.writeText($('#draft').value);toast('Copied')}catch(e){$('#draft').select();document.execCommand('copy');toast('Copied')}};
 $('#toX').onclick=()=>{const v=$('#draft').value.split(/\n\n(?=\d+\/)/)[0];open('https://x.com/intent/post?text='+encodeURIComponent(v),'_blank')};
 function applyTheme(t){THEME=t;S.theme=t;save();document.documentElement.dataset.theme=t;Object.keys(TH).forEach(k=>delete TH[k]);Object.assign(TH,THEMES[t]);document.querySelector('meta[name=theme-color]').content=TH.bg;$$('nav button').forEach((b,i)=>b.innerHTML=`<i>${TH.nav[i][0]}</i>${TH.nav[i][1]}`);}
-const TNAME={sap:'Obsidian Sapphire',neo:'AMOLED Neon',ch:'Onyx & Champagne',bb:'Bloomberg terminal'},TORD=['neo','sap','ch','bb'];$('#thBtn').onclick=()=>{applyTheme(TORD[(TORD.indexOf(THEME)+1)%4]);tab(TAB);toast(TNAME[THEME])};
+const TNAME={sap:'Obsidian Sapphire',neo:'AMOLED Neon',ch:'Onyx & Champagne',bb:'Bloomberg terminal'},TORD=['neo','sap','ch','bb'];$('#thBtn').onclick=()=>{applyTheme(TORD[(TORD.indexOf(THEME)+1)%4]);tab(TAB,1);toast(TNAME[THEME])};
 $('#handle').value=S.handle;$('#handle').oninput=e=>{S.handle=e.target.value;save();renderStudio()};
 $('#curBtn').textContent=S.cur.toUpperCase();$('#curBtn').onclick=()=>{S.cur=S.cur==='usd'?'inr':'usd';save();$('#curBtn').textContent=S.cur.toUpperCase();refresh()};
 $('#sigRef').onclick=()=>renderSignals(true);
 $('#refBtn').onclick=()=>{SIG=null;Object.keys(cache).forEach(k=>delete cache[k]);D.kl={};D.ins={};refresh(true)};
-addEventListener('resize',()=>{clearTimeout(window._rz);window._rz=setTimeout(()=>tab(TAB),200)});
+let _rw=innerWidth;addEventListener('resize',()=>{if(Math.abs(innerWidth-_rw)<2)return;_rw=innerWidth;clearTimeout(window._rz);window._rz=setTimeout(()=>tab(TAB,1),200)});
 // ---------- boot
-async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else drawChartScreen()}if(TAB==='insights'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio()}
+async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);const _y=scrollY;requestAnimationFrame(()=>{if(_y>0&&scrollY<_y-2)scrollTo(0,_y)});renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else drawChartScreen()}if(TAB==='insights'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio()}
 applyTheme(THEME);document.fonts.ready.then(()=>setTimeout(()=>tab(TAB),300));refresh();setInterval(()=>{if(!document.hidden)refresh()},90000);
 setTimeout(()=>{renderInsights().catch(()=>{});loadNews().catch(()=>{})},2500);
 </script>
