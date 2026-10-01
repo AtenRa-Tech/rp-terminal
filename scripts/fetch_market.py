@@ -56,6 +56,15 @@ DUP_SYM = {"WBTC", "WETH", "STETH", "WSTETH", "WEETH", "EETH", "RETH", "CBBTC", 
 DUP_NAME = re.compile(r"\b(wrapped|staked|bridged|restaked|liquid staking|binance-peg|bitcoin bep2|rocket pool eth|coinbase wrapped)\b", re.I)
 
 
+
+def write_json(path, obj):
+    """Atomic write; refuses NaN/Infinity so a bad value can never corrupt the file."""
+    s = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(s)
+    os.replace(tmp, path)
+
 def get(url, timeout=40, tries=3, fatal=(402, 403, 451)):
     last = None
     for i in range(tries):
@@ -272,8 +281,7 @@ def main():
            "coverage": {"coins_with_closes": len(used), "skipped": skipped[:60],
                         "sources": {s: sum(1 for c in used if c["src"] == s) for s in ("Binance", "OKX")}},
            "excluded": {k: [c["sym"] for c in coins[:300] if c["cls"] == k] for k in ("stable", "pegged", "dup")}}
-    with open(OUT, "w", encoding="utf-8") as f:
-        json.dump(out, f, separators=(",", ":"), ensure_ascii=False)
+    write_json(OUT, out)
     print("ranking", src, "snapshot", snap)
     print("closes for", len(used), "coins", out["coverage"]["sources"], "skipped", len(skipped), [s["sym"] for s in skipped[:25]])
     print("universe", len(uni), "last close", last, "breadth", br[-1], "rotation", rot[-1])

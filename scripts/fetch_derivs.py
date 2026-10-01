@@ -29,6 +29,15 @@ SYM = {"BTC": {"bn": "BTCUSDT", "okx": "BTC-USDT-SWAP", "okx_spot": "BTC-USDT", 
        "ETH": {"bn": "ETHUSDT", "okx": "ETH-USDT-SWAP", "okx_spot": "ETH-USDT", "bybit": "ETHUSDT", "deribit": "ETH-PERPETUAL"}}
 
 
+
+def write_json(path, obj):
+    """Atomic write; refuses NaN/Infinity so a bad value can never corrupt the file."""
+    s = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(s)
+    os.replace(tmp, path)
+
 def get(url, timeout=25, tries=2):
     last = None
     for i in range(tries):
@@ -252,8 +261,7 @@ def main():
            "fallback_chain": "Binance USD-M -> OKX -> Bybit (-> Deribit for funding). Binance/Bybit block US IPs, so GitHub-hosted runs normally use OKX.",
            "assets": assets, "attempts": attempts}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w", encoding="utf-8") as f:
-        json.dump(out, f, separators=(",", ":"))
+    write_json(OUT, out)
     for a, A in assets.items():
         for k, v in A.items():
             if k != "latest":

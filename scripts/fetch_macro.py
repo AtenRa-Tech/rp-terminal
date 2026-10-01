@@ -35,6 +35,7 @@ FRED = {
     "DFII10":   ("US 10-year TIPS real yield", "Percent", "Daily"),
     "WALCL":    ("Fed total assets (balance sheet)", "Millions of USD", "Weekly (Wed)"),
     "WTREGEN":  ("Treasury General Account (TGA), week average", "Millions of USD", "Weekly (Wed)"),
+    "WDTGAL":   ("Treasury General Account (TGA), Wednesday level", "Millions of USD", "Weekly (Wed)"),
     "RRPONTSYD": ("Fed overnight reverse repo (ON RRP)", "Billions of USD", "Daily"),
     "DGS2":     ("US 2-year Treasury yield", "Percent", "Daily"),
     "T10Y2Y":   ("10-year minus 2-year Treasury spread (2s10s)", "Percentage points", "Daily"),
@@ -42,11 +43,20 @@ FRED = {
 }
 
 
+
+def write_json(path, obj):
+    """Atomic write; refuses NaN/Infinity so a bad value can never corrupt the file."""
+    s = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(s)
+    os.replace(tmp, path)
+
 def get(url, timeout=45, tries=3, ua=None):
     last = None
     for i in range(tries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": ua or UA, "Accept": "*/*"})
+            req = urllib.request.Request(url, headers={"User-Agent": ua or UA, "Accept": "*/*", "Cache-Control": "no-cache"})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
         except Exception as e:  # noqa
@@ -275,6 +285,12 @@ def main():
         s4 = round(sum(latest[2:6]), 3)
         sum_check = {"month": latest[0], "total": latest[1], "sum_of_components": s4,
                      "abs_diff": round(abs(s4 - latest[1]), 6), "ok": abs(s4 - latest[1]) < 0.01}
+    if not pts and prev.get("global_m2", {}).get("points"):
+        failed.append({"id": "global_m2", "error": "no complete month could be built; previous copy kept"})
+        prev["global_m2"]["stale_copy"] = True
+        global_m2_prev = prev["global_m2"]
+    else:
+        global_m2_prev = None
     global_m2 = {
         "title": "Global M2 (US + Euro area + Japan + China) in USD",
         "units": "Billions of USD",
@@ -291,13 +307,16 @@ def main():
         "points": pts,
     }
 
+    if global_m2_prev:
+        global_m2 = global_m2_prev
+        pts = []
     # ---- constant-currency global M2 (FX held at the 2015 average) ----------
     fxbase = {}
     for f in ("DEXUSEU_MAVG", "DEXJPUS_MAVG", "DEXCHUS_MAVG"):
         v = [x for d, x in series.get(f, {}).get("points", []) if d.startswith("2015-")]
         if len(v) == 12:
             fxbase[f] = sum(v) / 12
-    if len(fxbase) == 3:
+    if len(fxbase) == 3 and not global_m2_prev:
         cc = {"US": lambda v: v, "EA": lambda v: v / 1e3 * fxbase["DEXUSEU_MAVG"],
               "JP": lambda v: v / 10 / fxbase["DEXJPUS_MAVG"], "CN": lambda v: v / 10 / fxbase["DEXCHUS_MAVG"]}
         m2d = {k: asdict(comp_def[k][0]) for k in cc}
@@ -312,26 +331,48 @@ def main():
 
     # ---- US net liquidity = Fed balance sheet - TGA - ON RRP (weekly, Wednesdays) ----
     net_liq = None
-    if all(k in full for k in ("WALCL", "WTREGEN", "RRPONTSYD")):
-        tga = {d: v for d, v in full["WTREGEN"]}
-        rrp = sorted(full["RRPONTSYD"])
+    def pts_of(sid):
+        return full.get(sid) or series.get(sid, {}).get("points") or []
+    walcl, tga_avg_p, tga_lvl_p, rrp = pts_of("WALCL"), pts_of("WTREGEN"), pts_of("WDTGAL"), sorted(pts_of("RRPONTSYD"))
+    if walcl and (tga_lvl_p or tga_avg_p) and rrp:
         import bisect
+        tga_lvl, tga_avg = dict(tga_lvl_p), dict(tga_avg_p)
         rd = [d for d, _ in rrp]
-        nl = []
-        for d, w in full["WALCL"]:
-            if d not in tga:
+        nl, spikes = [], []
+        for d, w in walcl:
+            t = tga_lvl.get(d)
+            basis = "level"
+            if t is None:
+                t = tga_avg.get(d); basis = "avg"
+            if t is None:
                 continue
             i = bisect.bisect_right(rd, d) - 1          # RRP on that Wednesday, or the last day before it
             if i < 0 or (dt.date.fromisoformat(d) - dt.date.fromisoformat(rd[i])).days > 5:
                 continue
-            nl.append([d, round(w / 1e3 - tga[d] / 1e3 - rrp[i][1], 1), round(w / 1e3, 1), round(tga[d] / 1e3, 1), round(rrp[i][1], 1)])
+            r = rrp[i][1]
+            ta = tga_avg.get(d)
+            nl.append([d, round(w / 1e3 - t / 1e3 - r, 1), round(w / 1e3, 1), round(t / 1e3, 1), round(r, 1),
+                       round(w / 1e3 - ta / 1e3 - r, 1) if ta is not None else None,
+                       round(ta / 1e3, 1) if ta is not None else None, basis])
+            # quarter-end RRP spike: value at least 5x the median of the previous 20 business days and within 3 days of a quarter end
+            prior = sorted(v for _, v in rrp[max(0, i - 21):i])
+            med = prior[len(prior) // 2] if prior else None
+            dd = dt.date.fromisoformat(rd[i])
+            qe = any(abs((dd - dt.date(dd.year, m, {3: 31, 6: 30, 9: 30, 12: 31}[m])).days) <= 3 for m in (3, 6, 9, 12))
+            if med is not None and r > 1 and r >= 5 * max(med, 0.1) and qe:
+                spikes.append({"date": d, "rrp": round(r, 1), "median_prior_20d": round(med, 1)})
         if nl:
             net_liq = {"title": "US net liquidity (Fed balance sheet - TGA - ON RRP)", "units": "Billions of USD",
-                       "freq": "Weekly (Wednesday)", "columns": ["date", "net_liquidity", "walcl", "tga", "rrp"],
-                       "method": ("WALCL (Wednesday level, $mn) / 1000 - WTREGEN (TGA, week average ending Wednesday, $mn) / 1000 "
-                                  "- RRPONTSYD (ON RRP, $bn, value on that Wednesday or the last business day before it, max 5 days). "
-                                  "Mixes a level with a week average, the usual public approximation."),
-                       "source": "FRED WALCL, WTREGEN, RRPONTSYD", "last_date": nl[-1][0], "points": nl}
+                       "freq": "Weekly (Wednesday)",
+                       "columns": ["date", "net_liquidity", "walcl", "tga", "rrp", "net_liquidity_tga_week_avg", "tga_week_avg", "tga_basis"],
+                       "method": ("WALCL (Wednesday level) - TGA Wednesday level (WDTGAL; falls back to the WTREGEN week average where the "
+                                  "level is missing, flagged in tga_basis) - RRPONTSYD (ON RRP on that Wednesday, or the last business day "
+                                  "before it, max 5 days). net_liquidity_tga_week_avg is the same with the WTREGEN week average."),
+                       "rrp_quarter_end_spikes": spikes,
+                       "source": "FRED WALCL, WDTGAL, WTREGEN, RRPONTSYD", "last_date": nl[-1][0], "points": nl}
+    if net_liq is None and prev.get("net_liquidity"):
+        net_liq = dict(prev["net_liquidity"], stale_copy=True)
+        failed.append({"id": "net_liquidity", "error": "inputs missing; previous copy kept"})
 
     out = {"updated": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
            "stale_threshold_days": STALE_DAYS,
@@ -346,8 +387,7 @@ def main():
         if json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True):
             print("macro.json: no data change")
             return
-    with open(OUT, "w", encoding="utf-8") as f:
-        json.dump(out, f, separators=(",", ":"), ensure_ascii=False)
+    write_json(OUT, out)
     print(f"macro.json written: {len(series)} series, failed={[x['id'] for x in failed]}")
     for sid, s in series.items():
         print(f"  {sid:14s} last_date={s.get('last_date')} n={len(s.get('points', []))}")

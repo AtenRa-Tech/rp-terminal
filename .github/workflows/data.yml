@@ -2,8 +2,10 @@ name: Refresh data
 
 on:
   schedule:
-    # hourly at :17 (India prices + derivatives); macro, ETF and market breadth run when the UTC hour is 0/6/12/18
+    # hourly at :17 (India prices + derivatives); macro, ETF and market breadth run when the UTC hour is 0/6/12/18,
+    # plus Thursday 21:00 and 22:00 UTC (after the Fed's H.4.1 release at 16:30 ET, so WALCL/WDTGAL land the same day)
     - cron: '17 * * * *'
+    - cron: '0 21 * * 4'
   workflow_dispatch:
     inputs:
       full:
@@ -32,10 +34,12 @@ jobs:
       - name: Decide which jobs run
         id: plan
         run: |
-          H=$(date -u +%H)
+          H=$(date -u +%H); DOW=$(date -u +%u)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             FULL="${{ inputs.full }}"
           elif [ $((10#$H % 6)) -eq 0 ]; then
+            FULL=true
+          elif [ "$DOW" = "4" ] && { [ "$H" = "21" ] || [ "$H" = "22" ]; }; then
             FULL=true
           else
             FULL=false
@@ -44,18 +48,21 @@ jobs:
           echo "UTC hour $H -> full=$FULL"
 
       - name: India prices (hourly)
+        continue-on-error: true
         run: python scripts/fetch_india.py
 
       - name: Derivatives OI / funding / basis (hourly)
         continue-on-error: true
         run: python scripts/fetch_derivs.py
 
-      - name: Macro data (every 6h)
+      - name: Macro data (every 6h; daily FRED series re-pulled in full each run)
         if: steps.plan.outputs.full == 'true'
+        continue-on-error: true
         run: python scripts/fetch_macro.py
 
       - name: ETF flows (every 6h)
         if: steps.plan.outputs.full == 'true'
+        continue-on-error: true
         run: python scripts/fetch_etf.py
 
       - name: Market breadth, dominance, TOTAL2/3 (every 6h)
@@ -63,7 +70,13 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_market.py
 
+      - name: Validate JSON before commit
+        run: |
+          for f in data/*.json; do python -c "import json,sys; json.load(open('$f'))" || { echo "invalid $f, restoring"; git checkout -- "$f"; }; done
+          rm -f data/*.tmp
+
       - name: Commit if changed
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

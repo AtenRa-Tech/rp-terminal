@@ -14,6 +14,15 @@ URLS = {"btc": ["https://farside.co.uk/bitcoin-etf-flow-all-data/", "https://far
         "eth": ["https://farside.co.uk/ethereum-etf-flow-all-data/", "https://farside.co.uk/eth/"]}
 
 
+
+def write_json(path, obj):
+    """Atomic write; refuses NaN/Infinity so a bad value can never corrupt the file."""
+    s = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(s)
+    os.replace(tmp, path)
+
 def fetch(url):
     req = urllib.request.Request(url, headers={
         "User-Agent": UA, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -58,14 +67,18 @@ def parse(page):
         vals = r[1:1 + len(funds)]
         flows = {f: num(v) for f, v in zip(funds, vals)}
         days.append({"date": d, "total": num(r[len(funds) + 1]),
-                     "no_data": all(v == "-" for v in vals), "funds": flows})
+                     "no_data": all(v == "-" for v in vals), "partial": any(v in ("-", "") for v in vals), "funds": flows})
     if not days:
         raise ValueError("no daily rows parsed")
     # Farside shows the current day with '-' in every fund until data arrives:
     # only the most recent row can be 'pending'; older all-'-' rows are
     # market holidays / no-report days (kept with their listed total).
+    # The most recent row stays pending (total None, never 0) while any fund is still '-',
+    # i.e. until Farside has filled it in; it is only final once every fund has a value
+    # or a later day's row exists.
     for i, d in enumerate(days):
-        d["pending"] = bool(d.pop("no_data") and i == len(days) - 1)
+        nd, part = d.pop("no_data"), d.pop("partial")
+        d["pending"] = bool(i == len(days) - 1 and (nd or part or d["total"] is None))
         if d["pending"]:
             d["total"] = None
     return funds, days
@@ -118,7 +131,7 @@ def main():
     if prev and strip(prev) == strip(out):
         print("etf.json: no data change"); return
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    json.dump(out, open(OUT, "w", encoding="utf-8"), separators=(",", ":"))
+    write_json(OUT, out)
     print("etf.json written")
 
 
