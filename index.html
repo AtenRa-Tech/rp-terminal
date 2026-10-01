@@ -164,6 +164,7 @@ nav button{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis
 <section id="s-markets">
   <div class="card"><h3>Global market<span class="sp"></span><span id="gUpd" class="mu" style="text-transform:none;letter-spacing:0"></span></h3>
     <div class="grid num" id="global"></div></div>
+  <div class="card" id="altCard"><h3>Altseason engine</h3><div class="mu">Loading…</div></div>
   <div class="card" id="wlCard"><h3>Watchlist & portfolio<span class="sp"></span><button class="btn sm" id="editBtn">Edit</button></h3>
     <div id="pf" class="grid num" style="margin-bottom:6px"></div>
     <div id="srch" style="display:none;margin-bottom:8px"><input id="sq" placeholder="Add coin: search name or ticker" style="width:100%"><div id="sres"></div></div>
@@ -208,6 +209,7 @@ nav button{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis
   <div class="card"><h3>Macro · liquidity &amp; rates<span class="sp"></span><button class="btn sm" id="macRef">↻</button></h3>
     <div class="grid num" id="macTiles"><div class="mu">Loading…</div></div>
     <small class="note" id="macHealth"></small></div>
+  <div id="macForces"></div>
   <div id="macList"></div>
   <small class="note">Macro data refreshes every 6 hours via GitHub Actions (FRED, ECB, BOJ, PBoC). Each tile shows its own last data date; ⚠️ marks data older than its normal cadence. All times UTC. Not financial advice.</small>
 </section>
@@ -215,7 +217,7 @@ nav button{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis
 <section id="s-studio">
   <div class="card"><h3>X post studio</h3>
     <div class="flex" style="margin-bottom:8px">
-      <select id="stType"><option value="price">Price card</option><option value="insight">Insight card</option><option value="pulse">Market pulse</option><option value="chart">Chart</option><option value="heat">Heatmap</option></select>
+      <select id="stType"><option value="price">Price card</option><option value="insight">Insight card</option><option value="pulse">Market pulse</option><option value="chart">Chart</option><option value="heat">Heatmap</option><option value="dd">Drawdown from ATH</option><option value="perf">Monthly / quarterly performance</option></select>
       <select id="stCoin"></select>
       <select id="stRatio"><option value="16:9">16:9 · 7680×4320</option><option value="1:1">1:1 · 7680×7680</option><option value="4:5">4:5 · 6144×7680</option></select>
     </div>
@@ -576,7 +578,7 @@ function buildSignals(d){const out=[],P=d.P;const add=f=>{try{const s=f();if(s)o
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:v=>(v/1e6).toFixed(0)+' EH',series:[{v:a,c:TH.up,w:3,l:'30D MA'},{v:b,c:TH.dn,w:3,l:'60D MA'}],marks:caps.slice(-3).map(i=>({t:t[i],v:a[i],c:TH.up,l:'BUY'}))})}})}
   if(d.EB){add(()=>{const{t,v}=d.EB,N=v.length,cur=v[N-1],p=pctl(v,cur),lo=Math.min(...v.slice(-365)),hi=Math.max(...v.slice(-365)),sc=cur<=lo*1.02||cur>=hi*.98?90:clamp(Math.abs(p-50)*1.6+15,15,85);
     return{id:'ethbtc',m:cur,title:'ETH/BTC ratio',read:`${cur.toFixed(5)} · lower than ${(100-p).toFixed(0)}% of the last ${Math.round(N/365)} years`,score:sc,
-     cap:`ETH/BTC is at ${cur.toFixed(4)}.\n\n${cur<=lo*1.02?'That is a new 1-year low: $ETH keeps bleeding against $BTC.':cur>=hi*.98?'That is a 1-year high: $ETH is outperforming $BTC. Altseason starts here.':`It sits in the ${p.toFixed(0)}th percentile of the last ${Math.round(N/365)} years.`}`,
+     cap:`ETH/BTC is at ${cur.toFixed(4)}.\n\n${cur<=lo*1.02?'That is a new 1-year low: $ETH keeps bleeding against $BTC.':cur>=hi*.98?'That is a 1-year high: $ETH has outperformed $BTC over the past year.':`It sits in the ${p.toFixed(0)}th percentile of the last ${Math.round(N/365)} years.`}`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:v=>v.toFixed(3),series:[{v,c:TH.vi||TH.ac,w:3,fill:1}],marks:[{t:t[N-1],v:cur,c:TH.tx,l:cur.toFixed(4)}]})}})}
   if(d.PG&&d.BT){add(()=>{const r=alignR(d.BT,d.PG),N=r.v.length,cur=r.v[N-1],y1=r.v[Math.max(0,N-366)],mx=Math.max(...r.v),ch=(cur/y1-1)*100,sc=cur>=mx*.97?93:clamp(Math.abs(ch)*.9+30,25,85);
     return{id:'gold',m:cur,title:'Bitcoin priced in gold',read:`1 BTC = ${cur.toFixed(1)} oz of gold · ${pct(ch,0)} in 1 year`,score:sc,
@@ -618,7 +620,7 @@ function lintText(txt,live){const out=[];const posts=txt.split(/\n\n(?=\d+\/)/);
   if(/buy zone|bottom is in|top is in|cycle low|(?<!pi )cycle top/i.test(txt)&&!/historical|history|has marked|has been|have been|flagged|previous|past/i.test(txt))out.push(['warn','Calls a top/bottom/buy zone without saying it is historical. Add "historically" so it reads as data, not a call.']);
   if(live){const nums=[...txt.matchAll(/\$\s?(\d{1,3}(?:,\d{3})+|\d{4,6})(?:\.\d+)?\s?(k|K)?/g)].map(m=>+(m[1].replace(/,/g,''))*(m[2]?1000:1)).filter(v=>v>live*.6&&v<live*1.6);
     if(/\bBTC\b|bitcoin/i.test(txt))for(const v of nums){const d=(v/live-1)*100;if(Math.abs(d)>2)out.push(['warn',`Mentions $${v.toLocaleString('en-US')} but live BTC is $${Math.round(live).toLocaleString('en-US')} (${d>0?'+':''}${d.toFixed(1)}%). Fine if it's a level or target, wrong if it's meant as the current price.`]);else out.push(['ok',`Price $${v.toLocaleString('en-US')} matches live BTC within ${Math.abs(d).toFixed(1)}%.`])}}
-  const BL=lintBanned(txt,lintText.news?lintText.newsTitle:null);BL.forEach(x=>out.push(['warn',x]));if(!BL.length)out.push(['ok','No banned phrases, generic reader questions, hashtag spam or emoji walls.']);
+  const BL=lintBanned(txt,lintText.news?lintText.newsTitle:null,CAPF?.open);BL.forEach(x=>out.push(['warn',x]));if(!BL.length)out.push(['ok','No banned phrases, generic reader questions, hashtag spam or emoji walls.']);
   if(!out.some(x=>x[0]!=='ok'))out.push(['ok','Wording is measured: no hype or advice phrases found.']);return out}
 async function auditSignal(s){const R=[];const live=await liveBTC();
   if(live.length>=2){const vs=live.map(x=>x.v),mn=Math.min(...vs),mx=Math.max(...vs),sp=(mx/mn-1)*100,avg=vs.reduce((a,b)=>a+b)/vs.length;R.live=avg;
@@ -713,8 +715,8 @@ function renderFng(){const cv=$('#fng');const ctx=fit(cv,200);drawFng(ctx,cv.wid
 // ---------- RENDER: news
 let NF='All';function renderNews(){const kw={All:null,...Object.fromEntries(S.watch.map(w=>[w.sym.toUpperCase(),[w.sym.toLowerCase(),(D.mk[w.id]?.name||w.id).toLowerCase()]]))};
   $('#nf').innerHTML=Object.keys(kw).map(k=>`<button class="pill ${k===NF?'on':''}" data-nf="${k}">${k}</button>`).join('');
-  const L=D.news.filter(n=>!kw[NF]||kw[NF].some(k=>new RegExp('\\b'+k+'\\b','i').test(n.title+' '+n.desc)));
-  $('#news').innerHTML=L.length?L.map((n,i)=>`<div class="card news"><div class="mu" style="font-size:11px;margin-bottom:4px">${esc(n.src)} · ${ago(n.t)} ago</div><a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><div class="mu" style="font-size:12px;margin-top:4px">${esc(n.desc)}</div><div style="margin-top:8px"><button class="btn sm" data-nd="${D.news.indexOf(n)}">✦ Draft post</button></div></div>`).join(''):'<div class="card mu">No headlines for this filter yet.</div>'}
+  NCL=newsClusters();const L=D.news.filter(n=>!kw[NF]||kw[NF].some(k=>new RegExp('\\b'+k+'\\b','i').test(n.title+' '+n.desc)));
+  $('#news').innerHTML=L.length?L.map((n,i)=>`<div class="card news"><div class="mu" style="font-size:11px;margin-bottom:4px">${esc(n.src)} · ${ago(n.t)} ago${(()=>{if(!NCL.length&&D.news.length)NCL=newsClusters();const c=NCL.find(c=>c.items.includes(n));if(!c)return'';const k=nKey(c);return` · <button class="btn sm num" data-nsb="${esc(k)}" style="padding:1px 7px">${c.score}${c.score>=70?' POST NOW':''} ⓘ</button>${c.items.length>1?` · ${c.items.length} outlets`:''}</div><div class="sbx ${OPEN.has(k)?'on':''}" data-nsbx="${esc(k)}">${OPEN.has(k)?newsSbHTML(c):''}`})()}</div><a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><div class="mu" style="font-size:12px;margin-top:4px">${esc(n.desc)}</div><div style="margin-top:8px"><button class="btn sm" data-nd="${D.news.indexOf(n)}">✦ Draft post</button></div></div>`).join(''):'<div class="card mu">No headlines for this filter yet.</div>'}
 // ---------- STUDIO
 let DMODE='post',NEWSPICK=null;// caption engine: see CAPTION ENGINE below
 function stCoin(){return S.watch[+$('#stCoin').value||0]||S.watch[0]}
@@ -742,7 +744,7 @@ function fresh(id,M=MAC.M){const s=M?.series?.[id];if(!s)return{st:true,why:'mis
   return{st:failed||age>lim,age,lim,f,failed,last:s.last_date,why:failed?'fetch failed on last run, showing previous value':age>lim?`${Math.round(age)} days old (expected ≤ ${lim} for ${f.toLowerCase()} data${lim===10?'; Fed H.10 rates publish weekly':''})`:''}}
 const back=(S2,days)=>{const t=S2.t.at(-1)-days*DAY;let i=S2.t.length-1;while(i>0&&S2.t[i]>t)i--;return i};
 function gm2(M=MAC.M){const g=M?.global_m2;if(!g?.points?.length)return null;const P=g.points,t=P.map(p=>ymd(p[0])),L=P.length-1,byM=new Map(t.map((x,i)=>[mi(x),i]));
-  const at=k=>byM.get(mi(t[L])-k);const iM=at(1),iY=at(12);return{g,P,t,L,tot:P[L][1],mom:iM!=null?(P[L][1]/P[iM][1]-1)*100:null,yoy:iY!=null?(P[L][1]/P[iY][1]-1)*100:null,last:t[L]}}
+  const at=k=>byM.get(mi(t[L])-k);const iM=at(1),iY=at(12);return{g,P,t,L,tot:P[L][1],mom:iM!=null?(P[L][1]/P[iM][1]-1)*100:null,yoy:iY!=null?(P[L][1]/P[iY][1]-1)*100:null,totCC:P[L][6],yoyCC:iY!=null&&P[L][6]!=null?(P[L][6]/P[iY][6]-1)*100:null,last:t[L]}}
 async function macBTC(){if(MAC.btc&&Date.now()-MAC.btc.at<3600000)return MAC.btc;let P=SIGD?.P;
   if(!P||P.t.length<2000)P=await first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>({...(await bnDaily('BTCUSDT',4)),src:'Binance'}));
   const now=new Date(),curM=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1),acc=new Map();
@@ -770,14 +772,7 @@ function buildMacro(M,B){const out=[],add=f=>{try{const s=f();if(s)out.push(s)}c
      cap:`Global M2 (US+EA+JP+CN, in USD): ${usdT(G.tot)} in ${gL}, ${pct(G.yoy,1)} YoY.\n\nChart: z-scored log BTC vs log global M2 since 2014${lag?`, M2 shifted ${lag}d`:''}. Shared trend, not proof of cause.\n\nData: FRED, ECB, BOJ, PBoC through ${gL}; BTC ${B.src}.`,
      src:`Global M2: ${SRC_M2}, through ${gL} · BTC: ${B.src} monthly avg through ${bL}`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:[from,Math.max(bm.t.at(-1),mt.at(-1))],yf:v=>v.toFixed(1)+'σ',series:[{t:bm.t,v:zb,c:TH.ac,w:3,l:'BTC (log, z)'},{t:mt,v:zm,c:TH.ac2||TH.up,w:3.4,l:`Global M2 (log, z)${lag?' +'+lag+'d':''}`}]})}});
-  if(B)add(()=>{const mode=MAC.chg,ll=leadLag(m2s,B.m,mode),ok=ll.filter(x=>x.r!=null);if(!ok.length)return null;const best=ok.reduce((a,b)=>Math.abs(b.r)>Math.abs(a.r)?b:a),n0=ll[0].n,band=1.96/Math.sqrt(n0),lab=mode==='yoy'?'YoY':'MoM',rng=`${mU(miD(ll[0].from))}–${mU(miD(ll[0].to))}`;
-    const clear=Math.abs(best.r)>band;MAC.ll={ll,band,mode,best};
-    return{id:'lead',uses:['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC'],btc:1,ll,band,title:'Does M2 lead BTC?',ctl:'chg',
-     read:`Strongest: r = ${best.r.toFixed(2)} at ${best.lag}-month lag (n=${best.n}) · ${lab} changes`,
-     cap:`Does global M2 lead $BTC? r of ${lab} % changes, M2 leading by 0–6 months (${rng}, n≈${n0}):\n${ll.map(x=>`${x.lag}m ${x.r==null?'–':x.r.toFixed(2)}`).join(' · ')}\n\nPeak: ${best.lag}m, r=${best.r.toFixed(2)}${mode==='mom'?` (noise ±${band.toFixed(2)})`:'; YoY windows overlap, so illustrative'}.\n\nCorrelation of changes, descriptive; not a trading signal.`,
-     src:`Global M2 ${SRC_M2} through ${gL} · BTC ${B.src} monthly avg · computed in-app`,
-     draw:(c,X,Y,W,H,u)=>{bars(c,X,Y,W,H,u,{v:ll.map(x=>x.r),lab:ll.map(x=>x.lag+'m lag'),sym:1,band:mode==='mom'?band:null,bandL:`±${band.toFixed(2)} ≈ noise (95%, n=${n0})`,yf:v=>v.toFixed(2),vl:(x,i)=>x.toFixed(2),col:(x,i)=>i===best.lag?(x>=0?TH.ac:TH.dn):hexA(x>=0?TH.ac:TH.dn,.45)});
-       c.save();c.fillStyle=TH.mu;c.font=F(16*u,600);c.textBaseline='bottom';c.fillText(`r of ${lab} % changes · M2 leads BTC by N months · ${rng}`,X,Y-10*u);c.restore()}}});
+  if(B)add(()=>leadCard(G,B,SRC_M2,gL));
   add(()=>{const from=Date.UTC(2012,0,1),P=G.P.filter(p=>ymd(p[0])>=from),t=P.map(p=>ymd(p[0])),cols=[TH.ac,TH.ac2||TH.vi,TH.pk||'#ffe600',TH.up],cum=[0,0,0,0].map((_,k)=>P.map(p=>p.slice(2,3+k).reduce((a,b)=>a+b,0)));const L=G.P[G.L],sh=comps.map((c,k)=>L[2+k]/L[1]*100);
     return{id:'comp',uses:['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC','DEXUSEU_MAVG','DEXJPUS_MAVG','DEXCHUS_MAVG'],title:'Global M2 composition (USD)',read:comps.map((c,k)=>`${c} ${usdT(L[2+k])}`).join(' · '),
      cap:`Global M2 is ${usdT(L[1])} (${gL}): ${comps.map((c,k)=>`${c==='EA'?'euro area':c==='JP'?'Japan':c==='CN'?'China':'US'} ${usdT(L[2+k])} (${sh[k].toFixed(0)}%)`).join(', ')}.\n\nIn USD at monthly avg FX, so dollar moves shift the total even if local M2 is flat.\n\nData: FRED, ECB, BOJ, PBoC through ${gL}.`,
@@ -794,11 +789,12 @@ function buildMacro(M,B){const out=[],add=f=>{try{const s=f();if(s)out.push(s)}c
      cap:`US 10-year yield ${la.toFixed(2)}%, 10-year real (TIPS) yield ${lb.toFixed(2)}%, ${chb>=0?'+':''}${chb.toFixed(0)}bp over 3 months. Implied breakeven inflation ${(la-lb).toFixed(2)}%.\n\nHigher real yields have historically been a headwind for non-yielding assets like BTC and gold.\n\nSource: FRED DGS10, DFII10 through ${ld}.`,
      src:`FRED DGS10 + DFII10 through ${ld}`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:A.t,yf:v=>v.toFixed(1)+'%',series:[{v:A.v,c:TH.tx,w:2.4,l:'10Y nominal'},{t:Bs.t,v:Bs.v,c:TH.ac,w:3.2,l:'10Y real',fill:1},{v:be,c:TH.vi||TH.ac2,w:2,l:'Breakeven'}]})}});
+  macNewCards(M,B,add);
   return out}
 function macTiles(M){const G=gm2(M),tile=(k,v,sub,ld,fr)=>`<div class="stat"><div class="k">${k}${fr?.st?` <span class="bias b-dn" title="${esc(fr.why||'stale')}" style="padding:1px 5px">⚠️ stale</span>`:''}</div><div class="v">${v}</div><div style="font-size:11px">${sub}</div><div class="mu" style="font-size:10px">${ld}</div></div>`;
   const ch=(id,days,f)=>{const s=ser(id,M);if(!s)return null;const i=back(s,days);return f(s.v.at(-1),s.v[i])},T=[];
   if(G){const fr={st:G.g.stale_components?.length>0||(Date.now()-G.last)/DAY>75||(M.failed||[]).some(x=>/M2/.test(x.id)),why:G.g.stale_components?.length?'stale component(s): '+G.g.stale_components.join(', '):'latest complete month older than 75 days or a component failed'};
-    T.push(tile('Global M2',usdT(G.tot),`<span class="${cls(G.mom)}">${pct(G.mom,2)} MoM</span> · <span class="${cls(G.yoy)}">${pct(G.yoy,1)} YoY</span>`,'complete month '+mU(G.last),fr))}
+    T.push(tile('Global M2',usdT(G.tot),`<span class="${cls(G.yoy)}">${pct(G.yoy,1)} YoY USD</span> · <span class="${cls(G.yoyCC)}">${G.yoyCC!=null?pct(G.yoyCC,1):'–'} const FX</span>`,'complete month '+mU(G.last),fr))}
   const one=(id,k,fv,fs,days)=>{const s=ser(id,M);if(!s)return tile(k,'–','missing','',{st:true,why:'missing'});const fr=fresh(id,M);return tile(k,fv(s.v.at(-1)),fs?ch(id,days,fs):'',(s.s.freq.startsWith('Monthly')?mU(ymd(s.s.last_date)):dU(ymd(s.s.last_date))),fr)};
   T.push(one('M2SL','US M2',v=>usdT(v),(a,b)=>`<span class="${cls(a-b)}">${pct((a/b-1)*100,1)} YoY</span>`,365));
   T.push(one('DTWEXBGS','Dollar index (broad)',v=>v.toFixed(2),(a,b)=>`<span class="${cls(a-b)}">${pct((a/b-1)*100,1)} 1M</span>`,30));
@@ -807,17 +803,17 @@ function macTiles(M){const G=gm2(M),tile=(k,v,sub,ld,fr)=>`<div class="stat"><di
   T.push(one('WALCL','Fed balance sheet',v=>'$'+(v/1e6).toFixed(2)+'T',(a,b)=>`<span class="${cls(a-b)}">${a-b>=0?'+':'-'}$${Math.abs((a-b)/1e3).toFixed(0)}B 4w</span>`,28));
   T.push(one('SP500','S&P 500',v=>v.toLocaleString('en-US',{maximumFractionDigits:0}),(a,b)=>`<span class="${cls(a-b)}">${pct((a/b-1)*100,1)} 1M</span>`,30));
   const a=ser('DGS10',M),b=ser('DFII10',M);if(a&&b){const fr=fresh('DFII10',M);T.push(tile('10Y breakeven',(a.v.at(-1)-b.v.at(-1)).toFixed(2)+'%','nominal − real','derived · '+dU(ymd(b.s.last_date)),fr))}
-  return T.join('')}
+  return T.join('')+macNewTiles(M,tile)}
 function macHealth(M,src){const ids=Object.keys(M.series||{}),st=ids.filter(id=>fresh(id,M).st),sc=M.global_m2?.sum_check;
   return`File updated ${dtU(Date.parse(M.updated))} · ${ids.length-st.length}/${ids.length} series fresh${st.length?' (⚠️ '+st.join(', ')+')':''} · failed: ${(M.failed||[]).length?(M.failed.map(x=>x.id).join(', ')):'none'} · M2 components sum ${sc?.latest?.ok&&sc.all_months_ok?'✓':'✗'} · ${src}`}
 async function renderMacro(force){const box=$('#macList'),y0=scrollY;
   if(!MAC.M||force){if(!MAC.M)box.innerHTML='<div class="card mu">Loading macro data…</div>';try{const r=await dataFile('macro',force);MAC.M=r.v;MAC.src=r.src}catch(e){box.innerHTML='<div class="card mu">Could not load data/macro.json and there is no cached copy yet. Tap ↻ to retry.</div>';return}
     try{await macBTC()}catch(e){MAC.btc=null}}
-  const M=MAC.M;$('#macTiles').innerHTML=macTiles(M);$('#macHealth').textContent=macHealth(M,MAC.src);
+  const M=MAC.M;$('#macTiles').innerHTML=macTiles(M);$('#macHealth').textContent=macHealth(M,MAC.src);paintForces();if(!NX.etf)dataFile('etf').then(r=>{NX.etf=r.v;paintForces()}).catch(()=>{});if(!SIGD)ensureSig().then(paintForces);
   MAC.cards=buildMacro(M,MAC.btc);if(force)MAC.items=null;if(!MAC.items)MAC.items=macItems();macCaps();const ctl=s=>s.ctl==='lag'?`<div class="chips" style="margin-top:8px">${[0,30,60,90].map(d=>`<button class="pill ${MAC.lag===d?'on':''}" data-mlag="${d}">M2 +${d}d</button>`).join('')}</div>`:s.ctl==='chg'?`<div class="chips" style="margin-top:8px">${['mom','yoy'].map(d=>`<button class="pill ${MAC.chg===d?'on':''}" data-mchg="${d}">${d.toUpperCase()} changes</button>`).join('')}</div>`:s.ctl==='inv'?`<div class="chips" style="margin-top:8px"><button class="pill ${MAC.inv?'on':''}" data-minv="1">Inverted dollar</button><button class="pill ${MAC.inv?'':'on'}" data-minv="0">Dollar</button></div>`:'';
   box.innerHTML=MAC.cards.map((s,i)=>{const stl=(s.uses||[]).filter(id=>fresh(id,M).st);return`<div class="card sig" data-mcard="${s.id}"><h3><span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px">${esc(s.title)}</span>${stl.length?`<span class="bias b-dn" title="${esc(stl.join(', '))}">⚠️ stale</span>`:''}<span class="sp"></span></h3>
    <canvas class="cv" data-mg="${i}"></canvas><div class="mu" data-mr="${i}" style="margin:8px 0;font-size:13px">${esc(s.read)}</div>${ctl(s)}
-   ${s.id==='lead'?`<table class="cor num" style="margin:6px 0"><tr><th>Lag</th>${s.ll.map(x=>`<th>${x.lag}m</th>`).join('')}</tr><tr><th>r</th>${s.ll.map(x=>`<td>${x.r==null?'–':x.r.toFixed(2)}</td>`).join('')}</tr><tr><th>n</th>${s.ll.map(x=>`<td class="mu">${x.n}</td>`).join('')}</tr></table><small class="note" style="margin:0 0 8px">Correlation of changes, descriptive; not a trading signal. ${MAC.chg==='mom'?`Bars inside the shaded ±${s.band.toFixed(2)} band are indistinguishable from noise.`:'YoY windows overlap, which inflates r; treat as illustrative.'}</small>`:''}
+   ${s.id==='lead'?leadTable(s):''}
    ${s.id==='comp'?'<small class="note" style="margin:0 0 8px">USD totals move with FX: a weaker dollar raises global M2 in USD even if local money supply is flat.</small>':''}
    <div class="flex"><button class="btn pri" data-mx="${i}|share">Share to X (4K)</button><button class="btn" data-mx="${i}|4k">4K ⬇</button><button class="btn" data-mx="${i}|8k">8K ⬇</button><button class="btn" data-mx="${i}|cap">Caption</button><button class="btn" data-mx="${i}|audit">🛡 Audit</button></div></div>`}).join('')||'<div class="card mu">No macro charts could be built from the data.</div>';
   $$('[data-mg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,MAC.cards[+cv.dataset.mg])});
@@ -825,7 +821,7 @@ async function renderMacro(force){const box=$('#macList'),y0=scrollY;
 async function auditMacro(s){const M=MAC.M,R=[];R.single=1;
   for(const id of s.uses||[]){const f=fresh(id,M),x=M.series[id];if(!x){R.push(['bad',`${id} is missing from macro.json.`]);continue}
     R.push([f.failed?'warn':f.st?'warn':'ok',`${x.title}: last data ${x.last_date} (${Math.round(f.age)} days old; ${f.f.toLowerCase()} cadence allows ${f.lim}${f.lim===10?', H.10 weekly release':''})${f.failed?' · last fetch FAILED, previous value kept':''} · ${x.source}.`])}
-  if((s.uses||[]).some(id=>/M2/.test(id))){const g=M.global_m2,sc=g.sum_check?.latest,G=gm2(M),L=G.P[G.L],sum=L.slice(2).reduce((a,b)=>a+b,0),d=Math.abs(sum-L[1]);
+  if((s.uses||[]).some(id=>/M2/.test(id))){const g=M.global_m2,sc=g.sum_check?.latest,G=gm2(M),L=G.P[G.L],sum=L.slice(2,6).reduce((a,b)=>a+b,0),d=Math.abs(sum-L[1]);
     R.push([sc?.ok&&g.sum_check.all_months_ok?'ok':'bad',`File's sum check: US + EA + JP + CN = ${usdT(sc?.sum_of_components)} vs total ${usdT(sc?.total)} for ${sc?.month} (all months ${g.sum_check.all_months_ok?'pass':'FAIL'}).`]);
     R.push([d<0.01?'ok':'bad',`Re-added in the app: components ${usdT(sum)} vs total ${usdT(L[1])} (diff ${d.toFixed(3)}bn).`]);
     R.push([g.stale_components?.length?'warn':'ok',`Latest complete month with all four economies: ${g.latest_complete_month}. ${g.stale_components?.length?'Stale: '+g.stale_components.join(', '):'No stale components.'}`]);
@@ -896,7 +892,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)r
 // ---------- OPPORTUNITY SCORE (transparent; replaces the old post score)
 // Weights: Rarity 30%, Strength 20%, Data confidence 20%, Recency 15%, Relevance 15%. 70+ = POST NOW.
 const OW={rar:.30,str:.20,conf:.20,rec:.15,rel:.15},OWN={rar:'Rarity',str:'Strength',conf:'Data confidence',rec:'Recency',rel:'Relevance'};
-const OPP_INFO='Opportunity score (0–100) = 30% Rarity (how extreme the reading is within the last 5 years, plus "rarest since") + 20% Strength (robust distance from the 5-year median; 3σ = 100) + 20% Data confidence (audit: second-source agreement and freshness; unaudited data scores on age and source count) + 15% Recency (a new extreme scores higher than an old one) + 15% Relevance (BTC 100, ETH 90, crypto-wide 80, macro 75, your other watchlist coins by rank, others 30). 70 or more = POST NOW.';
+const OPP_INFO='Opportunity score (0–100) = 30% Rarity (how extreme the reading is within its window: the last 5 years for crypto signals, the full record for macro series; the label names the window start, plus "rarest since") + 20% Strength (robust distance from the 5-year median; 3σ = 100) + 20% Data confidence (audit: second-source agreement and freshness; unaudited data scores on age and source count) + 15% Recency (a new extreme scores higher than an old one) + 15% Relevance (BTC 100, ETH 90, crypto-wide 80, macro 75, your other watchlist coins by rank, others 30). 70 or more = POST NOW.';
 const cap1=x=>x?x[0].toUpperCase()+x.slice(1):'';
 const OPEN=new Set();
 // metric series behind each signal, recomputed from SIGD so the score is generic: {t,a,dir,fmt}
@@ -920,18 +916,19 @@ function msFor(s,d){const P=d.P,id=s.id;
 // rarity / strength / recency facts for a metric series over (up to) the last 5 years
 function oppMeta(ms,dir,yrsMax=5){const t=ms.t,a=ms.a;let L=a.length-1;while(L>0&&(a[L]==null||!isFinite(a[L])))L--;const cur=a[L],last=t[L],from=last-yrsMax*365*DAY,win=[];
   for(let i=0;i<=L;i++)if(t[i]>=from&&a[i]!=null&&isFinite(a[i]))win.push(a[i]);
-  const f0=a.findIndex(x=>x!=null&&isFinite(x)),yrs=Math.max(1,Math.min(yrsMax,Math.round((last-Math.max(from,t[f0]))/365/DAY)));
+  const f0=a.findIndex(x=>x!=null&&isFinite(x)),startT=Math.max(from,t[f0]),yrs=Math.max(1,Math.min(yrsMax,Math.round((last-startT)/365/DAY))),fromL=mU(startT);
   const le=win.filter(x=>x<=cur).length/win.length*100,ge=win.filter(x=>x>=cur).length/win.length*100,side=dir==='lo'?'lo':dir==='hi'?'hi':(le<=ge?'lo':'hi'),share=side==='lo'?le:ge;
   const s=[...win].sort((x,y)=>x-y),med=s[Math.floor(s.length/2)],dev=win.map(x=>Math.abs(x-med)).sort((x,y)=>x-y),mad=dev[Math.floor(dev.length/2)]*1.4826,sd=Math.sqrt(win.reduce((q,x)=>q+(x-med)**2,0)/win.length)||1,z=(cur-med)/(mad||sd);
   const R=rarity(a.slice(0,L+1),t.slice(0,L+1),side==='lo');
   // extreme zone = bottom/top 20% of the window; recency = how long the metric has been inside it
   const thr=s[Math.min(s.length-1,Math.floor(s.length*(side==='lo'?.2:.8)))],inZ=x=>x!=null&&(side==='lo'?x<=thr:x>=thr);let j=L;while(j>0&&inZ(a[j-1]))j--;const zoneDays=inZ(cur)?(last-t[j])/DAY:null;
-  const shr=share<1?1:Math.round(share),pctTxt=share>50?`around the middle of its ${yrs}-year range`:`in the ${side==='lo'?'bottom':'top'} ${shr}% of its ${yrs}-year range`;
+  // the label always names the real window start ("since Jan 2006"), never a generic "5-year range"
+  const shr=share<1?1:Math.round(share),pctTxt=share>50?`around the middle of its range since ${fromL}`:`in the ${side==='lo'?'bottom':'top'} ${shr}% of readings since ${fromL}`;
   const w=side==='lo'?'lowest':'highest',sinceTxt=R.since?`the ${w} since ${dU(R.since)}`:`the ${w} in the data (since ${new Date(R.first).getUTCFullYear()})`;
-  return{cur,last,side,share,ext:100-share,z,yrs,pctTxt,since:R.since,sinceTxt,sinceDays:R.since?(last-R.since)/DAY:Infinity,zoneDays}}
+  return{cur,last,side,share,ext:100-share,z,yrs,from:fromL,startT,pctTxt,since:R.since,sinceTxt,sinceDays:R.since?(last-R.since)/DAY:Infinity,zoneDays,n:win.length}}
 function oppScore(s){const c={},m=s.om;
-  if(m){c.rar=[clamp(m.ext,0,100),`${m.pctTxt}; ${m.sinceTxt}`];c.str=[clamp(Math.abs(m.z)/3*100,0,100),`${Math.abs(m.z).toFixed(1)}σ (robust) ${m.z>=0?'above':'below'} the ${m.yrs}-year median`];
-    const zd=m.zoneDays;c.rec=zd==null?[25,`Not in an extreme zone (outside the ${m.side==='lo'?'bottom':'top'} 20% of the ${m.yrs}-year range)`]:zd<=7?[100,zd<1?'Entered its extreme zone with the latest reading':`Entered its extreme zone ${Math.round(zd)} day${Math.round(zd)===1?'':'s'} ago`]:zd<=30?[75,`In its extreme zone for ${Math.round(zd)} days`]:zd<=90?[50,`In its extreme zone for ${Math.round(zd)} days`]:[30,`In its extreme zone for ${Math.round(zd)} days (old news)`]}
+  if(m){c.rar=[clamp(m.ext,0,100),`${m.pctTxt}; ${m.sinceTxt}`];c.str=[clamp(Math.abs(m.z)/3*100,0,100),`${Math.abs(m.z).toFixed(1)}σ (robust) ${m.z>=0?'above':'below'} the median since ${m.from}`];
+    const zd=m.zoneDays;c.rec=zd==null?[25,`Not in an extreme zone (outside the ${m.side==='lo'?'bottom':'top'} 20% of readings since ${m.from})`]:zd<=7?[100,zd<1?'Entered its extreme zone with the latest reading':`Entered its extreme zone ${Math.round(zd)} day${Math.round(zd)===1?'':'s'} ago`]:zd<=30?[75,`In its extreme zone for ${Math.round(zd)} days`]:zd<=90?[50,`In its extreme zone for ${Math.round(zd)} days`]:[30,`In its extreme zone for ${Math.round(zd)} days (old news)`]}
   else{c.rar=[35,'Context chart: no single metric to rank'];c.str=[30,'Context chart'];c.rec=[30,'Context chart']}
   const age=s.lastT?(Date.now()-s.lastT)/DAY:null;
   if(s.audit)c.conf=[{ok:100,warn:70,bad:20}[s.audit],`Audit ${s.audit==='ok'?'passed':s.audit==='warn'?'passed with warnings':'failed'}${s.auditTxt?': '+s.auditTxt:''}`];
@@ -944,25 +941,25 @@ function sbHTML(s){const c=s.opp;if(!c)return'';return`<table class="cor sbt"><t
 const SIGT={pi:['the Pi Cycle Top ratio (111DMA ÷ 2×350DMA)','A cross above 1.0 has lined up with past cycle tops.'],mayer:["BTC's Mayer Multiple (price ÷ 200DMA)",'Below 0.8 has marked past cycle lows; above 2.4, past tops.'],'2y':['BTC against its 2-year moving average','Trading below the 2-year MA has historically been the deepest-value zone.'],rainbow:["BTC's distance from log-regression fair value",'Fair value here is a model fitted in the app, not a measured price.'],dd:["BTC's drawdown from its all-time high",'Measured on daily closes.'],wrsi:["BTC's weekly RSI",'Below 30 has lined up with past cycle lows; above 80, with euphoric phases.'],ethbtc:['ETH/BTC','Binance ETHBTC daily closes.'],gold:['BTC priced in gold','Gold via PAX Gold (1 PAXG = 1 oz).'],linkbtc:['LINK against BTC over 30 days','LINK/BTC ratio from Binance daily closes.'],hash:['the hashrate 30D/60D ratio','Below 1.0 is miner capitulation on the Hash Ribbons; the cross back up has been a buy signal in past cycles.'],halv:['BTC in this halving cycle','Halving cycles are a small sample: four so far.'],stable:['stablecoin supply growth','All USD-pegged stablecoins, DefiLlama.']};
 function sigSubj(s){return/^rv/.test(s.id)?`${s.asset} ${s.n}-day volatility`:(SIGT[s.id]||[s.title])[0]}
 function prepSig(s){const d=SIGD;s.kind='sig';if(s.id==='stable')s.asset='USD';if(s.id==='linkbtc')s.asset='LINK';if(s.id==='ethbtc')s.asset='ETH';
-  try{s.ms=msFor(s,d)}catch(e){s.ms=null}if(s.ms){s.om=oppMeta(s.ms,s.ms.dir);s.fmt=s.ms.fmt;s.lastT=s.om.last}else s.lastT=d.P?d.P.t.at(-1):null;
+  try{s.ms=s.msPre||msFor(s,d)}catch(e){s.ms=null}if(s.ms){s.om=oppMeta(s.ms,s.ms.dir,s.msPre?Infinity:5);s.fmt=s.ms.fmt;s.lastT=s.om.last}else s.lastT=d.P?d.P.t.at(-1):null;
   s.single=/rainbow|hash|stable/.test(s.id);s.srcS=(s.src||'').split(',')[0].replace(/ daily closes.*/,'')||(/hash/.test(s.id)?'blockchain.com':s.id==='stable'?'DefiLlama':/ethbtc|gold/.test(s.id)?'Binance':(d.P?.src||'blockchain.com'));
   oppScore(s);s.why=s.om?`${cap1(sigSubj(s))} is ${s.fmt(s.om.cur)}, ${s.om.share>50||s.om.sinceDays<60?s.om.pctTxt:s.om.pctTxt+' and '+s.om.sinceTxt}.`:s.read+'.';
   try{s.cap=capFirst({kind:'sig',id:s.id},s)}catch(e){}}
 let SIGP=null;
 function ensureSig(force){if(SIG&&!force)return Promise.resolve(SIG);if(SIGP&&!force)return SIGP;
-  SIGP=(async()=>{try{SIGD=await loadSigData();SIG=buildSignals(SIGD)}catch(e){SIG=[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
+  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);SIGD=await loadSigData();SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
 
 // ---------- TODAY briefing
 // Market state rules. Each chip: Supportive / Neutral / Headwind (or No data). Rules are shown on tap.
 const RULE={
  trend:'Supportive: price above its 200-day MA and up over 30 days. Headwind: below the 200-day MA and down over 30 days. Otherwise Neutral.',
  alts:'Supportive: ETH/BTC up more than 5% in 30 days. Headwind: down more than 5%. Otherwise Neutral. BTC dominance is shown for context only (the app has a snapshot, no dominance history).',
- macro:'+1 each: dollar index (Fed broad) down more than 1% in 3 months; 10Y real yield down more than 25bp in 3 months; global M2 growing more than 5% YoY. −1 each: dollar up more than 1%; real yield up more than 25bp; global M2 shrinking YoY. Total ≥ +1 Supportive, ≤ −1 Headwind, else Neutral.',
- deriv:'BTC perpetual funding per 8h: above +0.03% = Headwind (crowded longs paying up), below 0% = Supportive (shorts paying), otherwise Neutral. Open interest is a snapshot only: the app has no OI history, so no OI trend.',
+ macro:'+1 each: dollar index (Fed broad) down more than 1% in 3 months; 10Y real yield down more than 25bp in 3 months; global M2 growing more than 5% YoY at CONSTANT 2015 FX (so the dollar is not counted twice). −1 each: dollar up more than 1%; real yield up more than 25bp; constant-FX global M2 shrinking YoY. Total ≥ +1 Supportive, ≤ −1 Headwind, else Neutral.',
+ deriv:'BTC perpetual funding per 8h: above +0.03% = Headwind (crowded longs paying up), below 0% = Supportive (shorts paying), otherwise Neutral. OI change (7 days, in BTC terms so price moves do not count) is shown for context from data/derivs.json (single venue, usually OKX).',
  liq:'Supportive: stablecoin supply up more than 1% in 30 days AND US spot BTC+ETH ETF net flows positive over 7 trading days. Headwind: supply down AND ETF flows negative. Otherwise Neutral.'};
 const st30=()=>{const s=SIGD?.ST;if(!s||s.v.length<31)return null;const n=s.v.length;return(s.v[n-1]/s.v[n-31]-1)*100};
 const etf7=()=>{if(!NX.etf)return null;try{return['btc','eth'].map(a=>etfStats(NX.etf,a)?.s7||0).reduce((x,y)=>x+y,0)}catch(e){return null}};
-function macDeltas(){const M=MAC.M;if(!M)return null;const o={};try{const G=gm2(M);o.yoy=G?.yoy;o.m2m=G?mU(G.t.at(-1)):'';const dx=ser('DTWEXBGS',M);if(dx){const j=back(dx,91);o.dxy=dx.v.at(-1);o.dxy3=(o.dxy/dx.v[j]-1)*100}
+function macDeltas(){const M=MAC.M;if(!M)return null;const o={};try{const G=gm2(M);o.yoy=G?.yoyCC??G?.yoy;o.yoyUSD=G?.yoy;o.m2m=G?mU(G.t.at(-1)):'';const dx=ser('DTWEXBGS',M);if(dx){const j=back(dx,91);o.dxy=dx.v.at(-1);o.dxy3=(o.dxy/dx.v[j]-1)*100}
   const ry=ser('DFII10',M);if(ry){const j=back(ry,91);o.ry=ry.v.at(-1);o.ry3=(o.ry-ry.v[j])*100}}catch(e){}return o}
 function marketStates(){const out=[],P=SIGD?.P;
   const trend=(k,t,v,src)=>{const N=v.length;if(N<220)return{k,st:'No data',why:'Not enough price history',rule:RULE.trend};const m=sma(v,200)[N-1],i30=back({t,v},30),c30=(v[N-1]/v[i30]-1)*100,gap=(v[N-1]/m-1)*100,st=gap>0&&c30>0?'Supportive':gap<0&&c30<0?'Headwind':'Neutral';
@@ -973,9 +970,9 @@ function marketStates(){const out=[],P=SIGD?.P;
   if(EB&&EB.v.length>31){const N=EB.v.length,c=(EB.v[N-1]/EB.v[back(EB,30)]-1)*100;out.push({k:'Alts',st:c>5?'Supportive':c<-5?'Headwind':'Neutral',why:`ETH/BTC ${EB.v[N-1].toFixed(4)}, ${pct(c,1)} in 30 days${dom?`; BTC dominance ${dom.toFixed(1)}% (snapshot)`:''}`,rule:RULE.alts})}
   else out.push({k:'Alts',st:'No data',why:dom?`BTC dominance ${dom.toFixed(1)}%; ETH/BTC history loading`:'Loading…',rule:RULE.alts});
   const md=macDeltas();if(md&&md.dxy3!=null){let sc=0;const p=[];if(md.dxy3<-1)sc++;else if(md.dxy3>1)sc--;if(md.ry3<-25)sc++;else if(md.ry3>25)sc--;if(md.yoy>5)sc++;else if(md.yoy<0)sc--;
-    out.push({k:'Macro',st:sc>=1?'Supportive':sc<=-1?'Headwind':'Neutral',why:`Dollar ${pct(md.dxy3,1)} in 3 months; 10Y real yield ${md.ry.toFixed(2)}% (${md.ry3>=0?'+':''}${Math.round(md.ry3)}bp); global M2 ${pct(md.yoy,1)} YoY (${md.m2m}). Score ${sc>=0?'+':''}${sc}`,rule:RULE.macro})}
+    out.push({k:'Macro',st:sc>=1?'Supportive':sc<=-1?'Headwind':'Neutral',why:`Dollar ${pct(md.dxy3,1)} in 3 months; 10Y real yield ${md.ry.toFixed(2)}% (${md.ry3>=0?'+':''}${Math.round(md.ry3)}bp); global M2 ${pct(md.yoy,1)} YoY at constant FX (${md.m2m}). Score ${sc>=0?'+':''}${sc}`,rule:RULE.macro})}
   else out.push({k:'Macro',st:'No data',why:'Loading macro.json…',rule:RULE.macro});
-  const dv=D.ins.bitcoin?.dv;if(dv&&dv.f!=null){const f=dv.f*100;out.push({k:'Derivatives',st:f>.03?'Headwind':f<0?'Supportive':'Neutral',why:`BTC funding ${f.toFixed(4)}% per 8h${dv.oi?`; OI ${usdB(dv.oi)} (snapshot, no trend)`:''} (${dv.src||'Binance'})`,rule:RULE.deriv})}
+  const dv=D.ins.bitcoin?.dv,DL=DV?.assets?.BTC?.latest,fv=dv&&dv.f!=null?dv.f:DL?.funding;if(fv!=null){const f=fv*100,o=oiChg('BTC',7);out.push({k:'Derivatives',st:f>.03?'Headwind':f<0?'Supportive':'Neutral',why:`BTC funding ${f.toFixed(4)}% per 8h (${dv&&dv.f!=null?dv.src||'Binance':DV.assets.BTC.funding.source})${o?`; OI ${pct(o.ch,1)} in 7 days in BTC terms (${o.src})`:''}`,rule:RULE.deriv})}
   else out.push({k:'Derivatives',st:'No data',why:Object.keys(D.ins).length?'Funding unavailable from Binance and OKX right now':'Loading funding…',rule:RULE.deriv});
   const s3=st30(),e7=etf7();if(s3!=null||e7!=null){const st=s3!=null&&e7!=null?(s3>1&&e7>0?'Supportive':s3<0&&e7<0?'Headwind':'Neutral'):'Neutral';
     out.push({k:'Liquidity',st,why:[s3!=null?`Stablecoins ${pct(s3,1)} in 30 days`:'stablecoins n/a',e7!=null?`BTC+ETH ETFs ${fM(e7,1)} over 7 trading days`:'ETF flows n/a'].join('; '),rule:RULE.liq})}
@@ -989,8 +986,8 @@ function clusters(){const P=SIGD?.P,out=[],md=macDeltas()||{},I=(l,v,ok)=>({l,v,
   if(SIGD?.H){const v=SIGD.H.v,N=v.length;hr=sma(v,30)[N-1]/sma(v,60)[N-1]}
   const fs=f!=null?(f*100).toFixed(4)+'%/8h':'';
   out.push({name:'Expansion setup',desc:'Volatility compressed while liquidity builds and positioning stays calm. Historically precedes a large move; direction unknown.',in:[
-    vol?I('BTC 7-day volatility in the bottom 20% of 5 years',`${vol.cur.toFixed(1)}% · bottom ${Math.max(1,Math.round(vol.share))}%`,vol.share<=20):na('BTC 7-day volatility in the bottom 20% of 5 years','loading'),
-    na('Open interest rising','n/a: the app has no OI history'),
+    vol?I(`BTC 7-day volatility in the bottom 20% since ${vol.from}`,`${vol.cur.toFixed(1)}% · bottom ${Math.max(1,Math.round(vol.share))}%`,vol.share<=20):na('BTC 7-day volatility in the bottom 20% (last 5 years)','loading'),
+    (()=>{const o=oiChg('BTC',7);return o?I('Open interest rising (BTC terms, +3% in 7 days)',`${pct(o.ch,1)} · ${o.src}`,o.ch>3):na('Open interest rising','derivs.json loading')})(),
     f!=null?I('Funding neutral (|rate| ≤ 0.01%/8h)',fs,Math.abs(f)<=.0001):na('Funding neutral (|rate| ≤ 0.01%/8h)','n/a'),
     s3!=null?I('Stablecoin supply rising (30 days)',pct(s3,1),s3>0):na('Stablecoin supply rising (30 days)','n/a')]});
   out.push({name:'Value zone',desc:'Conditions that lined up with past cycle lows.',in:[
@@ -998,23 +995,26 @@ function clusters(){const P=SIGD?.P,out=[],md=macDeltas()||{},I=(l,v,ok)=>({l,v,
     dd!=null?I('Drawdown deeper than −40%',dd.toFixed(1)+'%',dd<-40):na('Drawdown deeper than −40%','n/a'),r2!=null?I('Price < 1.2× the 2-year MA',r2.toFixed(2)+'×',r2<1.2):na('Price < 1.2× the 2-year MA','n/a'),
     hr!=null?I('Hash ribbon capitulation (30D < 60D)',hr.toFixed(3),hr<1):na('Hash ribbon capitulation (30D < 60D)','n/a')]});
   out.push({name:'Overheating',desc:'Conditions that lined up with past euphoric phases.',in:[
+    (()=>{const r=oiCapNow('BTC');return r?I('OI ÷ market cap in top 10% of its history',`${r.v.toFixed(2)}% · ${r.pTxt}`,r.share<=10&&r.side==='hi'):na('OI ÷ market cap in top 10% of its history','loading')})(),
     mayer!=null?I('Mayer Multiple > 2.0',mayer.toFixed(2),mayer>2):na('Mayer Multiple > 2.0','n/a'),wr!=null?I('Weekly RSI > 75',wr.toFixed(1),wr>75):na('Weekly RSI > 75','n/a'),
     pi!=null?I('Pi Cycle ratio > 0.9',pi.toFixed(3),pi>.9):na('Pi Cycle ratio > 0.9','n/a'),f!=null?I('Funding > 0.03%/8h',fs,f>.0003):na('Funding > 0.03%/8h','n/a'),
     r2!=null?I('Price > 3× the 2-year MA',r2.toFixed(2)+'×',r2>3):na('Price > 3× the 2-year MA','n/a')]});
   out.push({name:'Liquidity tailwind',desc:'Money conditions that have historically helped risk assets.',in:[
-    md.yoy!=null?I('Global M2 YoY > 5%',pct(md.yoy,1),md.yoy>5):na('Global M2 YoY > 5%','loading'),md.dxy3!=null?I('Dollar index down over 3 months',pct(md.dxy3,1),md.dxy3<0):na('Dollar index down over 3 months','loading'),
+    md.yoy!=null?I('Global M2 YoY > 5% (constant FX)',pct(md.yoy,1),md.yoy>5):na('Global M2 YoY > 5% (constant FX)','loading'),md.dxy3!=null?I('Dollar index down over 3 months',pct(md.dxy3,1),md.dxy3<0):na('Dollar index down over 3 months','loading'),
     md.ry3!=null?I('10Y real yield down over 3 months',(md.ry3>=0?'+':'')+Math.round(md.ry3)+'bp',md.ry3<0):na('10Y real yield down over 3 months','loading'),
     s3!=null?I('Stablecoin supply up > 1% (30 days)',pct(s3,1),s3>1):na('Stablecoin supply up > 1% (30 days)','n/a'),e7!=null?I('BTC+ETH ETF flows positive (7 trading days)',fM(e7,1),e7>0):na('BTC+ETH ETF flows positive (7 trading days)','loading')]});
   out.forEach(c=>{c.avail=c.in.filter(x=>x.ok!=null).length;c.met=c.in.filter(x=>x.ok===true).length;c.active=c.avail>=3&&c.met/c.avail>=.75});
   return out.filter(c=>c.avail>=3).sort((a,b)=>b.met/b.avail-a.met/a.avail)}
 // macro charts as rankable items (lead-lag and composition are context, not ranked)
 function macItems(){const M=MAC.M,out=[];if(!M||!MAC.cards.length)return out;
-  const mk=(id,ms,subj,val,uses)=>{const card=MAC.cards.find(c=>c.id===id);if(!card||!ms)return;const om=oppMeta(ms,'abs'),fr=uses.map(u=>fresh(u,M)),st=fr.filter(x=>x.st).length;
+  const mk=(id,ms,subj,val,uses)=>{const card=MAC.cards.find(c=>c.id===id);if(!card||!ms)return;const om=oppMeta(ms,'abs',Infinity),fr=uses.map(u=>fresh(u,M)),st=fr.filter(x=>x.st).length;
     const it={kind:'mac',id,title:card.title,card,om,asset:'MACRO',subj,lastT:om.last,confFix:[st?45:85,st?`${st} input series stale`:`All ${uses.length} input series fresh; one public source each (${card.src.split(' · ')[0]})`]};oppScore(it);
     it.why=`${cap1(subj)} is ${val}, ${om.share>50||om.sinceDays<60?om.pctTxt:om.pctTxt+' and '+om.sinceTxt}.`;out.push(it)};
-  try{const G=gm2(M);if(G){const idx=new Map(G.t.map((x,i)=>[mi(x),i])),yo=G.t.map((x,i)=>{const j=idx.get(mi(x)-12);return j!=null?(G.P[i][1]/G.P[j][1]-1)*100:null});mk('btcm2',{t:G.t,a:yo},'global M2 growth',pct(G.yoy,1)+' YoY',['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC'])}}catch(e){console.warn('m2 item',e)}
+  try{const G=gm2(M);if(G){const idx=new Map(G.t.map((x,i)=>[mi(x),i])),cc=G.P[0][6]!=null?6:1,yo=G.t.map((x,i)=>{const j=idx.get(mi(x)-12);return j!=null?(G.P[i][cc]/G.P[j][cc]-1)*100:null});mk('btcm2',{t:G.t,a:yo},cc===6?'global M2 growth at constant FX':'global M2 growth',pct(cc===6?G.yoyCC:G.yoy,1)+' YoY',['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC'])}}catch(e){console.warn('m2 item',e)}
   const dx=ser('DTWEXBGS',M);if(dx)mk('dxy',{t:dx.t,a:dx.v},'the US dollar index (Fed broad)',dx.v.at(-1).toFixed(2),['DTWEXBGS']);
   const ry=ser('DFII10',M);if(ry)mk('real',{t:ry.t,a:ry.v},'the US 10-year real yield',ry.v.at(-1).toFixed(2)+'%',['DFII10']);
+  const W=wkSer();if(W){const a=W.v.map((v,i)=>i>=13?(v/W.v[i-13]-1)*100:null);mk('netliq',{t:W.t,a},'the 13-week change in US net liquidity',pct(a.at(-1),1),['WALCL','WTREGEN','RRPONTSYD'])}
+  const C=curveInfo(M);if(C)mk('curve',{t:C.s.t,a:C.s.v},'the 2s10s Treasury spread',(C.cur>=0?'+':'')+C.cur.toFixed(2)+' pts',['T10Y2Y']);
   return out}
 async function ensureMac(){if(!MAC.M){try{const r=await dataFile('macro');MAC.M=r.v;MAC.src=r.src}catch(e){return null}}
   if(!MAC.btc){try{await macBTC()}catch(e){}}if(!MAC.cards.length){try{MAC.cards=buildMacro(MAC.M,MAC.btc);macCaps()}catch(e){}}if(!MAC.items)MAC.items=macItems();return MAC.M}
@@ -1044,13 +1044,14 @@ function paintToday(){const el=$('#todayBox');if(!el||TAB!=='today')return;const
   const recs=items.length?items.map((it,i)=>{const k=it.kind+'|'+it.id;return`<div class="rec" data-open="${k}"><div class="msh"><span class="rk">${i+1}</span><b class="rt">${esc(it.title)}</b><span class="sp"></span>${it.score>=70?'<span class="bias b-up">POST NOW</span>':''}<button class="btn sm num" data-sb="${k}">${it.score} ⓘ</button></div><div class="msw">${esc(it.why)}</div><div class="sbx ${OPEN.has(k)?'on':''}" data-sbx="${k}">${OPEN.has(k)?sbHTML(it):''}</div></div>`}).join(''):'<div class="mu">Scanning signal history…</div>';
   const cl=SIGD?clusters():[];
   const cls2=cl.length?cl.map(c=>`<div class="cl"><div class="msh"><b>${esc(c.name)}</b><span class="sp"></span><span class="bias ${c.active?'b-up':c.met?'b-nt':'b-nd'}">${c.active?'Active':c.met?'Partial':'Not active'} · ${c.met}/${c.avail}</span></div><div class="msw">${esc(c.desc)}</div>${c.in.map(x=>`<div class="cin"><span class="${x.ok===true?'up':x.ok===false?'dn':'mu'}">${x.ok===true?'✓':x.ok===false?'✗':'–'}</span><span>${esc(x.l)}</span><span class="sp"></span><span class="num mu">${esc(x.v)}</span></div>`).join('')}</div>`).join(''):'<div class="mu">Waiting for data…</div>';
-  const nw=D.news.length?topNews().map(({n,hit,out,age})=>`<div class="rec"><div class="mu" style="font-size:11px">${esc(n.src)} · ${ago(n.t)} ago${hit?` · <span class="up">${esc(hit)}</span>`:''}${out.length?` · also ${esc(out.slice(0,2).join(', '))}`:''}</div><a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><div style="margin-top:6px"><button class="btn sm" data-nd="${D.news.indexOf(n)}">✦ Captions</button></div></div>`).join(''):'<div class="mu">Loading headlines…</div>';
+  const nw=0&&D.news.length?topNews().map(({n,hit,out,age})=>`<div class="rec"><div class="mu" style="font-size:11px">${esc(n.src)} · ${ago(n.t)} ago${hit?` · <span class="up">${esc(hit)}</span>`:''}${out.length?` · also ${esc(out.slice(0,2).join(', '))}`:''}</div><a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><div style="margin-top:6px"><button class="btn sm" data-nd="${D.news.indexOf(n)}">✦ Captions</button></div></div>`).join(''):'<div class="mu">Loading headlines…</div>';
   const ev=(NX.cal?.items||[]).filter(e=>Date.parse(e.date_utc)>now).sort((a,b)=>Date.parse(a.date_utc)-Date.parse(b.date_utc))[0],evt=ev?Date.parse(ev.date_utc):0;
   const evH=ev?`<div class="msh"><span class="bias ${(KIND[ev.type]||['','b-nt'])[1]}">${(KIND[ev.type]||['Macro'])[0]}</span><b style="min-width:0">${esc(ev.title)}</b><span class="sp"></span><span class="bias b-nt num" data-cd="${evt}">${cdown(evt)}</span></div><div class="msw">${evU(evt)}${ev.verification==='verified'?' · ✓ verified':ev.verification==='date_verified_time_assumed'?' · time assumed':''}</div>`:NX.cal?'<div class="mu">No upcoming events in calendar.json.</div>':'<div class="mu">Loading calendar…</div>';
   el.innerHTML=`<div class="card"><h3>Market state<span class="sp"></span><span class="mu" style="letter-spacing:0;text-transform:none;font-size:11px">${new Date(now).toLocaleString('en-GB',{timeZone:'UTC',weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/,/g,'')} UTC</span></h3>${chips}</div>
+  ${altTodayHTML()}
   <div class="card"><h3>Charts worth checking today</h3>${recs}<small class="note">Tap a row to open its chart; tap the score for the breakdown. ${OPP_INFO}</small></div>
   <div class="card"><h3>Signal clusters</h3>${cls2}<small class="note">A cluster shows only when at least 3 of its inputs have data. Active = at least 75% of available inputs met.</small></div>
-  <div class="card"><h3>Important news</h3>${nw}<small class="note">Ranked by watchlist match (+2), coverage by more than one outlet (+2) and recency (under 6h +2, under 24h +1).</small></div>
+  <div class="card"><h3>Important news</h3>${newsTopHTML()}<small class="note">Stories are merged across outlets, then scored 0–100: freshness 30, pickup 20, size 20, price reaction 20, your coins 10, opinion headlines −15. 70+ = POST NOW. Tap a score for the breakdown.</small></div>
   <div class="card"><h3>Next event</h3>${evH}<div class="msw" style="margin-top:8px">${freshLine()}</div></div>`;
   if(y>0)requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)})}
 async function openChart(k){const [kind,id]=k.split('|');const go=el=>{if(!el)return;const top=el.getBoundingClientRect().top+scrollY-64;scrollTo(0,top);el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')};
@@ -1065,8 +1066,9 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-sb],[data-
 // ---------- CAPTION ENGINE: 3 styles per chart, built from the chart's own numbers
 const STY=[['simple','Simple'],['analytical','Analytical'],['ct','CT-native']];
 // banned in generation and in the audit
-const BANNED=[[/what are you buying/i,'"What are you buying"'],[/what'?s your move/i,'"What\'s your move"'],[/everyone'?s watching/i,'"Everyone\'s watching"'],[/are you ready/i,'"Are you ready"'],[/don'?t miss/i,'"Don\'t miss"'],[/\bLFG\b/i,'"LFG"'],[/to the moon/i,'"to the moon"']];
-function lintBanned(txt,exempt){const out=[],T=txt.trim();for(const [re,l] of BANNED)if(re.test(T))out.push(`Banned phrase: ${l}.`);
+const BANNED=[[/what are you buying/i,'"What are you buying"'],[/what'?s your move/i,'"What\'s your move"'],[/everyone'?s watching/i,'"Everyone\'s watching"'],[/are you ready/i,'"Are you ready"'],[/don'?t miss/i,'"Don\'t miss"'],[/\bLFG\b/i,'"LFG"'],[/to the moon/i,'"to the moon"'],[/\b(starts|begins|is starting) (here|now)\b/i,'a call ("starts here")'],[/\baltseason (is )?(coming|here|loading|imminent)\b/i,'an altseason call'],[/\babout to (explode|pump|rip|moon|break ?out|send)\b/i,'a call ("about to…")'],[/\bnext leg (up|down)\b/i,'a call ("next leg")'],[/\b(load up|loading up|accumulate now|time to buy|buy the dip)\b/i,'a buy call']];
+function lintBanned(txt,exempt,openCandle){const out=[],T=txt.trim();for(const [re,l] of BANNED)if(re.test(T))out.push(`Banned phrase: ${l}.`);
+  if(openCandle&&/\b(daily )?(close[sd]?|closing)\b/i.test(T))out.push('Says "close" but the number comes from today\'s unfinished UTC candle. Use the last completed close or drop the word.');
   if(/\bNFA\b[\s.!)]*$/i.test(T))out.push('Banned closer: "NFA". Drop it; the numbers speak for themselves.');
   const qs=T.split(/(?<=[.!?])\s+|\n+/).map(x=>x.trim()).filter(x=>/\?\s*(\p{Extended_Pictographic}\s*)*$/u.test(x)&&/\b(you|your|you're|y'all|thoughts|agree|anyone|who else)\b/i.test(x)&&!(exempt&&exempt.includes(x.replace(/\s*(\p{Extended_Pictographic}\s*)*$/u,''))));
   if(qs.length)out.push(`Generic question to the reader ("${qs[0].slice(0,60)}"). State the data instead.`);
@@ -1074,125 +1076,179 @@ function lintBanned(txt,exempt){const out=[],T=txt.trim();for(const [re,l] of BA
   const em=T.match(/\p{Extended_Pictographic}/gu)||[];if(em.length>3||/(\p{Extended_Pictographic}\uFE0F?\s*){3,}/u.test(T))out.push(`Emoji wall (${em.length} emoji); one or two at most.`);
   const ct=(T.match(/\$[A-Za-z]{2,6}\b/g)||[]).length;if(ct>2)out.push(`${ct} cashtags; keep $TICKER use light (1–2).`);return out}
 const tidy=s=>s.replace(/[ \t]+/g,' ').replace(/ +([.,;:])/g,'$1').replace(/([^.])\.\.(?!\.)/g,'$1.').replace(/,\./g,'.').replace(/\(\s*\)/g,'').replace(/ *\n */g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+// Style rules: the number goes in the first line; chart claims say "historically"; news names its source inline; no calls.
 const CAPT={
 vol:{simple:[
- F=>`${F.A} has been ${F.lo?'unusually quiet':'unusually volatile'}. ${F.n}-day volatility is ${F.val}, ${F.since}.`,
- F=>`${F.lo?'Quiet stretch':'Choppy stretch'} for ${F.A}: ${F.n}-day realized volatility is ${F.val}, ${F.pos}.`,
- F=>`${F.n}-day volatility on ${F.tk} is ${F.lo?'down':'up'} to ${F.val}. ${F.sinceD?`Last time it was this ${F.lo?'low':'high'}: ${F.sinceD}.`:'That is a record for this dataset.'}`,
- F=>`${F.A} volatility check: ${F.val} over ${F.n} days, ${F.pos}. Data through ${F.date}.`],
+ F=>!F.rare?'':`${F.A}'s daily closes are the ${F.lo?'quietest':'wildest'} ${F.recordAll?'on record':'since '+F.sinceY}. ${F.n}-day close-to-close volatility is ${F.val}. Historically, ${F.lo?"compression this tight hasn't lasted long, but it doesn't tell you which way it breaks":'spikes like this have tended to cluster before they fade'}.`,
+ F=>`${F.n}-day volatility on ${F.A} is ${F.val}, ${F.since}. ${F.lo?'Historically, quiet stretches like this have not stayed quiet for long.':'Historically, volatility this high has come in clusters.'}`,
+ F=>`${F.val} is ${F.A}'s ${F.n}-day realized volatility, ${F.pos}. ${F.lo?'Low volatility says nothing about direction.':'High volatility says nothing about direction either.'}`,
+ F=>`${F.A} ${F.n}-day volatility: ${F.val} (data through ${F.date}). That's ${F.since}.`],
 analytical:[
- F=>`${F.A} ${F.n}D realized volatility (close-to-close, annualized): ${F.val}. That is ${F.pos} and ${F.since}. ${F.note}`,
- F=>`Volatility regime: ${F.A} ${F.n}D vol at ${F.val}, ${F.z}. ${cap1(F.since)}. Source: ${F.src}, through ${F.date} UTC.`,
- F=>`${F.n}-day vol for ${F.A} printed ${F.val} on ${F.date}, ${F.pos}. ${F.lo?'Compression is a condition, not a signal; it can resolve either way.':'Volatility spikes have tended to cluster rather than fade in a day.'}`,
- F=>`Data point: ${F.A} ${F.n}D realized vol ${F.val} (${F.date}). ${cap1(F.pos)}; ${F.since}.`],
+ F=>`${F.A} ${F.n}D realized volatility is ${F.val} (close-to-close, annualized, through ${F.date}). That is ${F.pos} and ${F.since}. ${F.note}`,
+ F=>`${F.val} ${F.n}-day realized vol for ${F.A}, ${F.z}. ${cap1(F.since)}. ${F.lo?'Historically, regimes like this have ended with a larger move, direction unknown.':'Historically, high-volatility regimes have lasted weeks rather than days.'} Source: ${F.src}.`,
+ F=>`${F.A} ${F.n}D vol: ${F.val}. Percentile: ${F.pos}. Last comparable reading: ${F.sinceD||'none in the data'}.`,
+ F=>`${F.val} on ${F.A} ${F.n}-day realized volatility (${F.date}), ${F.since}. ${F.lo?'Compression is a condition, not a signal.':'Expansion is a condition, not a signal.'} ${F.note}`],
 ct:[
- F=>`${F.A} vol is ${F.lo?'asleep':'wide awake'}. ${F.n}D realized ${F.val}, ${F.since}. ${F.lo?'Coiled.':'Messy.'}`,
- F=>`${F.n}D vol on ${F.tk}: ${F.val}. ${cap1(F.since)}. ${F.lo?'Range traders happy, breakout traders waiting.':'Both sides getting run.'}`,
- F=>`${F.A} ${F.n}D vol ${F.val}. That's ${F.pos}. ${F.lo?'Tight.':'Loud.'}`,
- F=>`chart of the day: ${F.A} ${F.n}D realized vol at ${F.val}, ${F.since}`]},
+ F=>`${F.A} ${F.n}D vol ${F.val}. ${cap1(F.since)}. ${F.lo?'Coiled.':'Messy.'}`,
+ F=>`${F.val} ${F.n}D realized on ${F.tk}. ${F.lo?'Range traders happy, breakout traders waiting.':'Both sides getting run.'}`,
+ F=>`${F.A} vol ${F.lo?'asleep':'wide awake'}: ${F.val} over ${F.n} days, ${F.since}.`,
+ F=>`${F.n}D vol, ${F.A}: ${F.val}. ${cap1(F.pos)}. ${F.lo?'Tight.':'Loud.'}`]},
 level:{simple:[
- F=>`${cap1(F.subj)} is at ${F.val}, ${F.since}.`,
- F=>`${cap1(F.subj)} just printed ${F.val}. That's ${F.pos}.`,
- F=>`${cap1(F.subj)}: ${F.val} as of ${F.date}, ${F.pos}.`,
- F=>`Worth a look: ${F.subj} is ${F.val}, ${F.since}.`],
+ F=>`${cap1(F.subj)} is ${F.val}, ${F.since}. ${F.note}`,
+ F=>`${F.val} on ${F.subj}, ${F.pos}.`,
+ F=>`${cap1(F.subj)} is at ${F.val} (data through ${F.date}). That's ${F.since}.`,
+ F=>`${cap1(F.subj)}: ${F.val}. ${cap1(F.pos)}. ${F.note}`],
 analytical:[
- F=>`${cap1(F.subj)}: ${F.val} (${F.date}). ${cap1(F.pos)}, ${F.z}. ${F.note}`,
- F=>`Where ${F.subj} sits: ${F.val}, ${F.since}. ${F.note} Source: ${F.src}.`,
- F=>`${cap1(F.subj)} is ${F.z} at ${F.val}. ${cap1(F.pos)}. ${F.note}`,
- F=>`Reading: ${F.subj} = ${F.val}. Context: ${F.pos}, ${F.since}. Data through ${F.date} UTC.`],
+ F=>`${cap1(F.subj)}: ${F.val} (${F.date}), ${F.pos}, ${F.z}. ${F.note}`,
+ F=>`${cap1(F.subj)} at ${F.val} is ${F.since}. ${F.note} Source: ${F.src}.`,
+ F=>`${F.val} on ${F.subj}. ${cap1(F.z)}; ${F.pos}. ${F.note}`,
+ F=>`Reading: ${F.subj} = ${F.val} through ${F.date} UTC. Context: ${F.pos}; ${F.since}.`],
 ct:[
  F=>`${cap1(F.subj)} ${F.val}. ${cap1(F.since)}.`,
- F=>`${cap1(F.since)} for ${F.subj}: ${F.val}.`,
- F=>`${F.tk} context: ${F.subj} at ${F.val}, ${F.lo?'deep in the low end':'up in the high end'} of the ${F.yrs}-year range.`,
+ F=>`${F.val} on ${F.subj}. ${cap1(F.since)}.`,
+ F=>`${F.val}: ${F.subj}, ${F.lo?'deep in the low end':'up in the high end'} of its range since ${F.from}.`,
  F=>`${cap1(F.subj)}: ${F.val}. ${cap1(F.pos)}. Noted.`]},
 flows:{simple:[
- F=>`${cap1(F.subj)}: ${F.now}. ${cap1(F.chg)}${F.chg2?', '+F.chg2:''}.`,
- F=>`${cap1(F.chg)} for ${F.subjL}${F.chg2?` (${F.chg2})`:''}. Latest: ${F.now}.`,
- F=>`Flows update: ${F.subjL} ${F.now}, ${F.chg}.`,
- F=>`${cap1(F.subj)} ${F.now} (${F.src}). ${cap1(F.chg)}.`],
+ F=>F.lead?`${F.lead} ${F.run} ${F.view}`:`${cap1(F.subj)}: ${F.now}. ${cap1(F.chg)}${F.chg2?', '+F.chg2:''}.`,
+ F=>`${cap1(F.subj)} ${F.now}. ${cap1(F.chg)}${F.chg2?', '+F.chg2:''}.`,
+ F=>`${cap1(F.chg)} for ${F.subjL}. Latest: ${F.now}.${F.view?' '+F.view:''}`,
+ F=>`${F.now} on ${F.subjL}. ${cap1(F.chg)}.`],
 analytical:[
- F=>`${cap1(F.subj)}, ${F.date}: ${F.now}. Rolling: ${F.chg}${F.chg2?'; '+F.chg2:''}. ${F.note}`,
- F=>`Flow data (${F.src}): ${F.subjL} ${F.now}. ${cap1(F.chg)}.${F.pos?' '+cap1(F.pos)+'.':''}`,
- F=>`One day is noise; the run rate matters more. ${cap1(F.subj)}: ${F.now}, ${F.chg}${F.chg2?', '+F.chg2:''}.`,
- F=>`${cap1(F.subj)}. Latest ${F.now}; ${F.chg}${F.chg2?', '+F.chg2:''}. Source ${F.src}, through ${F.date}.`],
+ F=>`${cap1(F.subj)}: ${F.now}. Rolling: ${F.chg}${F.chg2?'; '+F.chg2:''}. ${F.note}`,
+ F=>`${F.now} for ${F.subjL} (${F.src}). ${cap1(F.chg)}.${F.pos?' The 30-day pace is '+F.pos+'.':''}`,
+ F=>`${F.lead?F.lead+' ':''}${cap1(F.subj)}: ${F.now}; ${F.chg}${F.chg2?', '+F.chg2:''}. One day is noise; the run rate matters more.`,
+ F=>`${cap1(F.subj)}: latest ${F.now}; ${F.chg}${F.chg2?', '+F.chg2:''}. Source ${F.src}, through ${F.date}.`],
 ct:[
  F=>`${F.subjS} ${F.now}. ${cap1(F.chg)}. ${F.mood}`,
- F=>`${cap1(F.chg)} on ${F.subjL}. ${F.mood}`,
+ F=>`${F.lead||cap1(F.chg)+' on '+F.subjL+'.'} ${F.mood}`,
  F=>`${F.subjS}: ${F.now}${F.chg2?', '+F.chg2:''}. ${F.mood}`,
- F=>`flows: ${F.subjL} ${F.now}, ${F.chg}`]},
+ F=>`${F.now} on ${F.subjL}, ${F.chg}. ${F.mood}`]},
 macro:{simple:[
- F=>`${cap1(F.subj)} is ${F.now}${F.chg?', '+F.chg:''}.${F.pos?` That's ${F.pos}.`:''}`,
- F=>`Macro check: ${F.subjL} at ${F.now}${F.chg?` (${F.chg})`:''}.`,
+ F=>`${cap1(F.subj)} is ${F.now}${F.chg?', '+F.chg:''}.${F.pos?` That's ${F.pos}${F.since?', '+F.since:''}.`:''}`,
+ F=>`${F.now}: ${F.subjL}${F.chg?` (${F.chg})`:''}. ${F.mood}`,
  F=>`${cap1(F.subj)}: ${F.now}${F.chg?', '+F.chg:''}. Data through ${F.date}.`,
- F=>`Where ${F.subjL} stands: ${F.now}${F.chg?', '+F.chg:''}. ${F.mood}`],
+ F=>`${cap1(F.subjL)} at ${F.now}${F.chg?', '+F.chg:''}. ${F.caveat}`],
 analytical:[
  F=>`${cap1(F.subj)}: ${F.now}${F.chg?` (${F.chg})`:''}. ${F.pos?cap1(F.pos)+'. ':''}${F.note} Source: ${F.src}.`,
- F=>`${F.note} ${cap1(F.subj)} now ${F.now}${F.chg?', '+F.chg:''}, through ${F.date}.`,
- F=>`Data: ${F.subjL} ${F.now}. ${F.chg?cap1(F.chg)+'. ':''}${F.caveat}`,
- F=>`${cap1(F.subj)} (${F.src}): ${F.now}. ${F.chg?cap1(F.chg)+'. ':''}${F.pos?cap1(F.pos)+'. ':''}${F.caveat}`],
+ F=>`${F.now} on ${F.subjL}${F.chg?', '+F.chg:''}, through ${F.date}. ${F.note}`,
+ F=>`${cap1(F.subj)} ${F.now}. ${F.chg?cap1(F.chg)+'. ':''}${F.caveat}`,
+ F=>`${cap1(F.subj)} (${F.src}): ${F.now}. ${F.since?cap1(F.since)+'. ':''}${F.caveat}`],
 ct:[
  F=>`${F.subjS} ${F.now}. ${F.chg?cap1(F.chg)+'. ':''}${F.mood}`,
- F=>`macro: ${F.subjL} ${F.now}${F.chg?', '+F.chg:''}`,
+ F=>`${F.now} on ${F.subjL}${F.chg?', '+F.chg:''}. ${F.mood}`,
  F=>`${F.chg?cap1(F.chg)+' on '+F.subjL:cap1(F.subjL)+' at '+F.now}. ${F.mood}`,
  F=>`${F.subjS}: ${F.now}. ${F.pos?cap1(F.pos)+'.':F.mood}`]},
 news:{simple:[
- F=>`${F.title} (${F.src})\n\n${F.link}`,
- F=>`${F.src} reports: ${F.title}\n\n${F.link}`,
- F=>`${F.title}.${F.outlets?` Also covered by ${F.outlets}.`:''}\n\n${F.link}`,
- F=>`News${F.hit?' on '+F.hit:''}: ${F.title}\n\n${F.link}`],
+ F=>`${F.titleS}, per ${F.src}.\n\n${F.link}`,
+ F=>`${F.src}: ${F.title}\n\n${F.link}`,
+ F=>`${F.titleS} (${F.src}${F.outlets?', also '+F.outlets:''}).\n\n${F.link}`,
+ F=>`${F.hit?F.hit+': ':''}${F.titleS}, ${F.src} reports.\n\n${F.link}`],
 analytical:[
- F=>`${F.title}\n\nReported by ${F.allSrc}, ${F.age} ago.${F.desc1?' '+F.desc1:''}\n\n${F.link}`,
- F=>`${F.desc1||F.title}\n\nSource: ${F.src} (${F.age} ago)${F.outlets?', also '+F.outlets:''}.\n\n${F.link}`,
- F=>`Key line from ${F.src}: "${F.title}".${F.hit?` Relevant for ${F.hit}.`:''}\n\n${F.link}`,
- F=>`${F.title}\n\n${F.outlets?`More than one outlet has it (${F.allSrc}).`:`Single source so far (${F.src}); worth waiting for a second.`}\n\n${F.link}`],
+ F=>`${F.titleS} (${F.src}, ${F.age} ago).${F.desc1?' '+F.desc1:''}\n\n${F.link}`,
+ F=>`${F.src} reports: ${F.desc1||F.title}${F.outlets?` ${F.outlets} ${F.nOut>1?'have':'has'} it too.`:''}\n\n${F.link}`,
+ F=>`${F.titleS}, according to ${F.src}.${F.hit?` Relevant for ${F.hit}.`:''}\n\n${F.link}`,
+ F=>`${F.titleS} (${F.src}). ${F.outlets?`Also reported by ${F.outlets}.`:'Single source so far; worth waiting for a second.'}\n\n${F.link}`],
 ct:[
- F=>`${F.title} 👀\n\n${F.link}`,
- F=>`${F.short}\n\nvia ${F.src}: ${F.link}`,
- F=>`${F.hit?F.hit+' headline: ':''}${F.title}\n\n${F.link}`,
- F=>`${F.title}. ${F.outlets?`${F.outlets} ${F.nOut>1?'have':'has'} it too.`:`Only ${F.src} so far.`}\n\n${F.link}`]},
+ F=>`${F.titleS} (${F.src}) 👀\n\n${F.link}`,
+ F=>`${F.short}, via ${F.src}\n\n${F.link}`,
+ F=>`${F.hit?F.hit+' headline from '+F.src+': ':F.src+': '}${F.title}\n\n${F.link}`,
+ F=>`${F.titleS}. ${F.outlets?`${F.src}, ${F.outlets} all have it.`:`Only ${F.src} so far.`}\n\n${F.link}`]},
 market:{simple:[
  F=>`${F.subj} at ${F.now}, ${F.chg}.`,
- F=>`${F.subj} check: ${F.now} (${F.chg}).${F.ctx2?' '+cap1(F.ctx2)+'.':''}`,
- F=>`${F.now} for ${F.subj} as of ${F.date}. ${cap1(F.chg)}.`,
- F=>`Where ${F.subj} stands: ${F.now}, ${F.chg}${F.ctx?'; '+F.ctx:''}.`],
+ F=>`${F.now} for ${F.subj} (${F.chg}).${F.ctx2?' '+cap1(F.ctx2)+'.':''}`,
+ F=>`${F.subj} is ${F.now} as of ${F.date}. ${cap1(F.chg)}.`,
+ F=>`${F.subj}: ${F.now}, ${F.chg}${F.ctx?'; '+F.ctx:''}.`],
 analytical:[
  F=>`${F.subj}: ${F.now}. ${cap1(F.chg)}. ${F.ctx?cap1(F.ctx)+'. ':''}${F.ctx2?cap1(F.ctx2)+'. ':''}Data: ${F.src}, ${F.date}.`,
- F=>`Snapshot ${F.date}: ${F.subj} ${F.now}; ${F.chg}${F.ctx?'; '+F.ctx:''}.`,
+ F=>`${F.subj} ${F.now} at ${F.date}; ${F.chg}${F.ctx?'; '+F.ctx:''}.`,
  F=>`${F.subj} ${F.now}. ${F.ctx2?cap1(F.ctx2)+'. ':''}${F.ctx?cap1(F.ctx)+'.':''}`,
- F=>`${cap1(F.chg)} leaves ${F.subj} at ${F.now}.${F.ctx?' '+cap1(F.ctx)+'.':''}`],
+ F=>`${F.subj} at ${F.now} after ${F.chg}.${F.ctx?' '+cap1(F.ctx)+'.':''}`],
 ct:[
  F=>`${F.subj} ${F.now}. ${cap1(F.chg)}.`,
  F=>`${F.subjTk} ${F.now}, ${F.chg}. ${F.mood}`,
- F=>`${cap1(F.chg)} on ${F.subj}.${F.ctx2?' '+cap1(F.ctx2)+'.':''}`,
+ F=>`${F.subj} ${F.now}, ${F.chg}.${F.ctx2?' '+cap1(F.ctx2)+'.':''}`,
  F=>`${F.subj} at ${F.now}. ${F.mood}`]},
 premium:{simple:[
  F=>`BTC costs ${F.btc} more in India than abroad right now (CoinDCX vs Coinbase, ${F.date}).`,
- F=>`India premium check: USDT ${F.usdt}, BTC ${F.btc} over global prices.`,
- F=>`Buying crypto in INR still carries a premium: USDT ${F.usdt}, BTC ${F.btc} (${F.date}).`,
+ F=>`USDT ${F.usdt}, BTC ${F.btc}: the India premium over global prices.`,
+ F=>`${F.usdt} extra for USDT in INR, ${F.btc} for BTC (${F.date}).`,
  F=>`The INR crypto premium today: BTC ${F.btc}, USDT ${F.usdt}.`],
 analytical:[
  F=>`India crypto premium, ${F.date}: USDT ${F.usdt} over the USD/INR rate; BTC ${F.btc} over Coinbase. BTC priced in USDT on CoinDCX is ${F.btcU}, so most of the gap is the rupee-to-USDT premium.`,
- F=>`CoinDCX vs global, ${F.date}. USDT/INR premium ${F.usdt}; BTC/INR premium ${F.btc}; BTC/USDT gap ${F.btcU}. FX: ${F.fx}.`,
- F=>`Why BTC looks ${F.btc} pricier in India: USDT itself trades ${F.usdt} above the FX rate. Strip that out and BTC is ${F.btcU} vs Coinbase.`,
- F=>`INR premium data (CoinDCX, Coinbase, ${F.fx}): BTC ${F.btc}, USDT ${F.usdt}, BTC in USDT ${F.btcU}. Snapshot ${F.date}.`],
+ F=>`USDT/INR premium ${F.usdt}; BTC/INR premium ${F.btc}; BTC/USDT gap ${F.btcU} (CoinDCX vs global, ${F.date}). FX: ${F.fx}.`,
+ F=>`BTC looks ${F.btc} pricier in India because USDT itself trades ${F.usdt} above the FX rate. Strip that out and BTC is ${F.btcU} vs Coinbase.`,
+ F=>`INR premium (CoinDCX, Coinbase, ${F.fx}): BTC ${F.btc}, USDT ${F.usdt}, BTC in USDT ${F.btcU}. Snapshot ${F.date}.`],
 ct:[
  F=>`India tax on liquidity: USDT ${F.usdt}, BTC ${F.btc} over global.`,
  F=>`INR premium: BTC ${F.btc}. Most of it is USDT at ${F.usdt}.`,
  F=>`CoinDCX BTC ${F.btc} over Coinbase. USDT ${F.usdt}. Same story.`,
- F=>`india premium update: BTC ${F.btc}, USDT ${F.usdt}`]}};
-const FDEF={A:'',tk:'',subj:'',subjS:'',subjL:'',subjTk:'',val:'',now:'',chg:'',chg2:'',pos:'',since:'',sinceD:'',z:'',note:'',caveat:'',mood:'',src:'',date:'',ctx:'',ctx2:'',n:'',yrs:5,lo:false,title:'',link:'',outlets:'',allSrc:'',desc1:'',short:'',hit:'',age:'',nOut:0,usdt:'',btc:'',btcU:'',fx:''};
+ F=>`${F.btc} BTC premium in India, USDT ${F.usdt}.`]},
+dd:{simple:[
+ F=>`${F.A} is ${F.dd} below its ${F.ath} all-time high close from ${F.athD}. Past cycle drawdowns ran ${F.past}, so this one has been ${F.cmp}.`,
+ F=>`${F.dd} below the high: ${F.A} closed ${F.closeD} at ${F.px}, against an all-time high of ${F.ath} on ${F.athD}.`,
+ F=>`${F.A} is ${F.dd} off its ${F.ath} peak (${F.athD}), ${F.days} days on. Historically, cycle drawdowns ran ${F.past}.`,
+ F=>`${F.dd}: ${F.A}'s drawdown from its all-time high as of the ${F.closeD} close. ${F.cmpS}`],
+analytical:[
+ F=>`${F.A} drawdown from ATH: ${F.dd} (close ${F.px} on ${F.closeD} vs ${F.ath} on ${F.athD}). Prior cycle troughs: ${F.pastList}. ${F.cmpS}`,
+ F=>`${F.dd} below the ${F.athD} high after ${F.days} days. For context, past bear markets bottomed at ${F.pastList} on daily data.`,
+ F=>`${F.A} sits ${F.dd} under its all-time high of ${F.ath}. Historically the deepest cycle drawdowns ran ${F.past}; this one is ${F.cmp} by comparison. Source: ${F.src}.`,
+ F=>`Data: ${F.A} last completed close ${F.px} (${F.closeD}), ATH ${F.ath} (${F.athD}), drawdown ${F.dd}. Past cycles: ${F.pastList}.`],
+ct:[
+ F=>`${F.A} ${F.dd} off the high. Past cycles went ${F.past}. ${F.cmpCT}`,
+ F=>`${F.dd} drawdown on ${F.tk}, ${F.days} days from the ${F.ath} top. ${F.cmpCT}`,
+ F=>`${F.dd} below a ${F.ath} ATH (${F.athD}). That's ${F.A} today.`,
+ F=>`${F.A} drawdown from ATH: ${F.dd}. ${F.cmpCT}`]},
+perf:{simple:[
+ F=>`${F.A} finished ${F.per} ${F.ret}${F.rank?', '+F.rank:''}. ${F.mtdTxt}`,
+ F=>`${F.ret} for ${F.A} in ${F.per}, from ${F.p0} to ${F.p1}.`,
+ F=>`${F.ret}: ${F.A} in ${F.per}. ${F.mtdTxt}`,
+ F=>`${F.A} ${F.per} return: ${F.ret}${F.rank?' ('+F.rank+')':''}.`],
+analytical:[
+ F=>`${F.A} ${F.per}: ${F.ret} (${F.p0} → ${F.p1}, completed UTC closes). ${F.rankA}`,
+ F=>`${F.ret} in ${F.per} for ${F.A}. ${F.mtdTxt} Source: ${F.src}.`,
+ F=>`${F.A} by period: ${F.per} ${F.ret}; ${F.prevPer} ${F.prevRet}. ${F.mtdTxt}`,
+ F=>`${F.ret} ${F.A} performance in ${F.per}. ${F.rankA} Data through the ${F.closeD} close.`],
+ct:[
+ F=>`${F.A} ${F.per}: ${F.ret}. ${F.moodP}`,
+ F=>`${F.ret} ${F.per} for ${F.tk}. ${F.moodP}`,
+ F=>`${F.ret} ${F.A} ${F.per}, in the books.`,
+ F=>`${F.A} ${F.per} ${F.ret}${F.rank?', '+F.rank:''}.`]},
+alt:{simple:[
+ F=>`${F.b90} of the top 50 alts have beaten BTC over 90 days, and ${F.b30} over 30. The breadth model reads "${F.state}". ETH/BTC is ${F.eb}, ${F.eb30} in 30 days.`,
+ F=>`${F.b30} of the top 50 alts beat BTC over 30 days (${F.b90} over 90). State: ${F.state}.`,
+ F=>`${F.b90} of top-50 alts are ahead of BTC over 90 days and ETH/BTC is ${F.dma} its 200-day average. Breadth model: ${F.state}.`,
+ F=>`${F.b30} of the top 50 alts outperformed BTC over the past month. Over 90 days it's ${F.b90}. ${F.liqS}`],
+analytical:[
+ F=>`B90 ${F.b90}, B30 ${F.b30} through the ${F.date} close (top 50 ex-stables, % beating BTC). ETH/BTC ${F.eb} (${F.eb30} 30d, ${F.dma} its 200DMA). ${F.liqS} Model state: ${F.state}.`,
+ F=>`${F.b90} B90 and ${F.b30} B30 put the breadth model at "${F.state}": ${F.def}`,
+ F=>`${F.b90} of the top 50 non-stable coins beat BTC over 90 days and ${F.b30} over 30. ETH/BTC is ${F.dma} its 200-day average. ${F.liqS}`,
+ F=>`Data: B30 ${F.b30}, B90 ${F.b90}, ETH/BTC ${F.eb} (${F.eb30} 30d). Universe: ${F.n} coins, completed UTC closes. Classification: ${F.state}.`],
+ct:[
+ F=>`${F.b30} of top-50 alts beat BTC over 30d. ${F.b90} over 90d. ${F.moodA}`,
+ F=>`B30 ${F.b30}, B90 ${F.b90}. ${F.state}.`,
+ F=>`${F.b90} of the top 50 ahead of BTC over 90 days. ETH/BTC ${F.eb30} in a month. ${F.moodA}`,
+ F=>`${F.b90} of alts beating BTC on 90d. ${F.moodA}`]}};
+const FDEF={titleS:'',lead:'',run:'',view:'',recordAll:false,sinceY:'',dd:'',ath:'',athD:'',past:'',pastList:'',cmp:'',cmpS:'',cmpCT:'',px:'',closeD:'',days:'',per:'',ret:'',rank:'',rankA:'',mtdTxt:'',p0:'',p1:'',prevPer:'',prevRet:'',moodP:'',state:'',b90:'',b30:'',eb:'',eb30:'',dma:'',liqS:'',def:'',moodA:'',open:false,from:'',A:'',tk:'',subj:'',subjS:'',subjL:'',subjTk:'',val:'',now:'',chg:'',chg2:'',pos:'',since:'',sinceD:'',z:'',note:'',caveat:'',mood:'',src:'',date:'',ctx:'',ctx2:'',n:'',yrs:5,lo:false,title:'',link:'',outlets:'',allSrc:'',desc1:'',short:'',hit:'',age:'',nOut:0,usdt:'',btc:'',btcU:'',fx:''};
 function sigFacts(s){const m=s.om,A=s.asset==='USD'?'BTC':(s.asset||'BTC'),fam=/^rv/.test(s.id)?'vol':s.id==='stable'?'flows':/hash|halv/.test(s.id)?'macro':'level',note=/^rv/.test(s.id)?(m&&m.side==='lo'?'Low volatility says nothing about direction.':'High volatility tends to cluster.'):(SIGT[s.id]||['',''])[1];
-  const F={...FDEF,fam,label:s.title,A,tk:'$'+A,subj:sigSubj(s),note,val:m&&s.fmt?s.fmt(m.cur):s.read.split(' · ')[0],pos:m?m.pctTxt:'',since:m?(m.sinceDays>=60?m.sinceTxt:m.pctTxt):'',sinceD:m&&m.since&&m.sinceDays>=60?dU(m.since):'',yrs:m?.yrs||5,lo:m?.side==='lo',z:m?`${Math.abs(m.z).toFixed(1)}σ ${m.z>=0?'above':'below'} its ${m.yrs}-year median`:'',date:dShort(s.lastT||Date.now()),src:s.srcS||'Binance',n:s.n||''};
+  const F={...FDEF,fam,label:s.title,A,tk:'$'+A,subj:sigSubj(s),note,val:m&&s.fmt?s.fmt(m.cur):s.read.split(' · ')[0],pos:m?m.pctTxt:'',since:m?(m.sinceDays>=60?m.sinceTxt:m.pctTxt):'',sinceD:m&&m.since&&m.sinceDays>=60?dU(m.since):'',yrs:m?.yrs||5,lo:m?.side==='lo',z:m?`${Math.abs(m.z).toFixed(1)}σ ${m.z>=0?'above':'below'} its median since ${m.from}`:'',from:m?.from||'',date:dShort(s.lastT||Date.now()),src:s.srcS||'Binance',n:s.n||''};
+  F.open=isOpenT(s.lastT)&&!/^rv/.test(s.id);F.rare=!!(m&&(m.sinceDays>=365||!m.since));F.recordAll=!!(m&&!m.since);F.sinceY=m&&m.since?(m.sinceDays>=730?String(new Date(m.since).getUTCFullYear()):mU(m.since)):'';
+  if(s.id==='dd'){const X=ddFacts('BTC');if(X&&X.fam)return{...X,label:s.title}}
   if(s.id==='ethbtc'){const E=SIGD.EB,c=(E.v.at(-1)/E.v[back(E,30)]-1)*100;F.note=`${pct(c,1)} over 30 days.`}
   if(fam==='flows'){const st=SIGD.ST,n=st.v.length,cur=st.v[n-1],ch=(cur/st.v[n-31]-1)*100,ath=Math.max(...st.v);Object.assign(F,{subj:'stablecoin supply',subjS:'Stablecoins',subjL:'stablecoin supply',now:usdB(cur),chg:`${pct(ch,1)} in 30 days`,chg2:cur>=ath*.995?'a record high':'',pos:m?`that 30-day pace is ${m.pctTxt}`:'',mood:ch>1?'Supply is growing.':ch<0?'Supply is shrinking.':'Supply is flat.',src:'DefiLlama'})}
   if(fam==='macro'){const r=s.read.split(' · ');Object.assign(F,s.id==='hash'?{subjS:'Hash Ribbons',subjL:'the hashrate 30D/60D ratio',now:F.val,chg:r[0].replace(/^No capitulation$/,'no capitulation').replace(/^Miners are/,'miners are'),caveat:note,pos:m?m.pctTxt:'',mood:m&&m.cur<1?'Miners under stress.':'Miners look fine.',src:'blockchain.com'}:{subj:'BTC in this halving cycle',subjS:'Halving cycle',subjL:'BTC in this halving cycle',now:r[1]||r[0],chg:(r[0]||'').replace(/^Day/,'day'),caveat:note,mood:'Small sample, four cycles.',src:F.src})}
   return F}
-function macFacts(s){const M=MAC.M,F={...FDEF,fam:'macro',label:s.title,src:s.src.split(' · ')[0].replace(/^Data: /,'')},it=(MAC.items||[]).find(x=>x.id===s.id),om=it?.om;F.pos=om&&om.share<=50?om.pctTxt:'';
+function macFacts(s){const M=MAC.M,F={...FDEF,fam:'macro',label:s.title,src:s.src.split(' · ')[0].replace(/^Data: /,'')},it=(MAC.items||[]).find(x=>x.id===s.id),om=it?.om;F.pos=om&&om.share<=50?om.pctTxt:'';F.since=om&&om.sinceDays>=60?om.sinceTxt:'';
   if(s.id==='btcm2'||s.id==='comp'){const G=gm2(M),L=G.P.at(-1),T=L[1];F.date=mU(G.t.at(-1));
     if(s.id==='btcm2')Object.assign(F,{subj:'global M2 (US, euro area, Japan, China in USD)',subjS:'Global M2',subjL:'global M2',now:usdT(T),chg:`${pct(G.yoy,1)} YoY`,note:'Converted at monthly average FX, so the dollar moves the total too.',caveat:'A shared trend with BTC is not proof of cause.',mood:G.yoy>5?'Liquidity still expanding.':G.yoy<0?'Liquidity shrinking.':'Modest growth.',src:'FRED, ECB, BOJ, PBoC'});
     else{const sh=['US','EA','JP','CN'].map((k,i)=>[k,L[i+2]/T*100]);Object.assign(F,{subj:'the global M2 mix',subjS:'Global M2 mix',subjL:'the global M2 mix',now:usdT(T),chg:sh.map(([k,v])=>`${k==='EA'?'euro area':k==='JP'?'Japan':k==='CN'?'China':'US'} ${v.toFixed(0)}%`).join(', '),note:'In USD at monthly average FX.',caveat:'Dollar moves change the total even when local M2 is flat.',mood:sh[3][1]>45?'China is about half of it.':'Spread across four blocs.',src:'FRED, ECB, BOJ, PBoC'})}}
-  else if(s.id==='lead'){const best=MAC.ll?.best,nb=MAC.ll?.band||.15,clear=best&&Math.abs(best.r)>nb;F.date=dShort(Date.now());
-    Object.assign(F,{subj:'the global M2 → BTC lead-lag',subjS:'M2 lead-lag',subjL:'the M2-to-BTC lead-lag',now:best?`r = ${best.r.toFixed(2)} at a ${best.lag}-month lag`:'n/a',chg:best?`${best.n} monthly changes`:'',note:`Noise band is about ±${nb.toFixed(2)}, so ${clear?'the peak clears it, barely':'no lag clears it'}.`,caveat:'Correlation of monthly changes: descriptive, not a trading signal.',mood:clear?'Weak, but there.':'Mostly noise.'})}
+  else if(s.id==='lead'){const L=MAC.ll||{},best=L.best,bc=L.bestC,cr=L.crit||.2;F.date=dShort(Date.now());
+    Object.assign(F,{subj:'the global M2 → BTC lead-lag',subjS:'M2 lead-lag',subjL:'the M2-to-BTC lead-lag',now:best?`r = ${best.r.toFixed(2)} at ${best.lag} months in USD, ${bc?bc.r.toFixed(2):'n/a'} at constant FX`:'n/a',chg:best?`${best.n} monthly changes`:'',note:`Bonferroni threshold for ${L.ll?.length||7} lags is ±${cr.toFixed(2)}. ${L.dollar&&!L.dollarWeak?'The USD version clears it and the constant-FX version does not: the dollar effect, not liquidity.':L.dollarWeak?'Neither version clears it; the USD version runs higher only because of the dollar.':L.verdict||''}`,caveat:'Correlation of monthly changes: descriptive, not a trading signal.',mood:L.dollar?'The dollar effect, not liquidity.':'Mostly noise.',src:'FRED, ECB, BOJ, PBoC'})}
+  else if(s.id==='netliq'){const W=wkSer(),n=W.v.length,c13=(W.v[n-1]/W.v[n-14]-1)*100;F.date=dShort(W.t[n-1]);
+    Object.assign(F,{subj:'US net liquidity (Fed balance sheet minus TGA and ON RRP)',subjS:'US net liquidity',subjL:'US net liquidity',now:'$'+(W.v[n-1]/1000).toFixed(2)+'T',chg:`${pct(c13,1)} over 13 weeks`,note:`TGA $${W.tga[n-1].toFixed(0)}B, ON RRP $${W.rrp[n-1].toFixed(1)}B.`,caveat:'Weekly approximation; a shared trend with BTC is not proof of cause.',mood:c13>2?'Liquidity rising.':c13<-2?'Liquidity draining.':'Liquidity flat.',src:'FRED'})}
+  else if(s.id==='tgarrp'){const W=wkSer(),n=W.v.length,rr=ser('RRPONTSYD',M);F.date=dShort(W.t[n-1]);
+    Object.assign(F,{subj:'the Treasury General Account',subjS:'TGA',subjL:'the TGA',now:'$'+W.tga[n-1].toFixed(0)+'B',chg:`${pct((W.tga[n-1]/W.tga[n-5]-1)*100,1)} over 4 weeks`,note:`ON RRP is $${rr?rr.v.at(-1).toFixed(1):W.rrp[n-1].toFixed(1)}B, down from $2.5T at the 2022 peak.`,caveat:'A rising TGA drains bank reserves; a falling one adds them.',mood:W.tga[n-1]>W.tga[n-5]?'Treasury cash building.':'Treasury cash falling.',src:'FRED'})}
+  else if(s.id==='curve'){const C=s.curve,a=ser('DGS2',M);F.date=dShort(C.s.t.at(-1));
+    Object.assign(F,{subj:'the 2s10s Treasury spread',subjS:'2s10s',subjL:'the 2s10s spread',now:(C.cur>=0?'+':'')+C.cur.toFixed(2)+' pts',chg:`2Y at ${a.v.at(-1).toFixed(2)}%`,note:C.cur>=0?`Positive since ${C.lastUn?dU(C.lastUn):'n/a'}${C.lastInv?`, after an inversion that began ${dU(C.lastInv)}`:''}.`:`Inverted since ${dU(C.lastInv)}.`,caveat:'Historically, recessions have tended to follow the un-inversion rather than the inversion itself, with long and variable lags.',mood:C.cur>=0?'Curve positive.':'Curve inverted.',src:'FRED'})}
   else if(s.id==='dxy'){const dx=ser('DTWEXBGS',M),j=back(dx,91),ch=(dx.v.at(-1)/dx.v[j]-1)*100,c90=(s.read.match(/r\(?BTC,? ?DXY\)?[^-\d]*(-?[\d.]+)/i)||[])[1];F.date=dShort(dx.t.at(-1));
     Object.assign(F,{subj:'the US dollar (Fed broad index)',subjS:'Dollar index',subjL:'the dollar index',now:dx.v.at(-1).toFixed(2),chg:`${pct(ch,1)} over 3 months`,note:c90?`90-day correlation of daily BTC and dollar changes: ${c90}.`:'Fed broad trade-weighted dollar, daily.',caveat:'Descriptive, not a forecast.',mood:ch<-1?'Dollar softening.':ch>1?'Dollar firming.':'Dollar going sideways.',src:'FRED'})}
   else if(s.id==='real'){const a=ser('DGS10',M),b=ser('DFII10',M),j=back(b,91),chb=Math.round((b.v.at(-1)-b.v[j])*100);F.date=dShort(b.t.at(-1));
@@ -1200,30 +1256,31 @@ function macFacts(s){const M=MAC.M,F={...FDEF,fam:'macro',label:s.title,src:s.sr
   return F}
 function etfFacts(a){const st=etfStats(NX.etf,a),A=a.toUpperCase(),L=st.L.total,s7=st.s7,d=dShort(ymd(st.L.date));
   return{...FDEF,fam:'flows',label:`US spot ${A} ETF flows`,A,tk:'$'+A,subj:`US spot ${A} ETFs`,subjS:`${A} ETFs`,subjL:`spot ${A} ETFs`,now:`${fM(L,1)} on ${d}`,chg:`${fM(s7,1)} over 7 trading days`,chg2:`${fM(st.s30,1)} over 30`,
+    ...(()=>{const k=etfStreak(a);return k?{lead:`${A==='BTC'?'Bitcoin':'Ether'} ETFs just snapped a ${k.k}-day inflow streak.`,run:`${fB(k.s)} in, then ${fB(k.L).replace('-','')} out in a single day.`,view:'One red day after a run like that is noise, so watch whether it turns into two or three.'}:{}})(),
     mood:L<0&&s7>0?'Red day, green week.':L>0&&s7>0?'Steady bid.':L<0&&s7<0?'Outflows on the day and the week.':'Green day inside a red week.',note:`Net across ${st.d?.funds?.length||'all'} funds.`,src:'Farside',date:d}}
 function indFacts(){const I=NX.ind,L=I.latest,p=x=>x==null?'n/a':pct(x,1);
   return{...FDEF,fam:'premium',label:'India premium',usdt:p(L.usdt_premium_pct),btc:p(L.btc_premium_pct),btcU:p(L.btc_premium_in_usdt_pct),fx:'USD/INR via '+(I.sources?.usd_inr?.provider||'FX mid-market'),date:dtU(Date.parse(L.time))}}
 function newsFacts(n){const same=D.news.filter(m=>m!==n&&m.src!==n.src&&simT(m.title,n.title)>=.5),srcs=[...new Set(same.map(m=>m.src))],W=S.watch.find(w=>new RegExp('\\b'+w.sym.replace(/[^\w]/g,'')+'\\b','i').test(n.title+' '+n.desc));
   const d1=(n.desc||'').split(/(?<=[.!?])\s/)[0].slice(0,170);
-  return{...FDEF,fam:'news',label:'Headline: '+n.title.slice(0,40),title:n.title.replace(/\s+/g,' ').trim(),src:n.src,link:n.link,outlets:srcs.slice(0,2).join(' and '),nOut:Math.min(2,srcs.length),allSrc:[n.src,...srcs.slice(0,2)].join(', '),desc1:d1&&d1!==n.title?d1:'',short:n.title.length>110?n.title.slice(0,107)+'…':n.title,hit:W?W.sym.toUpperCase():'',age:ago(n.t)}}
+  return{...FDEF,fam:'news',label:'Headline: '+n.title.slice(0,40),title:n.title.replace(/\s+/g,' ').trim(),titleS:n.title.replace(/\s+/g,' ').trim().replace(/[.!…]+$/,''),src:n.src,link:n.link,outlets:srcs.slice(0,2).join(' and '),nOut:Math.min(2,srcs.length),allSrc:[n.src,...srcs.slice(0,2)].join(', '),desc1:d1&&d1!==n.title?d1:'',short:n.title.length>110?n.title.slice(0,107)+'…':n.title,hit:W?W.sym.toUpperCase():'',age:ago(n.t)}}
 function mktFacts(ctx){const t=ctx.t,c=ctx.coin||S.watch[0],date=new Date().toLocaleString('en-GB',{timeZone:'UTC',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}).replace(',','')+' UTC';
   if(t==='pulse'||t==='heat'){const g=D.glob,f=D.fng.at(-1),ch=g?.market_cap_change_percentage_24h_usd??0;
     return{...FDEF,fam:'market',label:'Market pulse',subj:'Crypto market cap',subjTk:'Total crypto market cap',now:big(g?.total_market_cap?.[S.cur]),chg:`${pct(ch)} in 24h`,ctx:`BTC dominance ${(g?.market_cap_percentage?.btc??0).toFixed(1)}%`,ctx2:f?`Fear & Greed ${f.v} (${f.c.toLowerCase()})`:'',mood:ch>3?'Strong day.':ch<-3?'Rough day.':'Quiet tape.',src:D.srcMk||'CoinGecko',date}}
   const mk=D.mk[c.id]||{},a=D.ins[c.id],p24=mk.price_change_percentage_24h??0,sy=c.sym.toUpperCase();
   return{...FDEF,fam:'market',label:`${sy} ${t} card`,subj:sy,subjTk:'$'+sy,now:money(mk.current_price),chg:`${pct(p24)} in 24h, ${pct(mk.price_change_percentage_7d_in_currency,1)} over 7 days`,ctx:a?`RSI ${a.rsi?.toFixed(0)}, ${a.bias.toLowerCase()} on the app's trend checks`:'',ctx2:mk.ath_change_percentage!=null?`${pct(mk.ath_change_percentage,0)} from the all-time high`:'',mood:p24>3?'Strong day.':p24<-3?'Rough day.':'Quiet day.',src:D.srcMk||'CoinGecko',date}}
-function capFacts(ctx,obj){if(ctx.kind==='sig'){const s=obj||SIG?.find(x=>x.id===ctx.id);return s?sigFacts(s):null}if(ctx.kind==='mac'){const s=MAC.cards.find(x=>x.id===ctx.id);return s?macFacts(s):null}
+function capFacts(ctx,obj){if(ctx.kind==='alt')return altFacts();if(ctx.kind==='dd'||(ctx.kind==='studio'&&ctx.t==='dd'))return ddFacts(ctx.a||stSym());if(ctx.kind==='perf'||(ctx.kind==='studio'&&ctx.t==='perf'))return perfFacts(ctx.a||stSym());if(ctx.kind==='sig'){const s=obj||SIG?.find(x=>x.id===ctx.id);return s?sigFacts(s):null}if(ctx.kind==='mac'){const s=MAC.cards.find(x=>x.id===ctx.id);return s?macFacts(s):null}
   if(ctx.kind==='etf')return NX.etf?etfFacts(ctx.a):null;if(ctx.kind==='ind')return NX.ind?indFacts():null;if(ctx.kind==='news')return ctx.n?newsFacts(ctx.n):null;return mktFacts(ctx)}
 const hsh=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0};
 const mb32=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
-function ctxKey(c){return c.kind==='sig'||c.kind==='mac'?c.kind+':'+c.id:c.kind==='etf'?'etf:'+c.a:c.kind==='ind'?'ind':c.kind==='news'?'news:'+c.n?.link:'st:'+c.t+':'+(c.coin?.id||'')}
+function ctxKey(c){if(c.kind==='alt')return'alt';return c.kind==='sig'||c.kind==='mac'?c.kind+':'+c.id:c.kind==='etf'?'etf:'+c.a:c.kind==='ind'?'ind':c.kind==='news'?'news:'+c.n?.link:'st:'+c.t+':'+(c.coin?.id||'')}
 // pick a template: seeded first pick, then never the same one twice in a row; skip any that trip the banned lint
 function capPick(F,st,prev,rng){const T=CAPT[F.fam][st],n=T.length;let start=prev<0?hsh(F.label+st)%n:(prev+1+Math.floor(rng()*(n-1)))%n;
-  for(let k=0;k<n;k++){const i=(start+k)%n;if(i===prev&&n>1)continue;const t=tidy(T[i](F));if(!lintBanned(t,F.title).length&&!/undefined|NaN/.test(t))return{i,t}}return{i:start,t:tidy(T[start](F))}}
+  for(let k=0;k<n;k++){const i=(start+k)%n;if(i===prev&&n>1)continue;const t=tidy(T[i](F));if(t&&!lintBanned(t,F.title,F.open).length&&!/undefined|NaN/.test(t))return{i,t}}return{i:start,t:tidy(T[start](F))}}
 function capFirst(ctx,obj){const F=capFacts(ctx,obj);return F?capPick(F,'simple',-1).t:''}
 let CAPCTX=null,CAPK='',CAPST={},CAPRNG=mb32(Date.now()&0xffff);
 const xLen=t=>[...t.replace(/https?:\/\/\S+/g,'x'.repeat(23))].length;
 function curCtx(){if(NEWSPICK&&(!CAPCTX||CAPCTX.kind!=='news'||CAPCTX.n!==NEWSPICK))CAPCTX={kind:'news',n:NEWSPICK};return CAPCTX||{kind:'studio',t:$('#stType').value,coin:stCoin()}}
-function makeDraft(force){const box=$('#capBox');if(!box)return;const ctx=curCtx(),key=ctxKey(ctx),F=capFacts(ctx);
+function makeDraft(force){const box=$('#capBox');if(!box)return;const ctx=curCtx(),key=ctxKey(ctx),F=capFacts(ctx);CAPF=F;
   if(!F){box.innerHTML='<div class="mu">Loading data for captions…</div>';CAPK='';return}
   const fresh=force||key!==CAPK||!$('#draft');$('#capFor').textContent=F.label;
   if(fresh){CAPK=key;CAPST={};CAPRNG=mb32(hsh(key)^(Date.now()&0xffff));
@@ -1233,11 +1290,11 @@ function makeDraft(force){const box=$('#capBox');if(!box)return;const ctx=curCtx
 const capTA=st=>$('#'+(st==='simple'?'draft':st==='analytical'?'draftA':'draftC'));
 function capRegen(st,F){F=F||capFacts(curCtx());if(!F)return;const prev=CAPST[st]?.i??-1,r=capPick(F,st,prev,CAPRNG),h=(S.handle||'').trim();CAPST[st]={i:r.i};capTA(st).value=r.t;countChars()}
 function countChars(){STY.forEach(([st])=>{const ta=capTA(st),el=document.querySelector(`[data-cc="${st}"]`),li=document.querySelector(`[data-cl="${st}"]`);if(!ta||!el)return;const n=xLen(ta.value);el.textContent=n+'/280';el.className='num '+(n>280?'dn':'mu');
-  const L=lintBanned(ta.value,CAPCTX?.kind==='news'?CAPCTX.n?.title:NEWSPICK?.title);if(li)li.innerHTML=L.length?L.map(x=>`<div class="dn">⚠ ${esc(x)}</div>`).join(''):''})}
+  const L=lintBanned(ta.value,CAPCTX?.kind==='news'?CAPCTX.n?.title:NEWSPICK?.title,CAPF?.open);if(li)li.innerHTML=L.length?L.map(x=>`<div class="dn">⚠ ${esc(x)}</div>`).join(''):''})}
 function openCaptions(ctx){NEWSPICK=ctx.kind==='news'?ctx.n:null;CAPCTX=ctx;CAPK='';tab('studio');requestAnimationFrame(()=>{const c=$('#capCard');if(c)scrollTo(0,c.getBoundingClientRect().top+scrollY-64)});toast('3 caption styles ready')}
-function drawStudio(x,W,H){const c=CAPCTX;if(c){if(c.kind==='sig'){const s=SIG?.find(z=>z.id===c.id);if(s)return drawSig(x,W,H,s)}if(c.kind==='mac'){const s=MAC.cards.find(z=>z.id===c.id);if(s)return drawSig(x,W,H,s)}if(c.kind==='etf'&&NX.etf)return drawEtf(x,W,H,c.a);if(c.kind==='ind'&&NX.ind)return drawInd(x,W,H)}
+function drawStudio(x,W,H){const c=CAPCTX;if(c&&c.kind==='alt'&&ALTOBJ)return drawSig(x,W,H,ALTOBJ);const ty=$('#stType').value;if((!c||c.kind==='news')&&(ty==='dd'||ty==='perf')&&SIGD?.CL)return ty==='dd'?drawDD(x,W,H,stSym()):drawPerf(x,W,H,stSym());if(c){if(c.kind==='sig'){const s=SIG?.find(z=>z.id===c.id);if(s)return drawSig(x,W,H,s)}if(c.kind==='mac'){const s=MAC.cards.find(z=>z.id===c.id);if(s)return drawSig(x,W,H,s)}if(c.kind==='etf'&&NX.etf)return drawEtf(x,W,H,c.a);if(c.kind==='ind'&&NX.ind)return drawInd(x,W,H)}
   drawCard(x,W,H,$('#stType').value,stCoin())}
-function studioName(){const c=CAPCTX;if(c&&c.kind!=='news')return c.kind+'-'+(c.id||c.a||'india');const t=$('#stType').value;return t+'-'+(t==='pulse'||t==='heat'?'market':stCoin().sym)}
+function studioName(){const c=CAPCTX;if(c&&c.kind==='alt')return'altseason';if(c&&c.kind!=='news')return c.kind+'-'+(c.id||c.a||'india');const t=$('#stType').value;return t+'-'+(t==='pulse'||t==='heat'?'market':stCoin().sym)}
 document.addEventListener('input',e=>{if(e.target.dataset?.ce)countChars()});
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-cr],[data-cy],[data-ca],[data-cx]');if(!b)return;const ds=b.dataset,st=ds.cr||ds.cy||ds.ca||ds.cx,ta=capTA(st);if(!ta)return;
   if(ds.cr)capRegen(st);
@@ -1245,9 +1302,251 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-cr],
   if(ds.ca)runDraftAudit(ta.id,STY.find(x=>x[0]===st)[1]);
   if(ds.cx)open('https://x.com/intent/post?text='+encodeURIComponent(ta.value),'_blank')});
 
+// ================= PHASE 11: derivatives, altseason engine, macro forces, news ranking, new caption families
+let DV=null,MK=null,CAPF=null;
+async function ensureDV(){if(!DV){try{DV=(await dataFile('derivs')).v}catch(e){}}return DV}
+async function ensureMK(){if(!MK){try{MK=(await dataFile('market')).v}catch(e){}}return MK}
+const dIso=s=>Date.parse(s+'T00:00:00Z');
+const isOpenT=t=>t!=null&&t+DAY>Date.now();   // a daily bar whose UTC day has not finished
+// ---------- derivatives
+function oiChg(a,days){const A=DV?.assets?.[a];if(!A)return null;const H=A.oi_hourly,Dd=A.oi_daily,use=days<=28&&H?.points?.length>days*24?H:Dd;if(!use?.points?.length)return null;
+  const P=use.points,L=P.at(-1),tgt=L[0]-days*DAY;let j=P.length-1;while(j>0&&P[j][0]>tgt)j--;if(!P[j][2]||!L[2])return null;return{ch:(L[2]/P[j][2]-1)*100,usd:L[1],coin:L[2],src:use.source,t:L[0]}}
+function supplyOf(a){const id=a==='BTC'?'bitcoin':'ethereum',m=D.mk?.[id];if(m?.market_cap&&m?.current_price)return{s:m.market_cap/m.current_price,src:D.srcMk||'market data'};
+  // fallback: market.json reconstructs caps as close x circulating supply, so supply = cap / close on the same day
+  const tp=MK?.totals_proxy,C=SIGD?.CL?.[a];if(tp?.points?.length&&C?.t?.length){const ci=tp.columns.indexOf(a.toLowerCase()),cm=new Map(C.t.map((t,i)=>[new Date(t).toISOString().slice(0,10),C.v[i]]));for(let i=tp.points.length-1;i>=Math.max(0,tp.points.length-5);i--){const r=tp.points[i],c=cm.get(r[0]);if(c&&r[ci])return{s:r[ci]/c,src:`market.json supply (${MK.ranking_source||'ranking source'})`}}}return null}
+function oiCapSeries(a){const A=DV?.assets?.[a],sp=supplyOf(a);if(!A?.oi_daily?.points?.length||!sp)return null;const P=A.oi_daily.points;return{t:P.map(p=>p[0]),a:P.map(p=>p[2]/sp.s*100),src:A.oi_daily.source,supSrc:sp.src}}
+function oiCapNow(a){const s=oiCapSeries(a);if(!s||s.t.length<60)return null;const m=oppMeta(s,'abs',Infinity);return{v:m.cur,share:m.share,side:m.side,pTxt:m.pctTxt,m,src:s.src}}
+function fundSeries(a){const F=DV?.assets?.[a]?.funding;if(!F?.points?.length)return null;const P=F.points,t=[],v=[];for(let i=20;i<P.length;i++){let s=0;for(let k=i-20;k<=i;k++)s+=P[k][1];t.push(P[i][0]);v.push(s/21*100)}return{t,a:v,src:F.source,raw:P}}
+function derivSignals(){const out=[];if(!DV?.assets)return out;
+  for(const a of ['BTC','ETH']){const f=fundSeries(a);
+    if(f&&f.t.length>=40){const t=f.t,v=f.a,n=v.length,first=dU(t[0]);SIGT['fund'+a]=[`${a} perpetual funding (7-day average)`,`Single venue (${f.src}); about ${Math.round((t[n-1]-t[0])/DAY)} days of history, so "rare" means rare within that window.`];
+      out.push({id:'fund'+a,asset:a,title:`${a} funding rate · 7-day average`,read:`${v[n-1].toFixed(4)}% per 8h · ${f.src} · since ${first}`,src:`${f.src} perpetual funding, data/derivs.json (single venue)`,
+        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(4)+'%/8h'},confFix:[60,`Single venue (${f.src}), ${n+20} funding prints since ${first}`],
+        draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(3)+'%',hl:[{v:0,c:TH.mu,l:'0'},{v:.01,c:hexA(TH.mu,.8),l:'0.01% base rate'}],series:[{t:f.raw.map(p=>p[0]),v:f.raw.map(p=>p[1]*100),c:hexA(TH.ac,.35),w:1.2,l:'per 8h print'},{v,c:TH.ac,w:3,l:'7-day average'}]})})}
+    const oc=oiCapSeries(a);
+    if(oc&&oc.t.length>=60){const t=oc.t,v=oc.a,n=v.length;SIGT['oicap'+a]=[`${a} open interest ÷ market cap`,`OI from one venue (${oc.src}) in coin terms ÷ today's circulating supply (${oc.supSrc}); measures leverage on that venue, not the whole market.`];
+      out.push({id:'oicap'+a,asset:a,title:`${a} open interest ÷ market cap`,read:`${v[n-1].toFixed(3)}% of market cap · ${oc.src} perp · since ${dU(t[0])}`,src:`${oc.src} open interest (data/derivs.json) ÷ supply from ${oc.supSrc}`,
+        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(3)+'%'},confFix:[60,`Single venue (${oc.src}); supply held at today's value`],
+        draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(2)+'%',series:[{v,c:TH.ac,w:3,fill:1,l:'OI ÷ market cap'}],marks:[{t:t[n-1],v:v[n-1],c:TH.tx,l:v[n-1].toFixed(3)+'%'}]})})}}
+  return out}
+
+// ---------- ALTSEASON ENGINE (spec E; every threshold below is shown in the UI)
+const ALT={TH:{btcB90:25,erB30:50,erB90:50,erEB:5,erDom:-1,brLo:50,brHi:74,brB30:50,asB90:75,asDays:5,asWin:7,wkB30:40,wkDrop:25,wkDays:14,wkMem:30,hyst:5,domMin:60},
+  ORDER:['Weakening','Altseason','Broadening','Early rotation','BTC-led','Mixed'],PRI:{Weakening:5,Altseason:4,Broadening:3,'Early rotation':2,'BTC-led':1,Mixed:0},
+  DEF:{'BTC-led':'B90 below 25% and ETH/BTC below its 200-day average.','Early rotation':'B30 at least 50%, B90 below 50%, and ETH/BTC up 5%+ in 30 days or BTC dominance down 1+ point.',Broadening:'B90 between 50% and 74% with B30 at least 50%.',Altseason:'B90 at or above 75% on at least 5 of the last 7 days.',Weakening:'Was Broadening or Altseason within 30 days, and now B30 is below 40% or has dropped 25+ points in 14 days.',Mixed:'None of the five states is met: no clear regime.'}};
+function altCalc(){const K=MK;if(!K?.breadth?.points?.length)return null;const T=ALT.TH,m=T.hyst;
+  const B=K.breadth.points.filter(r=>r[2]!=null&&r[3]!=null),dates=B.map(r=>r[0]);
+  const EBp=K.ethbtc?.points||[],ebM=new Map(EBp.map(r=>[r[0],r[1]])),ebI=new Map(EBp.map((r,i)=>[r[0],i]));
+  const STp=K.stablecoins?.points||[],stM=new Map(STp.map(r=>[r[0],r[1]]));
+  const GD=K.global_daily?.points||[],src0=GD.at(-1)?.[7],GDs=GD.filter(r=>r[7]===src0),domM=new Map(GDs.map(r=>[r[0],r[2]])),domOK=GDs.length>=T.domMin;
+  const shift=(d,k)=>new Date(dIso(d)-k*DAY).toISOString().slice(0,10);
+  const rows=[];let state='Mixed',since=dates[0];const hist=[];
+  for(let i=0;i<B.length;i++){const d=B[i][0],b30=B[i][2],b90=B[i][3],n=Math.min(B[i][4]||0,B[i][5]||0);
+    const ei=ebI.get(d),eb=ebM.get(d),eb30=ei!=null&&ei>=30?(eb/EBp[ei-30][1]-1)*100:null,dma=ei!=null&&ei>=199?EBp.slice(ei-199,ei+1).reduce((s,r)=>s+r[1],0)/200:null;
+    const s0=stM.get(d),s30v=stM.get(shift(d,30)),st30=s0&&s30v?(s0/s30v-1)*100:null;
+    const dm=domOK?domM.get(d):null,dm30=domOK?domM.get(shift(d,30)):null,dom30=dm!=null&&dm30!=null?dm-dm30:null;
+    const b30_14=i>=14?B[i-14][2]:null,last7=B.slice(Math.max(0,i-6),i+1).map(r=>r[3]);
+    const x={d,b30,b90,n,eb,eb30,dma,ebAbove:dma!=null?eb>dma:null,st30,dom30,b30_14,last7};
+    const wasBA=hist.slice(-T.wkMem).some(s=>s==='Broadening'||s==='Altseason');
+    const q=(s,k)=>{// k = margin in breadth points (0 = plain threshold, m = hysteresis entry)
+      if(s==='BTC-led')return b90<T.btcB90-k&&x.ebAbove===false;
+      if(s==='Early rotation')return b30>=T.erB30+k&&b90<T.erB90-k&&((eb30!=null&&eb30>=T.erEB)||(dom30!=null&&dom30<=T.erDom));
+      if(s==='Broadening')return b90>=T.brLo+k&&b90<=T.brHi-k&&b30>=T.brB30+k;
+      if(s==='Altseason')return last7.length>=T.asWin&&last7.filter(v=>v>=T.asB90+k).length>=T.asDays;
+      if(s==='Weakening')return wasBA&&(b30<T.wkB30-k||(b30_14!=null&&b30_14-b30>=T.wkDrop+k));return false};
+    let next=state;const cands=ALT.ORDER.filter(s=>s!=='Mixed');
+    if(state!=='Mixed'&&q(state,0)){const up=cands.find(s=>ALT.PRI[s]>ALT.PRI[state]&&q(s,m));if(up)next=up}
+    else{next=cands.find(s=>q(s,m))||cands.find(s=>q(s,0))||'Mixed'}
+    let veto=false;if(next==='Altseason'&&st30!=null&&st30<0){next='Broadening';veto=true}
+    if(next!==state){state=next;since=d}hist.push(state);x.state=state;x.since=since;x.veto=veto;x.q=q;rows.push(x)}
+  const L=rows.at(-1),avail=[L.b90!=null,L.b30!=null,L.eb30!=null,L.dma!=null,L.dom30!=null,L.st30!=null],conf=Math.round(avail.filter(Boolean).length/6*100);
+  return{rows,L,conf,avail,domOK,domDays:GDs.length,domSrc:src0,univ:K.breadth.universe,note:K.breadth.note,lastClose:K.last_close_date,updated:K.updated}}
+function altChecks(A){const L=A.L,T=ALT.TH,f=v=>v==null?'n/a':Math.round(v)+'%',ok=v=>v,na=x=>x==null?null:x;const c=(l,v,o)=>({l,v,ok:o});
+  return{'BTC-led':[c(`B90 < ${T.btcB90}%`,f(L.b90),L.b90<T.btcB90),c('ETH/BTC below its 200-day average',L.dma?`${L.eb.toFixed(5)} vs ${L.dma.toFixed(5)}`:'n/a (needs 200 days)',na(L.ebAbove==null?null:!L.ebAbove))],
+    'Early rotation':[c(`B30 ≥ ${T.erB30}%`,f(L.b30),L.b30>=T.erB30),c(`B90 < ${T.erB90}%`,f(L.b90),L.b90<T.erB90),c(`ETH/BTC +${T.erEB}% in 30 days`,L.eb30==null?'n/a':pct(L.eb30,1),L.eb30==null?null:L.eb30>=T.erEB),c(`or BTC dominance ${T.erDom} pt in 30 days`,A.domOK?(L.dom30==null?'n/a':(L.dom30>=0?'+':'')+L.dom30.toFixed(2)+' pt'):`excluded until ${T.domMin} days of snapshots (${A.domDays} so far)`,A.domOK&&L.dom30!=null?L.dom30<=T.erDom:null)],
+    Broadening:[c(`B90 ${T.brLo}–${T.brHi}%`,f(L.b90),L.b90>=T.brLo&&L.b90<=T.brHi),c(`B30 ≥ ${T.brB30}%`,f(L.b30),L.b30>=T.brB30)],
+    Altseason:[c(`B90 ≥ ${T.asB90}% on ${T.asDays} of the last ${T.asWin} days`,`${L.last7.filter(v=>v>=T.asB90).length} of ${L.last7.length}`,L.last7.filter(v=>v>=T.asB90).length>=T.asDays),c('Stablecoin supply not falling (veto caps at Broadening)',L.st30==null?'n/a':pct(L.st30,1)+' in 30 days',L.st30==null?null:L.st30>=0)],
+    Weakening:[c(`Was Broadening/Altseason in the last ${T.wkMem} days`,A.rows.slice(-T.wkMem-1,-1).some(r=>r.state==='Broadening'||r.state==='Altseason')?'yes':'no',A.rows.slice(-T.wkMem-1,-1).some(r=>r.state==='Broadening'||r.state==='Altseason')),c(`B30 < ${T.wkB30}%`,f(L.b30),L.b30<T.wkB30),c(`or B30 down ${T.wkDrop}+ pts in ${T.wkDays} days`,L.b30_14==null?'n/a':`${Math.round(L.b30_14)}% → ${Math.round(L.b30)}%`,L.b30_14==null?null:L.b30_14-L.b30>=T.wkDrop)]}}
+const ALTMETH=`Universe: top 50 coins by market cap excluding BTC, stablecoins, gold tokens, wrapped/staked/bridged tokens and anything with under 120 days of history; completed UTC daily closes (Binance spot, OKX fallback). B90/B30 = % of the universe whose 90/30-day return beat BTC's. States (checked in this priority: Weakening, Altseason, Broadening, Early rotation, BTC-led): ${Object.entries(ALT.DEF).map(([k,v])=>k+' = '+v).join(' ')} Liquidity veto: if stablecoin supply fell over 30 days, Altseason is capped at Broadening. Hysteresis: the current state holds while its own rule holds; switching to another state needs the new state's breadth thresholds cleared by ${ALT.TH.hyst} points. BTC dominance is excluded until ${ALT.TH.domMin} daily snapshots from one source exist. Confidence = available inputs ÷ 6 (B90, B30, ETH/BTC 30d, ETH/BTC 200DMA, dominance 30d, stablecoin 30d). History before the job started is backfilled with today's constituents (survivorship bias).`;
+const altBadge=s=>s==='Altseason'||s==='Broadening'?'b-up':s==='Early rotation'?'b-nt':s==='Weakening'||s==='BTC-led'?'b-dn':'b-nd';
+function altTodayHTML(){const A=MK?altCalc():null;if(!A)return`<div class="card"><h3>Altseason</h3><div class="mu">${MK===null?'Loading data/market.json…':'market.json has no breadth data yet.'}</div></div>`;const L=A.L;
+  return`<div class="card" id="altToday" data-goalt="1" style="cursor:pointer"><h3>Altseason<span class="sp"></span><span class="bias ${altBadge(L.state)}">${L.state}</span></h3>
+  <div class="grid num" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><div class="k">B90</div><div class="v">${Math.round(L.b90)}%</div><div class="mu" style="font-size:10px">beat BTC · 90d</div></div><div class="stat"><div class="k">B30</div><div class="v">${Math.round(L.b30)}%</div><div class="mu" style="font-size:10px">beat BTC · 30d</div></div><div class="stat"><div class="k">ETH/BTC</div><div class="v">${L.eb!=null?L.eb.toFixed(4):'–'}</div><div class="mu" style="font-size:10px">${L.eb30!=null?pct(L.eb30,1)+' 30d':''}${L.dma?` · ${L.ebAbove?'above':'below'} 200DMA`:''}</div></div></div>
+  <div class="msw">State since ${dU(dIso(L.since))} · confidence ${A.conf}% (${A.avail.filter(Boolean).length}/6 inputs) · closes through ${dU(dIso(L.d))} UTC${L.veto?' · liquidity veto active':''}. Tap for the full view.</div></div>`}
+let ALTOBJ=null;
+function altSig(A){const R=A.rows.filter(r=>dIso(r.d)>=dIso(A.L.d)-730*DAY),t=R.map(r=>dIso(r.d)),L=A.L;
+  return ALTOBJ={kind:'alt',id:'alt',title:'Altcoin breadth vs BTC',read:`${L.state} · B90 ${Math.round(L.b90)}% · B30 ${Math.round(L.b30)}% · ETH/BTC ${L.eb?.toFixed(4)??'–'}`,src:`data/market.json · top-50 alts, completed UTC closes through ${dU(dIso(L.d))}`,
+    draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,ymin:0,ymax:100,yf:v=>v.toFixed(0)+'%',hl:[{v:75,c:TH.up,l:'75 Altseason'},{v:50,c:TH.mu,l:'50'},{v:25,c:TH.dn,l:'25 BTC-led'}],series:[{v:R.map(r=>r.b30),c:hexA(TH.ac2||TH.vi||TH.ac,.85),w:2,l:'B30'},{v:R.map(r=>r.b90),c:TH.ac,w:3.4,l:'B90'}]})}}
+function renderAlt(){const el=$('#altCard');if(!el)return;if(!MK){el.innerHTML='<h3>Altseason engine</h3><div class="mu">Loading data/market.json…</div>';ensureMK().then(()=>{if(MK)renderAlt()});return}
+  const A=altCalc();if(!A){el.innerHTML='<h3>Altseason engine</h3><div class="mu">No breadth data in market.json.</div>';return}const L=A.L,C=altChecks(A),o=altSig(A),T=ALT.TH;
+  const ctx=MK.rotation?.points?.at(-1),tp=MK.totals_proxy?.points?.at(-1),tp30=MK.totals_proxy?.points?.at(-31);
+  const rows=['Altseason','Broadening','Early rotation','Weakening','BTC-led'].map(s=>`<div class="cl"><div class="msh"><b>${s}</b><span class="sp"></span>${s===L.state?'<span class="bias '+altBadge(s)+'">current</span>':''}</div><div class="msw">${esc(ALT.DEF[s])}</div>${C[s].map(x=>`<div class="cin"><span class="${x.ok===true?'up':x.ok===false?'dn':'mu'}">${x.ok===true?'✓':x.ok===false?'✗':'–'}</span><span>${esc(x.l)}</span><span class="sp"></span><span class="num mu">${esc(x.v)}</span></div>`).join('')}</div>`).join('');
+  const y=scrollY;el.innerHTML=`<h3>Altseason engine<span class="sp"></span><span class="bias ${altBadge(L.state)}">${L.state}</span></h3>
+  <div class="grid num" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><div class="k">B90</div><div class="v">${Math.round(L.b90)}%</div></div><div class="stat"><div class="k">B30</div><div class="v">${Math.round(L.b30)}%</div></div><div class="stat"><div class="k">ETH/BTC</div><div class="v">${L.eb?.toFixed(4)??'–'}</div><div style="font-size:11px">${L.eb30!=null?pct(L.eb30,1)+' 30d':''}</div></div></div>
+  <div class="msw" style="margin:6px 0">State since ${dU(dIso(L.since))} · confidence ${A.conf}% (${A.avail.filter(Boolean).length}/6 inputs${A.domOK?'':`; dominance excluded, ${A.domDays}/${T.domMin} days of snapshots`}) · ${L.n} coins · closes through ${dU(dIso(L.d))} UTC${L.veto?' · <span class="dn">liquidity veto: stablecoins falling, capped at Broadening</span>':''}</div>
+  <canvas class="cv" id="altCv"></canvas>
+  <div class="mu" style="font-size:12px;margin:6px 0">${ctx?`Context (not in the rules): 30d vs BTC: large caps ${ctx[2]>=0?'+':''}${ctx[2].toFixed(1)} pts, mid ${ctx[3]>=0?'+':''}${ctx[3].toFixed(1)}, small ${ctx[4]>=0?'+':''}${ctx[4].toFixed(1)}.`:''}${tp&&tp30?` TOTAL2 proxy ${pct((tp[5]/tp30[5]-1)*100,1)}, TOTAL3 proxy ${pct((tp[6]/tp30[6]-1)*100,1)} in 30 days (reconstructed). Alt share of volume ${tp[9]?.toFixed(1)}%.`:''} Stablecoins ${L.st30!=null?pct(L.st30,1):'n/a'} in 30 days.</div>
+  ${rows}
+  <div class="flex" style="margin-top:8px"><button class="btn pri" data-ax="share">Share to X (4K)</button><button class="btn" data-ax="4k">4K ⬇</button><button class="btn" data-ax="cap">Captions</button><button class="btn" data-ax="audit">🛡 Audit</button><button class="btn" data-tg="alt|m">Method ⓘ</button></div>
+  <div class="rule ${OPEN.has('alt|m')?'on':''}" data-tgx="alt|m">${esc(ALTMETH)}</div>`;
+  const cv=$('#altCv');if(cv){const c2=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(c2,cv.width,cv.height,o)}
+  if(y>0)requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)})}
+async function auditAlt(){const R=[];R.single=1;const A=altCalc();if(!A){R.push(['bad','No breadth data in market.json.']);return R}const L=A.L;
+  const age=(Date.now()-dIso(L.d))/DAY;R.push([age<=2.2?'ok':'warn',`Last completed close used: ${dU(dIso(L.d))} (${age.toFixed(1)} days ago); file updated ${dtU(Date.parse(A.updated))}.`]);
+  R.push([L.n>=40?'ok':'warn',`Universe size on the last day: ${L.n} coins (needs ≥ 40; target 50).`]);
+  const cov=MK.totals_proxy?.coverage_pct_of_exact_total_today;if(cov!=null)R.push([cov>=90?'ok':'warn',`Reconstructed totals cover ${cov}% of the exact market cap today.`]);
+  const U=MK.universe_now||[],btc30=MK.rotation?.points?.at(-1)?.[1];if(U.length&&btc30!=null){const b30=U.filter(x=>x.r30!=null&&x.r30>btc30).length/U.filter(x=>x.r30!=null).length*100;R.push([Math.abs(b30-L.b30)<=4?'ok':'warn',`Recomputed B30 from universe_now returns: ${b30.toFixed(0)}% vs stored ${Math.round(L.b30)}%.`])}
+  const E=SIGD?.EB;if(E&&L.eb){const m=new Map(E.t.map((t,i)=>[new Date(t).toISOString().slice(0,10),E.v[i]])),b=m.get(L.d);if(b)R.push([Math.abs(b/L.eb-1)<.01?'ok':'warn',`ETH/BTC cross-check: market.json ${L.eb.toFixed(5)} vs Binance ETHBTC ${b.toFixed(5)} on ${L.d} (${pct((L.eb/b-1)*100,2)}).`])}
+  const S2=SIGD?.ST;if(S2&&MK.stablecoins?.points?.length){const sp=MK.stablecoins.points.at(-1),m=new Map(S2.t.map((t,i)=>[new Date(t).toISOString().slice(0,10),S2.v[i]])),b=m.get(sp[0]);if(b)R.push([Math.abs(b/sp[1]-1)<.01?'ok':'warn',`Stablecoin supply cross-check on ${sp[0]}: ${usdB(sp[1])} vs live DefiLlama ${usdB(b)}.`])}
+  R.push(['info',`Survivorship bias: history before the job started uses today's top-50 constituents. BTC dominance ${A.domOK?'is':'is not yet'} used (${A.domDays} daily snapshots from ${A.domSrc||'n/a'}).`]);return R}
+document.addEventListener('click',async e=>{const g=e.target.closest('[data-goalt],[data-ax]');if(!g)return;
+  if(g.dataset.goalt){tab('markets',true);renderAlt();requestAnimationFrame(()=>{const c=$('#altCard');if(c)scrollTo(0,c.getBoundingClientRect().top+scrollY-64)});return}
+  const a=g.dataset.ax,o=ALTOBJ;if(!o)return;
+  if(a==='4k')exportPNG((x,W,H)=>drawSig(x,W,H,o),'altseason',3840,2160);if(a==='share')exportPNG((x,W,H)=>drawSig(x,W,H,o),'altseason',3840,2160,true);
+  if(a==='cap')openCaptions({kind:'alt'});if(a==='audit'){toast('Auditing…');showAudit('Altseason engine',await auditAlt())}});
+
+// ---------- MACRO: forces, new cards, constant-FX lead-lag with a Bonferroni threshold
+function invN(p){const a=[-39.6968302866538,220.946098424521,-275.928510446969,138.357751867269,-30.6647980661472,2.50662827745924],b=[-54.4760987982241,161.585836858041,-155.698979859887,66.8013118877197,-13.2806815528857],c=[-7.78489400243029e-3,-.322396458041136,-2.40075827716184,-2.54973253934373,4.37466414146497,2.93816398269878],d=[7.78469570904146e-3,.32246712907004,2.445134137143,3.75440866190742];
+  const pl=.02425;let q,r;if(p<pl){q=Math.sqrt(-2*Math.log(p));return(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)}
+  if(p>1-pl){q=Math.sqrt(-2*Math.log(1-p));return-(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)}
+  q=p-.5;r=q*q;return(((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1)}
+// critical |r| for k tests at family-wise alpha (Bonferroni), two-sided, via the t distribution (Cornish-Fisher t quantile)
+function critR(n,k=7,alpha=.05){const z=invN(1-alpha/k/2),df=n-2,t=z+(z**3+z)/(4*df)+(5*z**5+16*z**3+3*z)/(96*df*df);return{r:t/Math.sqrt(df+t*t),t,z,df,alpha,k}}
+function gbars(c,X,Y,W,H,u,o){const A=o.a,B=o.b,n=A.length,R=86*u,PW=W-R,all=[...A,...B,o.crit,-o.crit].filter(x=>x!=null&&isFinite(x)),mx=Math.max(.1,...all.map(Math.abs))*1.15,ys=v=>Y+H/2-v/mx*H/2;
+  c.save();c.strokeStyle=hexA(TH.mu,.18);c.lineWidth=u;c.fillStyle=TH.mu;c.font=F(15*u,500);c.textBaseline='middle';for(const v of [-mx,-mx/2,0,mx/2,mx]){c.beginPath();c.moveTo(X,ys(v));c.lineTo(X+PW,ys(v));c.stroke();c.fillText(v.toFixed(2),X+PW+10*u,ys(v))}
+  c.fillStyle=hexA(TH.mu,.13);c.fillRect(X,ys(o.crit),PW,ys(-o.crit)-ys(o.crit));c.fillStyle=TH.mu;c.font=F(14*u,600);c.textBaseline='bottom';c.fillText(o.critL,X+8*u,ys(o.crit)-4*u);
+  const gw=PW/n,bw=gw*.34;for(let i=0;i<n;i++){const x0=X+i*gw+gw*.14;[[A[i],TH.ac],[B[i],TH.ac2||TH.vi||TH.up]].forEach(([v,col],k)=>{if(v==null)return;const x=x0+k*(bw+gw*.04),y0=ys(0),y1=ys(v);c.fillStyle=Math.abs(v)>o.crit?col:hexA(col,.45);c.fillRect(x,Math.min(y0,y1),bw,Math.abs(y1-y0));c.fillStyle=TH.tx;c.font=F(13*u,600);c.textBaseline=v>=0?'bottom':'top';c.fillText(v.toFixed(2),x,v>=0?y1-3*u:y1+3*u)});
+    c.fillStyle=TH.mu;c.font=F(15*u,600);c.textBaseline='top';c.fillText(o.lab[i],x0,Y+H+8*u)}
+  c.font=F(16*u,700);c.textBaseline='top';c.fillStyle=TH.ac;c.fillText('■ '+o.la,X,Y+4*u);c.fillStyle=TH.ac2||TH.vi||TH.up;c.fillText('■ '+o.lb,X+c.measureText('■ '+o.la+'   ').width,Y+4*u);c.restore()}
+function leadCard(G,B,SRC_M2,gL){const mode=MAC.chg,usd={t:G.t,v:G.P.map(p=>p[1])},cc={t:G.t,v:G.P.map(p=>p[6])},ll=leadLag(usd,B.m,mode),llc=G.P[0][6]!=null?leadLag(cc,B.m,mode):null,ok=ll.filter(x=>x.r!=null);if(!ok.length)return null;
+  const best=ok.reduce((a,b)=>Math.abs(b.r)>Math.abs(a.r)?b:a),okc=(llc||[]).filter(x=>x.r!=null),bestC=okc.length?okc.reduce((a,b)=>Math.abs(b.r)>Math.abs(a.r)?b:a):null,nmin=Math.min(...ok.map(x=>x.n)),CR=critR(nmin,ll.length),crit=CR.r,lab=mode==='yoy'?'YoY':'MoM',rng=`${mU(miD(ll[0].from))}–${mU(miD(ll[0].to))}`;
+  const usdSig=Math.abs(best.r)>crit,ccSig=bestC&&Math.abs(bestC.r)>crit,maxC=bestC?Math.abs(bestC.r):null,dollarWeak=mode==='mom'&&!usdSig&&!ccSig&&maxC!=null&&Math.abs(best.r)>=1.5*maxC,dollar=mode==='mom'&&((usdSig&&!ccSig)||dollarWeak);
+  const verdict=mode==='yoy'?'YoY windows overlap, so r is inflated and the threshold does not apply; illustrative only.':dollar&&!dollarWeak?`USD version peaks at r = ${best.r.toFixed(2)} (${best.lag}m), above the ${crit.toFixed(2)} threshold; at constant FX no lag clears it (max |r| ${maxC.toFixed(2)}). The dollar effect, not liquidity.`:usdSig&&ccSig?`Both versions clear the ${crit.toFixed(2)} threshold (USD ${best.r.toFixed(2)} at ${best.lag}m, constant FX ${bestC.r.toFixed(2)} at ${bestC.lag}m).`:dollarWeak?`Neither version clears the ${crit.toFixed(2)} threshold for ${ll.length} lags, so neither is distinguishable from noise. The USD version's higher peak (r = ${best.r.toFixed(2)} at ${best.lag}m vs max |r| ${maxC.toFixed(2)} at constant FX) is the dollar effect, not liquidity.`:!usdSig&&!ccSig?`Neither version clears the ${crit.toFixed(2)} threshold for ${ll.length} lags: indistinguishable from noise.`:`Only the constant-FX version clears the ${crit.toFixed(2)} threshold (r = ${bestC.r.toFixed(2)} at ${bestC.lag}m).`;
+  MAC.ll={ll,llc,crit,CR,mode,best,bestC,nmin,dollar,dollarWeak,usdSig,ccSig,verdict,band:crit};
+  return{id:'lead',uses:['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC','DEXUSEU_MAVG','DEXJPUS_MAVG','DEXCHUS_MAVG'],btc:1,ll,llc,band:crit,crit,title:'Does M2 lead BTC? (USD vs constant FX)',ctl:'chg',
+    read:`USD peak r = ${best.r.toFixed(2)} at ${best.lag}m · constant FX peak ${bestC?bestC.r.toFixed(2)+' at '+bestC.lag+'m':'n/a'} · threshold ±${crit.toFixed(2)} · ${lab}`,
+    cap:`Global M2 vs $BTC, ${lab} changes, ${rng}: USD peak r ${best.r.toFixed(2)} (${best.lag}m), constant FX ${bestC?bestC.r.toFixed(2):'n/a'}. ${dollar?'The dollar effect, not liquidity.':''}`,
+    src:`Global M2 ${SRC_M2} through ${gL}; constant FX = 2015 average rates · BTC ${B.src} monthly avg · computed in-app`,
+    draw:(c,X,Y,W,H,u)=>{gbars(c,X,Y+30*u,W,H-60*u,u,{a:ll.map(x=>x.r),b:(llc||ll.map(()=>({r:null}))).map(x=>x.r),lab:ll.map(x=>x.lag+'m'),crit,critL:mode==='mom'?`±${crit.toFixed(2)} Bonferroni 95% for ${ll.length} lags (n=${nmin})`:'YoY: overlapping windows, threshold not valid',la:'Global M2 in USD',lb:'Constant FX (2015)'});
+      c.save();c.fillStyle=TH.mu;c.font=F(16*u,600);c.textBaseline='bottom';c.fillText(`r of ${lab} % changes · M2 leads BTC by N months · ${rng}`,X,Y-10*u);c.restore()}}}
+function leadTable(s){const L=MAC.ll;if(!L)return'';const row=(nm,a)=>`<tr><th>${nm}</th>${a.map(x=>`<td${x.r!=null&&Math.abs(x.r)>L.crit?' class="up"':''}>${x.r==null?'–':x.r.toFixed(2)}</td>`).join('')}</tr>`;
+  return`<table class="cor num" style="margin:6px 0"><tr><th>Lag</th>${L.ll.map(x=>`<th>${x.lag}m</th>`).join('')}</tr>${row('USD',L.ll)}${L.llc?row('Const FX',L.llc):''}<tr><th>n</th>${L.ll.map(x=>`<td class="mu">${x.n}</td>`).join('')}</tr></table>
+  <div style="font-size:12.5px;margin:4px 0 6px">${esc(L.verdict).replace('The dollar effect, not liquidity.','<b>The dollar effect, not liquidity.</b>')}</div>
+  <small class="note" style="margin:0 0 8px">Threshold: Bonferroni-corrected two-sided 95% for ${L.ll.length} lags (α = ${(0.05/L.ll.length).toFixed(4)} each), t = ${L.CR.t.toFixed(2)} with df = ${L.CR.df}, critical |r| = t/√(df+t²) = ${L.crit.toFixed(3)}. Computed from n, not hard-coded. Constant FX converts each economy's local M2 at fixed 2015-average rates, so dollar swings drop out. Correlation of changes is descriptive, not a trading signal.</small>`}
+const wkSer=()=>{const N=MAC.M?.net_liquidity;if(!N?.points?.length)return null;return{t:N.points.map(p=>ymd(p[0])),v:N.points.map(p=>p[1]),tga:N.points.map(p=>p[3]),rrp:N.points.map(p=>p[4]),walcl:N.points.map(p=>p[2]),N}};
+function curveInfo(M){const s=ser('T10Y2Y',M);if(!s)return null;let lastInv=null,lastUn=null;for(let i=1;i<s.v.length;i++){if(s.v[i-1]>=0&&s.v[i]<0)lastInv=s.t[i];if(s.v[i-1]<0&&s.v[i]>=0)lastUn=s.t[i]}return{s,lastInv,lastUn,cur:s.v.at(-1)}}
+function macNewCards(M,B,add){
+  add(()=>{const W=wkSer();if(!W)return null;const n=W.v.length,L=W.v[n-1],c4=(L/W.v[n-5]-1)*100,c13=(L/W.v[n-14]-1)*100,from=Date.UTC(2014,0,1),ld=dU(W.t[n-1]);
+    const nl=slice(W.t,W.v.map(Math.log),from);let bt=null,bz=null;if(B){const bw=slice(B.d.t,B.d.v,from),step=[],sv=[];for(let i=0;i<bw.t.length;i+=7){step.push(bw.t[i]);sv.push(Math.log(bw.v[i]))}bt=step;bz=zs(sv)}
+    return{id:'netliq',uses:['WALCL','WTREGEN','RRPONTSYD'],btc:1,title:'US net liquidity vs BTC',read:`Net liquidity $${L.toLocaleString('en-US',{maximumFractionDigits:0})}B (${ld}) · ${pct(c4,1)} 4w · ${pct(c13,1)} 13w`,
+      cap:`US net liquidity (Fed balance sheet − TGA − ON RRP) is $${L.toFixed(0)}B, ${pct(c13,1)} over 13 weeks.`,src:`FRED WALCL, WTREGEN, RRPONTSYD via data/macro.json, weekly through ${ld}${B?' · BTC '+B.src:''}`,
+      draw:(c,X,Y,Wd,H,u)=>plot(c,X,Y,Wd,H,u,{t:[from,Math.max(W.t.at(-1),bt?bt.at(-1):0)],yf:v=>v.toFixed(1)+'σ',series:[...(bt?[{t:bt,v:bz,c:TH.ac,w:2.6,l:'BTC (log, z)'}]:[]),{t:nl.t,v:zs(nl.v),c:TH.ac2||TH.up,w:3.4,l:'Net liquidity (log, z)'}]})}});
+  add(()=>{const W=wkSer();if(!W)return null;const from=Date.UTC(2020,0,1),i0=W.t.findIndex(x=>x>=from),t=W.t.slice(i0),n=W.v.length,ld=dU(W.t[n-1]),rr=ser('RRPONTSYD',M),tg=ser('WTREGEN',M);
+    return{id:'tgarrp',uses:['WTREGEN','RRPONTSYD'],title:'Treasury General Account and ON RRP',read:`TGA $${W.tga[n-1].toFixed(0)}B (${pct((W.tga[n-1]/W.tga[n-5]-1)*100,1)} 4w) · ON RRP $${rr?rr.v.at(-1).toFixed(1):W.rrp[n-1].toFixed(1)}B${rr?' ('+dU(rr.t.at(-1))+')':''}`,
+      cap:'',src:`FRED WTREGEN (week average) and RRPONTSYD (daily) via data/macro.json, through ${ld}`,
+      draw:(c,X,Y,Wd,H,u)=>plot(c,X,Y,Wd,H,u,{t,ymin:0,yf:v=>'$'+v.toFixed(0)+'B',series:[{v:W.tga.slice(i0),c:TH.ac,w:3,l:'TGA'},{v:W.rrp.slice(i0),c:TH.ac2||TH.vi,w:3,l:'ON RRP'}]})}});
+  add(()=>{const a=ser('DGS2',M),b=ser('DGS10',M),C=curveInfo(M);if(!a||!b||!C)return null;const from=Date.UTC(2015,0,1),A=slice(a.t,a.v,from),Bb=slice(b.t,b.v,from),S=slice(C.s.t,C.s.v,from),ld=dU(C.s.t.at(-1));
+    const st=C.cur>=0?`positive since ${C.lastUn?dU(C.lastUn):'before the data'}`:`inverted since ${C.lastInv?dU(C.lastInv):'n/a'}`;
+    return{id:'curve',uses:['DGS2','DGS10','T10Y2Y'],title:'Yield curve: 2Y, 10Y and 2s10s',read:`2Y ${a.v.at(-1).toFixed(2)}% · 10Y ${b.v.at(-1).toFixed(2)}% · 2s10s ${C.cur>=0?'+':''}${C.cur.toFixed(2)} (${st})`,cap:'',src:`FRED DGS2, DGS10, T10Y2Y via data/macro.json through ${ld}`,curve:C,
+      draw:(c,X,Y,Wd,H,u)=>plot(c,X,Y,Wd,H,u,{t:A.t,yf:v=>v.toFixed(1)+'%',hl:[{v:0,c:TH.mu,l:'0 · inversion line'}],series:[{v:A.v,c:TH.ac2||TH.vi,w:2.4,l:'2Y'},{t:Bb.t,v:Bb.v,c:TH.tx,w:2.2,l:'10Y'},{t:S.t,v:S.v,c:TH.ac,w:3.2,fill:1,l:'2s10s'}]})}})}
+function macNewTiles(M,tile){const T=[],W=wkSer();
+  if(W){const n=W.v.length,fr=fresh('WALCL',M);T.push(tile('US net liquidity','$'+(W.v[n-1]/1000).toFixed(2)+'T',`<span class="${cls(W.v[n-1]-W.v[n-5])}">${pct((W.v[n-1]/W.v[n-5]-1)*100,1)} 4w</span>`,'week of '+dU(W.t[n-1]),fr));
+    const tg=ser('WTREGEN',M);if(tg)T.push(tile('TGA','$'+(tg.v.at(-1)/1000).toFixed(0)+'B',`${tg.v.at(-1)-tg.v[back(tg,28)]>=0?'+':'-'}$${Math.abs((tg.v.at(-1)-tg.v[back(tg,28)])/1000).toFixed(0)}B 4w`,dU(tg.t.at(-1)),fresh('WTREGEN',M)))}
+  const rr=ser('RRPONTSYD',M);if(rr)T.push(tile('ON RRP','$'+rr.v.at(-1).toFixed(1)+'B',(()=>{const d=rr.v.at(-1)-rr.v[back(rr,28)];return`${d>=0?'+':'-'}$${Math.abs(d).toFixed(1)}B 4w`})(),dU(rr.t.at(-1)),fresh('RRPONTSYD',M)));
+  const t2=ser('DGS2',M);if(t2){const j=back(t2,30),d=(t2.v.at(-1)-t2.v[j])*100;T.push(tile('US 2Y yield',t2.v.at(-1).toFixed(2)+'%',`${d>=0?'+':''}${d.toFixed(0)}bp 1M`,dU(t2.t.at(-1)),fresh('DGS2',M)))}
+  const C=curveInfo(M);if(C)T.push(tile('2s10s spread',(C.cur>=0?'+':'')+C.cur.toFixed(2),C.cur>=0?'positive slope':'<span class="dn">inverted</span>',dU(C.s.t.at(-1)),fresh('T10Y2Y',M)));
+  return T.join('')}
+// --- macro forces: which force is helping or hurting crypto now
+function chgHist(t,v,days,pctMode){const out=[];let j=0;for(let i=0;i<t.length;i++){while(j<i&&t[j]<t[i]-days*DAY)j++;if(t[i]-t[j]>=days*DAY*.9&&v[j]){out.push(pctMode?(v[i]/v[j]-1)*100:(v[i]-v[j]))}}return out}
+function forceCalc(){const M=MAC.M;if(!M)return null;const F=[];
+  const mk=(k,name,x,hist,sign,txt,unit,from,hor,src)=>{if(x==null||!isFinite(x))return F.push({k,name,na:true,src});const ab=hist.map(Math.abs).filter(isFinite).sort((a,b)=>a-b),med=ab[Math.floor(ab.length/2)]||1,size=Math.abs(x)/med,pr=ab.filter(a=>a<Math.abs(x)).length/ab.length*100,imp=sign*Math.sign(x)*size;
+    F.push({k,name,x,size,pr,imp,dir:Math.abs(imp)<.5?'Neutral':imp>0?'Helping':'Hurting',txt:txt(x,pr,from),unit,from,hor,src})};
+  const big=pr=>pr>=80?'a large move':pr>=50?'a normal-sized move':'a small move';
+  const dx=ser('DTWEXBGS',M);if(dx){const x=(dx.v.at(-1)/dx.v[back(dx,91)]-1)*100;mk('dxy','Dollar',x,chgHist(dx.t,dx.v,91,1),-1,(x,pr,f)=>`The dollar is ${pct(x,1)} over 3 months, ${big(pr)} (bigger than ${Math.round(pr)}% of 3-month moves since ${f}). A ${x>0?'firmer':'softer'} dollar has historically ${x>0?'weighed on':'helped'} crypto.`,'%',mU(dx.t[0]),'3 months','FRED DTWEXBGS')}
+  const ry=ser('DFII10',M);if(ry){const x=(ry.v.at(-1)-ry.v[back(ry,91)])*100;mk('real','Real yields',x,chgHist(ry.t,ry.v.map(v=>v*100),91,0),-1,(x,pr,f)=>`The 10Y real yield is ${x>=0?'+':''}${Math.round(x)}bp over 3 months at ${ry.v.at(-1).toFixed(2)}% (bigger than ${Math.round(pr)}% of 3-month moves since ${f}). ${x>0?'Rising':'Falling'} real yields have historically been a ${x>0?'headwind':'tailwind'} for non-yielding assets.`,'bp',mU(ry.t[0]),'3 months','FRED DFII10')}
+  const W=wkSer();if(W){const n=W.v.length,x=(W.v[n-1]/W.v[n-14]-1)*100;mk('netliq','US net liquidity',x,chgHist(W.t,W.v,91,1),1,(x,pr,f)=>`Fed balance sheet minus TGA and ON RRP is ${pct(x,1)} over 13 weeks at $${(W.v[n-1]/1000).toFixed(2)}T (bigger than ${Math.round(pr)}% of 13-week moves since ${f}).`,'%',mU(W.t[0]),'13 weeks','FRED WALCL, WTREGEN, RRPONTSYD')}
+  const G=gm2(M);if(G&&G.P[0][6]!=null){const v=G.P.map(p=>p[6]),i3=G.L-3,x=(v[G.L]/v[i3]-1)*100;mk('m2','Global M2 (constant FX)',x,chgHist(G.t,v,89,1),1,(x,pr,f)=>`Global M2 at constant FX is ${pct(x,1)} over 3 months to ${mU(G.last)} (bigger than ${Math.round(pr)}% of 3-month moves since ${f}). Constant FX keeps the dollar out of it.`,'%',mU(G.t[0]),'3 months','FRED, ECB, BOJ, PBoC')}
+  if(NX.etf){try{const days=['btc','eth'].map(a=>etfStats(NX.etf,a).days),m=new Map();days.forEach(ds=>ds.forEach(d=>m.set(d.date,(m.get(d.date)||0)+d.total)));const k=[...m.keys()].sort(),v=k.map(x=>m.get(x)),roll=[];for(let i=29;i<v.length;i++)roll.push(v.slice(i-29,i+1).reduce((a,b)=>a+b,0));const x=roll.at(-1);
+    mk('etf','ETF flows',x,roll,1,(x,pr,f)=>`US spot BTC+ETH ETFs took ${fM(x,1)} net over 30 trading days (bigger than ${Math.round(pr)}% of 30-day totals since ${f}).`,'$M',mU(ymd(k[0])),'30 trading days','Farside')}catch(e){}}
+  else F.push({k:'etf',name:'ETF flows',na:true,src:'Farside (loading)'});
+  const ST=SIGD?.ST||(MK?.stablecoins?.points?{t:MK.stablecoins.points.map(p=>dIso(p[0])),v:MK.stablecoins.points.map(p=>p[1])}:null);
+  if(ST){const n=ST.v.length,x=(ST.v[n-1]/ST.v[back(ST,30)]-1)*100;mk('stable','Stablecoins',x,chgHist(ST.t,ST.v,30,1),1,(x,pr,f)=>`Stablecoin supply is ${pct(x,1)} over 30 days at ${usdB(ST.v[n-1])} (bigger than ${Math.round(pr)}% of 30-day moves since ${f}).`,'%',mU(ST.t[0]),'30 days','DefiLlama')}
+  const ok=F.filter(f=>!f.na).sort((a,b)=>Math.abs(b.imp)-Math.abs(a.imp));return{ok,na:F.filter(f=>f.na)}}
+const FORCE_METH='Each force is its recent change over a fixed horizon (dollar and real yield 3 months, net liquidity 13 weeks, global M2 at constant FX 3 months, BTC+ETH ETF net flows 30 trading days, stablecoin supply 30 days). Size = |change| ÷ the median |change| over the same horizon across the series\' full history (1.0 = a typical move). Direction for crypto: a rising dollar or real yield counts as hurting; rising net liquidity, M2, ETF inflows or stablecoin supply counts as helping. Impact = direction × size; ranked by |impact|; below 0.5 = Neutral. Historical relationships, not forecasts.';
+function forcesHTML(){const R=forceCalc();if(!R)return'';const top=R.ok[0];
+  return`<div class="card" id="forceCard"><h3>Macro forces<span class="sp"></span><button class="btn sm" data-tg="force|m">Method ⓘ</button></h3>
+  <div style="font-size:14px;font-weight:600;margin-bottom:4px">What macro force is helping or hurting crypto right now?</div>
+  ${top?`<div class="msw" style="margin-bottom:6px">Biggest right now: <b>${esc(top.name)}</b> (${top.dir.toLowerCase()}, ${top.size.toFixed(1)}× a typical move).</div>`:''}
+  ${R.ok.map((f,i)=>`<div class="rec" data-tg="force|${f.k}"><div class="msh"><span class="rk">${i+1}</span><b>${esc(f.name)}</b><span class="sp"></span><span class="bias ${f.dir==='Helping'?'b-up':f.dir==='Hurting'?'b-dn':'b-nt'}">${f.dir}</span><span class="num mu" style="font-size:11px">${f.size.toFixed(1)}×</span></div><div class="msw">${esc(f.txt)}</div>
+   <div class="rule ${OPEN.has('force|'+f.k)?'on':''}" data-tgx="force|${f.k}">Change ${f.unit==='$M'?fM(f.x,1):f.unit==='bp'?(f.x>=0?'+':'')+Math.round(f.x)+'bp':pct(f.x,2)} over ${f.hor}; typical |move| over that horizon = ${(f.size?Math.abs(f.x)/f.size:0).toFixed(f.unit==='$M'?0:2)}${f.unit==='$M'?'M':f.unit}; size ${f.size.toFixed(2)}×; bigger than ${Math.round(f.pr)}% of moves since ${f.from}. Source: ${esc(f.src)}.</div></div>`).join('')}
+  ${R.na.length?`<div class="mu" style="font-size:11px">No data: ${R.na.map(f=>esc(f.name)).join(', ')}.</div>`:''}
+  <div class="rule ${OPEN.has('force|m')?'on':''}" data-tgx="force|m">${esc(FORCE_METH)}</div></div>`}
+function paintForces(){const el=$('#macForces');if(el&&MAC.M){const y=scrollY;el.innerHTML=forcesHTML();if(y>0&&Math.abs(scrollY-y)>2)scrollTo(0,y)}}
+
+// ---------- NEWS RANKING (spec: freshness 30, pickup 20, size 20, price reaction 20, RP's coins 10; opinion −15; 70+ = POST NOW)
+const NEWS_INFO='News score (0–100) = Freshness 30 (linear decay to 0 over 12h for data stories such as ETF flows and macro prints, over 6h for breaking events, from the first report) + Pickup 20 (distinct outlets carrying the story: 1 = 5, 2 = 12, 3 = 17, 4+ = 20) + Size 20 ($ amount: $1B+ = 20, $100M+ = 14, $10M+ = 8; record words such as record/all-time high/largest add 8; capped at 20) + Price reaction 20 (24h move of the coin named: 10%+ = 20, 5%+ = 14, 2%+ = 8, smaller = 3; no coin named = 0) + Your coins 10 (watchlist match) − 15 for opinion headlines (ending in "?" or containing Will, Here\'s why, explained, prediction, analysis). Stories naming the same ticker/company and the same $ amount, or with near-identical headlines, are merged into one card listing every outlet. 70 or more = POST NOW.';
+const ENT=[['BTC',/\b(bitcoin|btc)\b/i],['ETH',/\b(ethereum|ether|eth)\b/i],['SOL',/\b(solana|sol)\b/i],['XRP',/\b(xrp|ripple)\b/i],['BNB',/\b(bnb|binance coin)\b/i],['DOGE',/\b(dogecoin|doge)\b/i],['ADA',/\b(cardano|ada)\b/i],['LINK',/\b(chainlink|link)\b/i],['USDT',/\btether|usdt\b/i],['USDC',/\b(circle|usdc)\b/i],['MSTR',/\b(microstrategy|strategy inc|saylor|mstr)\b/i],['BlackRock',/\bblackrock|ibit\b/i],['Coinbase',/\bcoinbase\b/i],['Binance',/\bbinance\b/i],['SEC',/\bsec\b/],['Fed',/\b(fed|fomc|powell)\b/i]];
+function amtOf(s){const r=/\$\s?(\d+(?:[.,]\d+)?)\s?(k|m|b|t|bn|mn|million|billion|trillion)?\b/ig;let m,best=0;while((m=r.exec(s))){const n=parseFloat(m[1].replace(/,/g,'')),u=(m[2]||'').toLowerCase(),mul=/^(t|trillion)$/.test(u)?1e12:/^(b|bn|billion)$/.test(u)?1e9:/^(m|mn|million)$/.test(u)?1e6:/^k$/.test(u)?1e3:1;best=Math.max(best,n*mul)}return best}
+const isOpinion=t=>/\?\s*$/.test(t)||/\bwill\b|here'?s why|explained|prediction|analysis/i.test(t);
+const isData=t=>/\betfs?\b.*\b(flow|inflow|outflow)|\b(net (inflow|outflow)s?)\b|\b(cpi|ppi|pce|payrolls|nonfarm|jobs report|jobless claims|unemployment rate|gdp|fomc|rate decision)\b/i.test(t);
+const RECW=/\b(record|all-time high|ath|largest|biggest|first-ever|historic|highest ever|lowest ever)\b/i;
+function newsClusters(){const L=D.news.filter(n=>n.title&&Date.now()-n.t<72*36e5).slice(0,120),cl=[];
+  const sig=n=>{const s=n.title+' '+(n.desc||'');return{ents:ENT.filter(([k,re])=>re.test(n.title)).map(x=>x[0]),amt:amtOf(n.title)||amtOf(s)}};
+  for(const n of L){const g=sig(n);let C=cl.find(c=>c.items.some(m=>simT(m.title,n.title)>=.5)||(g.amt>0&&c.amt>0&&Math.abs(g.amt/c.amt-1)<.02&&g.ents.some(e=>c.ents.includes(e))));
+    if(C){C.items.push(n);g.ents.forEach(e=>!C.ents.includes(e)&&C.ents.push(e));if(!C.amt)C.amt=g.amt}else cl.push({items:[n],ents:g.ents.slice(),amt:g.amt})}
+  return cl.map(newsScore).sort((a,b)=>b.score-a.score||b.lead.t-a.lead.t)}
+function newsScore(C){const items=C.items.slice().sort((a,b)=>a.t-b.t),first=items[0],lead=C.items.slice().sort((a,b)=>b.t-a.t).find(x=>!isOpinion(x.title))||items.at(-1),title=lead.title,txt=C.items.map(x=>x.title).join(' | ');
+  const age=(Date.now()-first.t)/36e5,data=isData(txt),H=data?12:6,fr=30*Math.max(0,1-age/H),outs=[...new Set(C.items.map(x=>x.src))],pu=[0,5,12,17,20][Math.min(4,outs.length)];
+  let sz=C.amt>=1e9?20:C.amt>=1e8?14:C.amt>=1e7?8:0;const rec=RECW.test(txt);if(rec)sz=Math.min(20,sz+8);
+  const coins=Object.values(D.mk||{}),sym=C.ents.find(e=>coins.some(m=>m.symbol?.toUpperCase()===e)),mk=sym?coins.find(m=>m.symbol?.toUpperCase()===sym):null,p24=mk?.price_change_percentage_24h,pr=p24==null?0:Math.abs(p24)>=10?20:Math.abs(p24)>=5?14:Math.abs(p24)>=2?8:3;
+  const W=S.watch.find(w=>new RegExp('\\b('+w.sym.replace(/[^\w]/g,'')+'|'+(D.mk[w.id]?.name||w.id).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')\\b','i').test(txt)),rp=W?10:0,op=isOpinion(title)||C.items.every(x=>isOpinion(x.title))?-15:0;
+  const parts=[['Freshness',fr,30,`first report ${age<1?Math.round(age*60)+' min':age.toFixed(1)+'h'} ago; ${data?'data story, decays over 12h':'breaking event, decays over 6h'}`],['Pickup',pu,20,`${outs.length} outlet${outs.length>1?'s':''}: ${outs.join(', ')}`],['Size',sz,20,`${C.amt?'$ amount '+usdB(C.amt):'no $ amount'}${rec?'; record wording':''}`],['Price reaction',pr,20,mk?`${sym} ${pct(p24,1)} in 24h`:'no coin named or no price'],["Your coins",rp,10,W?W.sym.toUpperCase()+' on your watchlist':'no watchlist coin'],...(op?[['Opinion headline',op,-15,'question or opinion wording']]:[])];
+  const score=Math.round(clamp(parts.reduce((s,p)=>s+p[1],0),0,100));return{...C,lead,first,outs,parts,score,data,hit:W?.sym.toUpperCase(),age}}
+const nKey=c=>'news|'+(c.lead.link||c.lead.title).slice(-60);
+function newsSbHTML(c){return`<table class="cor sbt"><tr><th style="text-align:left">Part</th><th>Points</th><th>Max</th></tr>${c.parts.map(p=>`<tr><td style="text-align:left">${p[0]}<div class="mu" style="font-size:10.5px;line-height:1.35">${esc(p[3])}</div></td><td><b>${Math.round(p[1])}</b></td><td>${p[2]}</td></tr>`).join('')}<tr><td style="text-align:left"><b>News score</b></td><td><b>${c.score}</b></td><td>100</td></tr></table><small class="note">${esc(NEWS_INFO)}</small>`}
+let NCL=[];
+function newsCardHTML(c){const k=nKey(c),n=c.lead;return`<div class="rec"><div class="msh"><span class="mu" style="font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.outs.join(' · '))} · ${ago(n.t)} ago${c.hit?` · <span class="up">${esc(c.hit)}</span>`:''}</span><span class="sp"></span>${c.score>=70?'<span class="bias b-up">POST NOW</span>':''}<button class="btn sm num" data-nsb="${esc(k)}">${c.score} ⓘ</button></div>
+  <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>${c.items.length>1?`<div class="mu" style="font-size:11px;margin-top:3px">${c.items.length} reports merged: ${c.items.filter(x=>x!==n).slice(0,3).map(x=>esc(x.src+': '+x.title.slice(0,60))).join(' · ')}</div>`:''}
+  <div class="sbx ${OPEN.has(k)?'on':''}" data-nsbx="${esc(k)}">${OPEN.has(k)?newsSbHTML(c):''}</div><div style="margin-top:6px"><button class="btn sm" data-nd="${D.news.indexOf(n)}">✦ Captions</button></div></div>`}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-nsb]');if(!b)return;e.stopPropagation();const k=b.dataset.nsb,c=NCL.find(x=>nKey(x)===k);const on=!OPEN.has(k);on?OPEN.add(k):OPEN.delete(k);$$(`[data-nsbx="${CSS.escape(k)}"]`).forEach(x=>{x.classList.toggle('on',on);if(on&&c)x.innerHTML=newsSbHTML(c)})});
+function newsTopHTML(){if(!D.news.length)return'<div class="mu">Loading headlines…</div>';NCL=newsClusters();return NCL.slice(0,4).map(newsCardHTML).join('')||'<div class="mu">No headlines in the last 72 hours.</div>'}
+
+// ---------- caption facts for the new families
+function pastCycles(){const P=SIGD?.P;if(!P)return null;const W=[['2014–15',Date.UTC(2013,11,1),Date.UTC(2015,11,31)],['2018',Date.UTC(2017,11,1),Date.UTC(2019,2,31)],['2022',Date.UTC(2021,10,1),Date.UTC(2023,0,31)]];let ath=0;const dd=P.v.map(v=>{ath=Math.max(ath,v);return(v/ath-1)*100}),out=[];
+  for(const [l,a,b] of W){let mn=0,mt=null;P.t.forEach((t,i)=>{if(t>=a&&t<=b&&dd[i]<mn){mn=dd[i];mt=t}});if(mt)out.push({l,dd:mn,t:mt})}return out.length?out:null}
+function ddFacts(a='BTC'){const C=SIGD?.CL?.[a];if(!C?.v?.length)return null;let ai=0;C.v.forEach((v,i)=>{if(v>=C.v[ai])ai=i});const L=C.v.length-1,px=C.v[L],ath=C.v[ai],dd=(px/ath-1)*100,pc=a==='BTC'?pastCycles():null,days=Math.round((C.t[L]-C.t[ai])/DAY),closeD=dU(C.t[L]);
+  const F={...FDEF,fam:'dd',label:`${a} drawdown from ATH`,A:a,tk:'$'+a,dd:Math.abs(dd).toFixed(1)+'%',ath:'$'+(ath/1e3).toFixed(1)+'k',athD:dU(C.t[ai]),px:'$'+(px/1e3).toFixed(1)+'k',closeD,days,date:closeD,src:'Binance daily closes',open:false};
+  if(pc){const ds=pc.map(x=>x.dd),lo=Math.min(...ds),hi=Math.max(...ds);F.past=`−${Math.abs(hi).toFixed(0)}% to −${Math.abs(lo).toFixed(0)}%`;F.pastList=pc.map(x=>`${x.l} −${Math.abs(x.dd).toFixed(0)}% (${mU(x.t)})`).join(', ');
+    const sh=Math.abs(dd)<Math.abs(hi)*.5;F.cmp=sh?'unusually shallow':Math.abs(dd)<Math.abs(hi)?'shallower than any past cycle low':'within the range of past cycle lows';F.cmpS=Math.abs(dd)<Math.abs(hi)?`Every past cycle drawdown went deeper: ${F.past}.`:`That is inside the range of past cycle drawdowns (${F.past}).`;F.cmpCT=sh?'Shallow by past-cycle standards.':Math.abs(dd)<Math.abs(hi)?'Still shallower than every past cycle low.':'Past-cycle territory.'}
+  else{F.past='n/a';F.pastList='n/a';F.cmp='hard to compare';F.cmpS='';F.cmpCT='';F.fam=null}
+  if(days<=0)F.fam=null;return F}
+function perfData(a='BTC'){const C=SIGD?.CL?.[a];if(!C?.v?.length)return null;const mEnd=new Map();C.t.forEach((t,i)=>{const d=new Date(t);mEnd.set(d.getUTCFullYear()*12+d.getUTCMonth(),i)});
+  const keys=[...mEnd.keys()].sort((x,y)=>x-y),mon=[];for(let k=1;k<keys.length;k++){if(keys[k]!==keys[k-1]+1)continue;const i0=mEnd.get(keys[k-1]),i1=mEnd.get(keys[k]);mon.push({k:keys[k],y:Math.floor(keys[k]/12),m:keys[k]%12,r:(C.v[i1]/C.v[i0]-1)*100,p0:C.v[i0],p1:C.v[i1],t1:C.t[i1]})}
+  const last=C.t.at(-1),lastD=new Date(last),curK=lastD.getUTCFullYear()*12+lastD.getUTCMonth(),endOfMonth=new Date(last+DAY).getUTCDate()===1;
+  const done=mon.filter(x=>x.k<curK||(x.k===curK&&endOfMonth)),part=mon.find(x=>x.k===curK&&!endOfMonth);
+  const qs=new Map();done.forEach(x=>{const q=x.y*4+Math.floor(x.m/3),o=qs.get(q)||{q,y:x.y,n:0,f:1,p0:null,p1:x.p1};if(o.p0==null)o.p0=x.p0;o.n++;o.f*=1+x.r/100;o.p1=x.p1;qs.set(q,o)});
+  const Q=[...qs.values()].filter(o=>o.n===3).map(o=>({...o,r:(o.f-1)*100,qi:o.q%4}));return{mon:done,part,Q,C,last}}
+const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function perfFacts(a='BTC'){const P=perfData(a);if(!P||!P.mon.length)return null;const {mon,part,Q}=P,lastQ=Q.at(-1),lastM=mon.at(-1),useQ=lastQ&&lastQ.q===Math.floor(lastM.k/3)&&lastM.m%3===2;
+  const it=useQ?{per:`Q${lastQ.qi+1} ${lastQ.y}`,r:lastQ.r,p0:lastQ.p0,p1:lastQ.p1,peers:Q.filter(x=>x.qi===lastQ.qi&&x!==lastQ),nm:`Q${lastQ.qi+1}`,prev:Q.at(-2)}:{per:`${MN[lastM.m]} ${lastM.y}`,r:lastM.r,p0:lastM.p0,p1:lastM.p1,peers:mon.filter(x=>x.m===lastM.m&&x!==lastM),nm:MN[lastM.m],prev:mon.at(-2)};
+  const better=it.peers.filter(x=>x.r>it.r).sort((a,b)=>b.y-a.y)[0],worse=it.peers.filter(x=>x.r<it.r).sort((a,b)=>b.y-a.y)[0];let rank='';
+  if(it.peers.length>=3){if(!better)rank=`its best ${it.nm} in data back to ${Math.min(...it.peers.map(x=>x.y))}`;else if(!worse)rank=`its worst ${it.nm} in data back to ${Math.min(...it.peers.map(x=>x.y))}`;else if(it.r>0&&better.y<lastM.y-1)rank=`its best ${it.nm} since ${better.y}`;else if(it.r<0&&worse.y<lastM.y-1)rank=`its worst ${it.nm} since ${worse.y}`}
+  const closeD=dU(P.last),mtd=part?`${MN[part.m]} is ${pct(part.r,1)} so far (through the ${closeD} close).`:'';
+  return{...FDEF,fam:'perf',label:`${a} ${it.per} performance`,A:a,tk:'$'+a,per:it.per,ret:pct(it.r,1),p0:usdK(it.p0),p1:usdK(it.p1),rank,rankA:rank?cap1(rank)+'.':`${it.peers.length} earlier ${it.nm}s in the data.`,mtdTxt:mtd,closeD,date:closeD,prevPer:useQ?`Q${it.prev.qi+1} ${it.prev.y}`:`${MN[it.prev.m]} ${it.prev.y}`,prevRet:pct(it.prev.r,1),moodP:it.r>10?'Strong period.':it.r<-10?'Rough period.':'Choppy period.',src:'Binance daily closes',open:false,P,it,useQ}}
+function altFacts(){const A=MK?altCalc():null;if(!A)return null;const L=A.L;return{...FDEF,fam:'alt',label:'Altseason engine',state:L.state,b90:Math.round(L.b90)+'%',b30:Math.round(L.b30)+'%',eb:L.eb?.toFixed(4)??'n/a',eb30:L.eb30!=null?pct(L.eb30,1):'n/a',dma:L.ebAbove==null?'(no 200-day average yet)':L.ebAbove?'above':'below',
+  liqS:L.st30!=null?`Stablecoin supply ${pct(L.st30,1)} in 30 days${L.st30<0?', so the model caps the state at Broadening.':'.'}`:'',def:ALT.DEF[L.state],n:L.n,date:dU(dIso(L.d)),src:'market.json (Binance/OKX closes)',open:false,
+  moodA:{'BTC-led':"Still BTC's market.",'Early rotation':'Rotation starting to show.',Broadening:'Participation is broadening.',Altseason:'Broad alt strength.',Weakening:'Rotation fading.',Mixed:'No clear regime.'}[L.state]}}
+function etfStreak(a){const st=etfStats(NX.etf,a);if(!st)return null;const d=st.days,L=d.at(-1);if(!L||L.total>=0)return null;let k=0,s=0;for(let i=d.length-2;i>=0&&d[i].total>0;i--){k++;s+=d[i].total}return k>=3?{k,s,L:L.total}:null}
+const fB=v=>Math.abs(v)>=1000?(v<0?'-':'')+'$'+(Math.abs(v)/1000).toFixed(Math.abs(v)>=10000?0:1)+'B':(v<0?'-':'')+'$'+Math.abs(v).toFixed(0)+'M';
+function drawDD(x,W,H,a){const C=SIGD?.CL?.[a]||SIGD?.CL?.BTC,Fx=ddFacts(a)||{};const{u,m}=cardBase(x,W,H,'Data: Binance daily closes (completed UTC days)');const top=m+90*u;x.fillStyle=TH.tx;x.font=FT(54*u);x.fillText(`${a} drawdown from all-time high`,m,top+40*u);x.fillStyle=TH.ac;x.font=F(26*u,600);x.fillText(`−${Fx.dd} from ${Fx.ath} (${Fx.athD}) · close ${Fx.closeD}`,m,top+84*u);
+  const X=m,Y=top+150*u,Wd=W-2*m,Ht=H-Y-m-80*u;watermark(x,X,Y,Wd-86*u,Ht,u);let ath=0;const dd=C.v.map(v=>{ath=Math.max(ath,v);return(v/ath-1)*100});plot(x,X,Y,Wd,Ht,u,{t:C.t,yf:v=>v.toFixed(0)+'%',series:[{v:dd,c:TH.dn,w:2.6,fill:1,l:'Drawdown from ATH'}]})}
+function drawPerf(x,W,H,a){const P=perfData(a);const{u,m}=cardBase(x,W,H,'Data: Binance daily closes (completed UTC months)');const top=m+90*u;const mon=P.mon.slice(-24),Fx=perfFacts(a);x.fillStyle=TH.tx;x.font=FT(54*u);x.fillText(`${a} monthly returns`,m,top+40*u);x.fillStyle=TH.ac;x.font=F(26*u,600);x.fillText(Fx?`${Fx.per} ${Fx.ret}${Fx.rank?' · '+Fx.rank:''}`:'',m,top+84*u);
+  const X=m,Y=top+150*u,Wd=W-2*m,Ht=H-Y-m-80*u;watermark(x,X,Y,Wd-86*u,Ht,u);bars(x,X,Y,Wd,Ht,u,{v:mon.map(o=>o.r),lab:mon.map(o=>MN[o.m].slice(0,3)+' '+String(o.y).slice(2)),every:3,yf:v=>v.toFixed(0)+'%'})}
+const stSym=()=>{let c=null;try{c=stCoin()}catch(e){}const s=(c?.sym||'btc').toUpperCase();return SIGD?.CL?.[s]?s:'BTC'};
+
 // ---------- tabs & events
 let TAB='today';function tab(t,keep){const y=scrollY;let goIns=false;if(t==='insights'){t='markets';goIns=true}TAB=t;$$('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t||(t==='markets'&&s.id==='s-insights')));$$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));if(!keep)scrollTo(0,0);else requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)});
-  if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart()}if(t==='markets'){renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(goIns)requestAnimationFrame(()=>{const e=$('#s-insights');scrollTo(0,e.getBoundingClientRect().top+scrollY-60)});if(t==='today')renderToday();if(t==='news'){renderNews();renderNewsX();if(!D.news.length)loadNews().then(renderNews)}if(t==='macro')renderMacro();if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
+  if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart()}if(t==='markets'){renderAlt();renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(goIns)requestAnimationFrame(()=>{const e=$('#s-insights');scrollTo(0,e.getBoundingClientRect().top+scrollY-60)});if(t==='today')renderToday();if(t==='news'){renderNews();renderNewsX();if(!D.news.length)loadNews().then(renderNews)}if(t==='macro')renderMacro();if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
 document.addEventListener('click',e=>{const b=e.target.closest('button,[data-i]');if(!b)return;const ds=b.dataset;
   if(ds.t)tab(ds.t);
   if(ds.iv){CH.iv=ds.iv;renderChartCtl();loadChart()}
