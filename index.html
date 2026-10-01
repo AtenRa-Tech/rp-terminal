@@ -135,6 +135,8 @@ small.note{color:var(--mu);font-size:11px;display:block;margin-top:8px}
 [data-theme=sap] nav button.on{background:none;color:#fff}[data-theme=sap] nav button.on i{color:var(--ac);text-shadow:0 0 12px rgba(41,98,255,.9)}
 [data-theme=sap] .cv{border-radius:12px}[data-theme=sap] .bias{font-family:var(--ui);text-transform:none;border-radius:999px;padding:3px 10px}
 [data-theme=sap] .toast{border-radius:999px;background:var(--grad);font-family:var(--ui);box-shadow:0 0 20px rgba(41,98,255,.5);color:#fff}
+nav button{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}[data-theme=neo] nav button,[data-theme=sap] nav button{font-size:10px;letter-spacing:-.01em}[data-theme=neo] nav button i,[data-theme=sap] nav button i{font-size:17px}[data-theme=ch] nav button{font-size:10px}nav button{letter-spacing:.02em}
+#macTiles .stat .v{font-size:17px}#macTiles .stat{padding:2px 0}
 #audit{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);display:none;align-items:flex-end;justify-content:center;padding:10px}#audit.on{display:flex}
 #audit .aud{width:100%;max-width:560px;max-height:82vh;overflow:auto;margin:0 0 70px}#audit ul{list-style:none;padding:0;margin:8px 0}#audit li{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--ln);font-size:13px;line-height:1.4;color:var(--tx2)}
 #audit .vd{font-weight:700;padding:10px;border-radius:10px;font-size:14px}#audit .vd.ok{background:rgba(0,255,156,.12);color:var(--up)}#audit .vd.warn{background:rgba(255,230,0,.1);color:#ffd84d}#audit .vd.bad{background:rgba(255,51,102,.14);color:var(--dn)}
@@ -187,8 +189,17 @@ small.note{color:var(--mu);font-size:11px;display:block;margin-top:8px}
 </section>
 <!-- NEWS -->
 <section id="s-news">
+  <div id="nxCal"></div><div id="nxEtf"></div><div id="nxInd"></div>
   <div class="chips" id="nf" style="margin-bottom:10px"></div>
   <div id="news"><div class="card mu">Loading headlines…</div></div>
+</section>
+<!-- MACRO -->
+<section id="s-macro">
+  <div class="card"><h3>Macro · liquidity &amp; rates<span class="sp"></span><button class="btn sm" id="macRef">↻</button></h3>
+    <div class="grid num" id="macTiles"><div class="mu">Loading…</div></div>
+    <small class="note" id="macHealth"></small></div>
+  <div id="macList"></div>
+  <small class="note">Macro data refreshes every 6 hours via GitHub Actions (FRED, ECB, BOJ, PBoC). Each tile shows its own last data date; ⚠️ marks data older than its normal cadence. All times UTC. Not financial advice.</small>
 </section>
 <!-- STUDIO -->
 <section id="s-studio">
@@ -219,6 +230,7 @@ small.note{color:var(--mu);font-size:11px;display:block;margin-top:8px}
   <button data-t="insights"><i>ANR</i>F3</button>
   <button data-t="news"><i>NEWS</i>F4</button>
   <button data-t="studio"><i>POST</i>F5</button>
+  <button data-t="macro"><i>MAC</i>F7</button>
 </nav>
 <div class="toast" id="toast"></div>
 <script>
@@ -229,10 +241,10 @@ let S;try{S=Object.assign({},DEF,JSON.parse(localStorage.rpt||'{}'))}catch(e){S=
 const save=()=>localStorage.rpt=JSON.stringify(S);
 let THEME=S.theme||'neo';
 const THEMES={
- bb:{bg:'#000000',p1:'#070707',ln:'#1c1c1c',tx:'#f2f2f2',mu:'#8c8c8c',up:'#33d17a',dn:'#ff4d4d',ac:'#ffa028',ac2:'#4fc3f7',vi:'#c792ea',pk:'#e8e8e8',font:'"IBM Plex Mono",ui-monospace,"Roboto Mono",monospace',disp:null,fg:['#ff4d4d','#ff7a33','#ffa028','#a3c94a','#33d17a'],hp:[[16,30,22],[24,130,72]],hn:[[34,18,18],[165,38,38]],nav:[['MKT','F1'],['GP','F2'],['SIG','F3'],['ANR','F4'],['NEWS','F5'],['POST','F6']]},
- sap:{bg:'#000000',p1:'#0A0F1C',ln:'#141c30',tx:'#ffffff',mu:'#8b97b5',up:'#00D395',dn:'#FF4D6A',ac:'#8AB4FF',ac2:'#4d7cff',vi:'#a9a4ff',pk:'#e8eeff',font:'Inter,system-ui,Roboto,sans-serif',disp:'"Space Grotesk",Inter,sans-serif',ds:1,dw:700,glow:1,g1:'#2962FF',g2:'#8AB4FF',fg:['#FF4D6A','#ff8a5c','#ffd166','#7ee0b5','#00D395'],hp:[[8,14,26],[0,150,108]],hn:[[18,10,20],[200,50,78]],nav:[['◉','Markets'],['◭','Chart'],['⚡','Signals'],['✦','Insights'],['◈','News'],['✚','Studio']]},
- neo:{g1:'#00e5ff',g2:'#ff2bd6',bg:'#000000',p1:'#000000',ln:'#15151f',tx:'#ffffff',mu:'#8a8fb8',up:'#00ff9c',dn:'#ff3366',ac:'#00e5ff',ac2:'#ff2bd6',vi:'#b388ff',pk:'#ffe600',font:'Inter,system-ui,Roboto,sans-serif',disp:'"Space Grotesk",Inter,sans-serif',ds:1,dw:700,glow:1,fg:['#ff3366','#ff7a45','#ffe600','#7dff6a','#00ff9c'],hp:[[0,18,12],[0,185,105]],hn:[[24,0,8],[215,18,68]],nav:[['◉','Markets'],['◭','Chart'],['⚡','Signals'],['✦','Insights'],['◈','News'],['✚','Studio']]},
- ch:{ds:1.15,dw:600,bg:'#0b0a09',p1:'#12100e',ln:'#221e19',tx:'#f3eee4',mu:'#8e8676',up:'#5fb68e',dn:'#d4766c',ac:'#d6b67a',ac2:'#a9bccb',vi:'#b9a3d6',pk:'#efe6d2',font:'Inter,system-ui,Roboto,sans-serif',disp:'"Cormorant Garamond",Georgia,serif',fg:['#c9685f','#cf8f6a','#d6b67a','#9cb58a','#5fb68e'],hp:[[26,24,21],[52,112,84]],hn:[[30,24,22],[140,62,56]],nav:[['◇','Markets'],['◈','Chart'],['✺','Signals'],['✧','Insights'],['❖','News'],['✦','Studio']]}};
+ bb:{bg:'#000000',p1:'#070707',ln:'#1c1c1c',tx:'#f2f2f2',mu:'#8c8c8c',up:'#33d17a',dn:'#ff4d4d',ac:'#ffa028',ac2:'#4fc3f7',vi:'#c792ea',pk:'#e8e8e8',font:'"IBM Plex Mono",ui-monospace,"Roboto Mono",monospace',disp:null,fg:['#ff4d4d','#ff7a33','#ffa028','#a3c94a','#33d17a'],hp:[[16,30,22],[24,130,72]],hn:[[34,18,18],[165,38,38]],nav:[['MKT','F1'],['GP','F2'],['SIG','F3'],['ANR','F4'],['NEWS','F5'],['POST','F6'],['MAC','F7']]},
+ sap:{bg:'#000000',p1:'#0A0F1C',ln:'#141c30',tx:'#ffffff',mu:'#8b97b5',up:'#00D395',dn:'#FF4D6A',ac:'#8AB4FF',ac2:'#4d7cff',vi:'#a9a4ff',pk:'#e8eeff',font:'Inter,system-ui,Roboto,sans-serif',disp:'"Space Grotesk",Inter,sans-serif',ds:1,dw:700,glow:1,g1:'#2962FF',g2:'#8AB4FF',fg:['#FF4D6A','#ff8a5c','#ffd166','#7ee0b5','#00D395'],hp:[[8,14,26],[0,150,108]],hn:[[18,10,20],[200,50,78]],nav:[['◉','Markets'],['◭','Chart'],['⚡','Signals'],['✦','Insights'],['◈','News'],['✚','Studio'],['◎','Macro']]},
+ neo:{g1:'#00e5ff',g2:'#ff2bd6',bg:'#000000',p1:'#000000',ln:'#15151f',tx:'#ffffff',mu:'#8a8fb8',up:'#00ff9c',dn:'#ff3366',ac:'#00e5ff',ac2:'#ff2bd6',vi:'#b388ff',pk:'#ffe600',font:'Inter,system-ui,Roboto,sans-serif',disp:'"Space Grotesk",Inter,sans-serif',ds:1,dw:700,glow:1,fg:['#ff3366','#ff7a45','#ffe600','#7dff6a','#00ff9c'],hp:[[0,18,12],[0,185,105]],hn:[[24,0,8],[215,18,68]],nav:[['◉','Markets'],['◭','Chart'],['⚡','Signals'],['✦','Insights'],['◈','News'],['✚','Studio'],['◎','Macro']]},
+ ch:{ds:1.15,dw:600,bg:'#0b0a09',p1:'#12100e',ln:'#221e19',tx:'#f3eee4',mu:'#8e8676',up:'#5fb68e',dn:'#d4766c',ac:'#d6b67a',ac2:'#a9bccb',vi:'#b9a3d6',pk:'#efe6d2',font:'Inter,system-ui,Roboto,sans-serif',disp:'"Cormorant Garamond",Georgia,serif',fg:['#c9685f','#cf8f6a','#d6b67a','#9cb58a','#5fb68e'],hp:[[26,24,21],[52,112,84]],hn:[[30,24,22],[140,62,56]],nav:[['◇','Markets'],['◈','Chart'],['✺','Signals'],['✧','Insights'],['❖','News'],['✦','Studio'],['◎','Macro']]}};
 const TH={};
 Object.assign(TH,THEMES[(JSON.parse(localStorage.rpt||'{}').theme)||'neo']);
 function hexA(h,a){const n=parseInt(h.slice(1),16);return`rgba(${n>>16},${(n>>8)&255},${n&255},${a})`}
@@ -707,9 +719,182 @@ function makeDraft(){const t=$('#stType').value,c=stCoin(),mk=D.mk[c.id]||{},a=D
     else txt=`${S$} ${money(mk.current_price)} (${pct(p24)} 24h, ${pct(mk.price_change_percentage_7d_in_currency,1)} 7d)${tech}\n\nWhat's your move? 👇`}
   $('#draft').value=txt;countChars()}
 function countChars(){const v=$('#draft').value,first=v.split(/\n\n(?=\d+\/)/)[0];$('#cc').textContent=(DMODE==='thread'?'first post ':'')+[...first].length+'/280'}
+// ---------- MACRO + NEWS DATA (data/*.json from the GitHub Actions pipeline)
+const DRAW='https://raw.githubusercontent.com/AtenRa-Tech/rp-terminal/main/data/';
+const DBASE=()=>window.RP_DATA_BASE||(location.protocol.startsWith('http')?'./data/':DRAW);
+const DF={};
+async function dataFile(n,force){if(DF[n]&&!force&&Date.now()-DF[n].at<300000)return DF[n];const k='rpd_'+n,q='?v='+Math.floor(Date.now()/300000);
+  for(const base of [...new Set([DBASE(),DRAW])]){try{const r=await fetch(base+n+'.json'+q,{cache:'no-store'});if(!r.ok)throw 0;const v=await r.json();try{localStorage[k]=JSON.stringify(v)}catch(e){}return DF[n]={v,src:base===DRAW&&DBASE()!==DRAW?'GitHub raw (fallback)':'live',at:Date.now()}}catch(e){}}
+  if(DF[n])return DF[n];const c=localStorage[k];if(c)return DF[n]={v:JSON.parse(c),src:'cached copy (offline)',at:Date.now()};throw new Error('no data: '+n)}
+const ymd=s=>Date.parse(s.slice(0,10)+'T00:00:00Z');
+const mU=t=>new Date(t).toLocaleDateString('en-GB',{timeZone:'UTC',month:'short',year:'numeric'});
+const dtU=t=>new Date(t).toLocaleString('en-GB',{timeZone:'UTC',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).replace(',','')+' UTC';
+const evU=t=>new Date(t).toLocaleString('en-GB',{timeZone:'UTC',weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/,/g,'')+' UTC';
+const dShort=t=>new Date(t).toLocaleDateString('en-GB',{timeZone:'UTC',day:'numeric',month:'short'});
+const mi=t=>{const d=new Date(t);return d.getUTCFullYear()*12+d.getUTCMonth()};
+const usdT=b=>'$'+(b/1000).toFixed(2)+'T';
+const fM=(v,sign=1)=>v==null||!isFinite(v)?'–':(v<0?'-':sign?'+':'')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';
+const CAD={Monthly:75,Daily:5,Weekly:14},H10=/^(DEX|DTWEX)/;
+const MAC={M:null,src:'',btc:null,lag:0,chg:'mom',inv:1,cards:[],etfA:'btc'};
+function ser(id,M=MAC.M){const s=M?.series?.[id];return s?{t:s.points.map(p=>ymd(p[0])),v:s.points.map(p=>p[1]),s}:null}
+function fresh(id,M=MAC.M){const s=M?.series?.[id];if(!s)return{st:true,why:'missing from file',age:Infinity};const f=/^Monthly/.test(s.freq)?'Monthly':/^Weekly/.test(s.freq)?'Weekly':'Daily',age=(Date.now()-ymd(s.last_date))/DAY,failed=(M.failed||[]).some(x=>x.id===id),lim=f==='Daily'&&H10.test(id)?10:CAD[f];
+  return{st:failed||age>lim,age,lim,f,failed,last:s.last_date,why:failed?'fetch failed on last run, showing previous value':age>lim?`${Math.round(age)} days old (expected ≤ ${lim} for ${f.toLowerCase()} data${lim===10?'; Fed H.10 rates publish weekly':''})`:''}}
+const back=(S2,days)=>{const t=S2.t.at(-1)-days*DAY;let i=S2.t.length-1;while(i>0&&S2.t[i]>t)i--;return i};
+function gm2(M=MAC.M){const g=M?.global_m2;if(!g?.points?.length)return null;const P=g.points,t=P.map(p=>ymd(p[0])),L=P.length-1,byM=new Map(t.map((x,i)=>[mi(x),i]));
+  const at=k=>byM.get(mi(t[L])-k);const iM=at(1),iY=at(12);return{g,P,t,L,tot:P[L][1],mom:iM!=null?(P[L][1]/P[iM][1]-1)*100:null,yoy:iY!=null?(P[L][1]/P[iY][1]-1)*100:null,last:t[L]}}
+async function macBTC(){if(MAC.btc&&Date.now()-MAC.btc.at<3600000)return MAC.btc;let P=SIGD?.P;
+  if(!P||P.t.length<2000)P=await first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>({...(await bnDaily('BTCUSDT',4)),src:'Binance'}));
+  const now=new Date(),curM=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1),acc=new Map();
+  P.t.forEach((t,i)=>{const d=new Date(t),k=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);if(k>=curM)return;const a=acc.get(k)||[0,0];a[0]+=P.v[i];a[1]++;acc.set(k,a)});
+  const mt=[...acc.keys()].sort((a,b)=>a-b).filter(k=>acc.get(k)[1]>=20);return MAC.btc={d:P,m:{t:mt,v:mt.map(k=>acc.get(k)[0]/acc.get(k)[1])},src:P.src,at:Date.now()}}
+// correlation of % changes; positive lag = global M2 change leads BTC change by `lag` months
+function leadLag(m2,btc,mode){const K=mode==='yoy'?12:1,mk=s=>new Map(s.t.map((t,i)=>[mi(t),s.v[i]])),chg=M=>{const o=new Map();for(const [i,v] of M){const p=M.get(i-K);if(p)o.set(i,(v/p-1)*100)}return o};
+  const A=chg(mk(m2)),B=chg(mk(btc)),out=[];for(let L=0;L<=6;L++){const x=[],y=[],ms=[];for(const [i,b] of B){const a=A.get(i-L);if(a!=null){x.push(a);y.push(b);ms.push(i)}}
+    out.push({lag:L,r:x.length>3?corr(x,y):null,n:x.length,from:ms.length?Math.min(...ms):null,to:ms.length?Math.max(...ms):null})}return out}
+const miD=i=>Date.UTC(Math.floor(i/12),i%12,1);
+function bars(ctx,X,Y,Wd,Ht,u,o){const v=o.v,n=v.length,R=86*u,PW=Wd-R,ok=v.filter(x=>x!=null&&isFinite(x));let mn=Math.min(0,...ok),mx=Math.max(0,...ok);if(o.band){mn=Math.min(mn,-o.band);mx=Math.max(mx,o.band)}if(o.sym){const a=Math.max(-mn,mx);mn=-a;mx=a}const pad=(mx-mn)*.1||1;mn-=pad;mx+=pad;const ys=x=>Y+Ht-(x-mn)/(mx-mn)*Ht;
+  ctx.save();ctx.strokeStyle=hexA(TH.mu,.18);ctx.lineWidth=u;ctx.fillStyle=TH.mu;ctx.font=F(15*u,500);ctx.textBaseline='middle';
+  for(let k=0;k<=4;k++){const yv=mn+(mx-mn)*k/4,yy=ys(yv);ctx.beginPath();ctx.moveTo(X,yy);ctx.lineTo(X+PW,yy);ctx.stroke();ctx.fillText(o.yf?o.yf(yv):plain(yv),X+PW+10*u,yy)}
+  if(o.band){ctx.fillStyle=hexA(TH.mu,.13);ctx.fillRect(X,ys(o.band),PW,ys(-o.band)-ys(o.band));ctx.fillStyle=TH.mu;ctx.font=F(14*u,600);ctx.textBaseline='bottom';ctx.fillText(o.bandL||'',X+8*u,ys(o.band)-4*u)}
+  ctx.strokeStyle=hexA(TH.tx,.45);ctx.lineWidth=1.5*u;ctx.beginPath();ctx.moveTo(X,ys(0));ctx.lineTo(X+PW,ys(0));ctx.stroke();
+  const bw=PW/n,gap=Math.min(bw*.28,40*u);v.forEach((x,i)=>{if(x==null||!isFinite(x))return;const c=o.col?o.col(x,i):(x>=0?TH.up:TH.dn),y0=ys(0),y1=ys(x);ctx.fillStyle=c;if(TH.glow){ctx.shadowColor=c;ctx.shadowBlur=12*u}rr(ctx,X+i*bw+gap/2,Math.min(y0,y1),bw-gap,Math.max(1.5*u,Math.abs(y1-y0)),Math.min(6*u,(bw-gap)/4));ctx.fill();ctx.shadowBlur=0;
+    if(o.vl){ctx.fillStyle=TH.tx;ctx.font=F(Math.min(22*u,bw*.32),700);ctx.textAlign='center';ctx.textBaseline=x>=0?'bottom':'top';ctx.fillText(o.vl(x,i),X+i*bw+bw/2,x>=0?y1-6*u:y1+6*u)}});
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle=TH.mu;ctx.font=F(15*u,500);const ev=o.every||1;o.lab.forEach((l,i)=>{if(i%ev===0)ctx.fillText(l,X+i*bw+bw/2,Y+Ht+10*u)});ctx.restore()}
+function zs(a){const l=a.map(Math.log),m=l.reduce((x,y)=>x+y,0)/l.length,sd=Math.sqrt(l.reduce((x,y)=>x+(y-m)**2,0)/l.length)||1;return l.map(x=>(x-m)/sd)}
+function buildMacro(M,B){const out=[],add=f=>{try{const s=f();if(s)out.push(s)}catch(e){console.warn('mac',e)}},G=gm2(M);if(!G)return out;const gL=mU(G.last),comps=['US','EA','JP','CN'];
+  const m2s={t:G.t,v:G.P.map(p=>p[1])},SRC_M2='FRED, ECB, BOJ, PBoC via data/macro.json';
+  if(B)add(()=>{const from=Date.UTC(2014,0,1),bm=slice(B.m.t,B.m.v,from),mm=slice(m2s.t,m2s.v,from),lag=MAC.lag,zb=zs(bm.v),zm=zs(mm.v),mt=mm.t.map(t=>t+lag*DAY),bL=mU(bm.t.at(-1));
+    return{id:'btcm2',uses:['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC','DEXUSEU_MAVG','DEXJPUS_MAVG','DEXCHUS_MAVG'],btc:1,title:'Bitcoin vs global M2',
+     read:`Global M2 ${usdT(G.tot)} (${gL}) · ${pct(G.yoy,1)} YoY${lag?` · M2 shifted ${lag}d forward`:''}`,ctl:'lag',
+     cap:`Global M2 (US+EA+JP+CN, in USD): ${usdT(G.tot)} in ${gL}, ${pct(G.yoy,1)} YoY.\n\nChart: z-scored log BTC vs log global M2 since 2014${lag?`, M2 shifted ${lag}d`:''}. Shared trend, not proof of cause.\n\nData: FRED, ECB, BOJ, PBoC through ${gL}; BTC ${B.src}.`,
+     src:`Global M2: ${SRC_M2}, through ${gL} · BTC: ${B.src} monthly avg through ${bL}`,
+     draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:[from,Math.max(bm.t.at(-1),mt.at(-1))],yf:v=>v.toFixed(1)+'σ',series:[{t:bm.t,v:zb,c:TH.ac,w:3,l:'BTC (log, z)'},{t:mt,v:zm,c:TH.ac2||TH.up,w:3.4,l:`Global M2 (log, z)${lag?' +'+lag+'d':''}`}]})}});
+  if(B)add(()=>{const mode=MAC.chg,ll=leadLag(m2s,B.m,mode),ok=ll.filter(x=>x.r!=null);if(!ok.length)return null;const best=ok.reduce((a,b)=>Math.abs(b.r)>Math.abs(a.r)?b:a),n0=ll[0].n,band=1.96/Math.sqrt(n0),lab=mode==='yoy'?'YoY':'MoM',rng=`${mU(miD(ll[0].from))}–${mU(miD(ll[0].to))}`;
+    const clear=Math.abs(best.r)>band;MAC.ll={ll,band,mode,best};
+    return{id:'lead',uses:['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC'],btc:1,ll,band,title:'Does M2 lead BTC?',ctl:'chg',
+     read:`Strongest: r = ${best.r.toFixed(2)} at ${best.lag}-month lag (n=${best.n}) · ${lab} changes`,
+     cap:`Does global M2 lead $BTC? r of ${lab} % changes, M2 leading by 0–6 months (${rng}, n≈${n0}):\n${ll.map(x=>`${x.lag}m ${x.r==null?'–':x.r.toFixed(2)}`).join(' · ')}\n\nPeak: ${best.lag}m, r=${best.r.toFixed(2)}${mode==='mom'?` (noise ±${band.toFixed(2)})`:'; YoY windows overlap, so illustrative'}.\n\nCorrelation of changes, descriptive; not a trading signal.`,
+     src:`Global M2 ${SRC_M2} through ${gL} · BTC ${B.src} monthly avg · computed in-app`,
+     draw:(c,X,Y,W,H,u)=>{bars(c,X,Y,W,H,u,{v:ll.map(x=>x.r),lab:ll.map(x=>x.lag+'m lag'),sym:1,band:mode==='mom'?band:null,bandL:`±${band.toFixed(2)} ≈ noise (95%, n=${n0})`,yf:v=>v.toFixed(2),vl:(x,i)=>x.toFixed(2),col:(x,i)=>i===best.lag?(x>=0?TH.ac:TH.dn):hexA(x>=0?TH.ac:TH.dn,.45)});
+       c.save();c.fillStyle=TH.mu;c.font=F(16*u,600);c.textBaseline='bottom';c.fillText(`r of ${lab} % changes · M2 leads BTC by N months · ${rng}`,X,Y-10*u);c.restore()}}});
+  add(()=>{const from=Date.UTC(2012,0,1),P=G.P.filter(p=>ymd(p[0])>=from),t=P.map(p=>ymd(p[0])),cols=[TH.ac,TH.ac2||TH.vi,TH.pk||'#ffe600',TH.up],cum=[0,0,0,0].map((_,k)=>P.map(p=>p.slice(2,3+k).reduce((a,b)=>a+b,0)));const L=G.P[G.L],sh=comps.map((c,k)=>L[2+k]/L[1]*100);
+    return{id:'comp',uses:['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC','DEXUSEU_MAVG','DEXJPUS_MAVG','DEXCHUS_MAVG'],title:'Global M2 composition (USD)',read:comps.map((c,k)=>`${c} ${usdT(L[2+k])}`).join(' · '),
+     cap:`Global M2 is ${usdT(L[1])} (${gL}): ${comps.map((c,k)=>`${c==='EA'?'euro area':c==='JP'?'Japan':c==='CN'?'China':'US'} ${usdT(L[2+k])} (${sh[k].toFixed(0)}%)`).join(', ')}.\n\nIn USD at monthly avg FX, so dollar moves shift the total even if local M2 is flat.\n\nData: FRED, ECB, BOJ, PBoC through ${gL}.`,
+     src:`${SRC_M2}, USD at monthly avg FX (H.10), through ${gL}`,
+     draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,ymin:0,yf:v=>'$'+(v/1000).toFixed(0)+'T',bands:cum.map((cv,k)=>({t,v:cv,v2:k?cum[k-1]:t.map(()=>0),c:hexA(cols[k],.42)})),series:cum.map((cv,k)=>({v:cv,c:cols[k],w:k===3?3:1.6,l:comps[k]}))})}});
+  add(()=>{const dx=ser('DTWEXBGS',M);if(!dx||!B)return null;const from=Date.now()-3*365*DAY,d=slice(dx.t,dx.v,from),bm=new Map(B.d.t.map((t,i)=>[Math.floor(t/DAY),B.d.v[i]])),t=[],bv=[],xv=[];d.t.forEach((x,i)=>{const b=bm.get(Math.floor(x/DAY));if(b){t.push(x);bv.push(b);xv.push(d.v[i])}});if(t.length<60)return null;
+    const inv=MAC.inv,rb=zs(bv),rx=zs(xv).map(z=>inv?-z:z),rr2=a=>a.slice(1).map((v,i)=>Math.log(v/a[i])),n=Math.min(90,t.length-1),c90=corr(rr2(bv).slice(-n),rr2(xv).slice(-n)),last=xv.at(-1),i3=back({t,v:xv},91),ch3=(last/xv[i3]-1)*100,ld=dU(dx.t.at(-1));
+    return{id:'dxy',uses:['DTWEXBGS'],btc:1,title:`BTC vs ${inv?'inverted ':''}dollar index`,ctl:'inv',read:`DXY broad ${last.toFixed(2)} (${ld}) · ${pct(ch3,1)} in 3 mo · 90d r(BTC, DXY) ${c90.toFixed(2)}`,
+     cap:`US dollar (Fed broad index) is ${last.toFixed(2)}, ${pct(ch3,1)} over 3 months. 90-day correlation of daily BTC and dollar changes: ${c90.toFixed(2)}.\n\nChart: z-scored log levels over 3 years${inv?', dollar inverted (up = weaker dollar)':''}.\n\nSources: FRED DTWEXBGS through ${ld}; BTC ${B.src}. Descriptive, not a forecast.`,
+     src:`FRED DTWEXBGS through ${ld} · BTC ${B.src} daily`,
+     draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:v=>v.toFixed(1)+'σ',series:[{v:rb,c:TH.ac,w:2.6,l:'BTC (log, z)'},{v:rx,c:TH.ac2||TH.up,w:3.2,l:inv?'Dollar index inverted (log, z)':'Dollar index (log, z)'}]})}});
+  add(()=>{const a=ser('DGS10',M),b=ser('DFII10',M);if(!a||!b)return null;const from=Date.now()-3*365*DAY,A=slice(a.t,a.v,from),Bm=new Map(b.t.map((t,i)=>[t,b.v[i]])),be=A.t.map((t,i)=>Bm.has(t)?A.v[i]-Bm.get(t):null),Bs=slice(b.t,b.v,from),la=a.v.at(-1),lb=b.v.at(-1),ld=dU(Math.min(a.t.at(-1),b.t.at(-1))),ib=back(b,91),chb=(lb-b.v[ib])*100;
+    return{id:'real',uses:['DGS10','DFII10'],title:'US 10Y nominal vs real yield',read:`10Y ${la.toFixed(2)}% · real ${lb.toFixed(2)}% (${chb>=0?'+':''}${chb.toFixed(0)}bp 3 mo) · breakeven ${(la-lb).toFixed(2)}%`,
+     cap:`US 10-year yield ${la.toFixed(2)}%, 10-year real (TIPS) yield ${lb.toFixed(2)}%, ${chb>=0?'+':''}${chb.toFixed(0)}bp over 3 months. Implied breakeven inflation ${(la-lb).toFixed(2)}%.\n\nHigher real yields have historically been a headwind for non-yielding assets like BTC and gold.\n\nSource: FRED DGS10, DFII10 through ${ld}.`,
+     src:`FRED DGS10 + DFII10 through ${ld}`,
+     draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:A.t,yf:v=>v.toFixed(1)+'%',series:[{v:A.v,c:TH.tx,w:2.4,l:'10Y nominal'},{t:Bs.t,v:Bs.v,c:TH.ac,w:3.2,l:'10Y real',fill:1},{v:be,c:TH.vi||TH.ac2,w:2,l:'Breakeven'}]})}});
+  return out}
+function macTiles(M){const G=gm2(M),tile=(k,v,sub,ld,fr)=>`<div class="stat"><div class="k">${k}${fr?.st?` <span class="bias b-dn" title="${esc(fr.why||'stale')}" style="padding:1px 5px">⚠️ stale</span>`:''}</div><div class="v">${v}</div><div style="font-size:11px">${sub}</div><div class="mu" style="font-size:10px">${ld}</div></div>`;
+  const ch=(id,days,f)=>{const s=ser(id,M);if(!s)return null;const i=back(s,days);return f(s.v.at(-1),s.v[i])},T=[];
+  if(G){const fr={st:G.g.stale_components?.length>0||(Date.now()-G.last)/DAY>75||(M.failed||[]).some(x=>/M2/.test(x.id)),why:G.g.stale_components?.length?'stale component(s): '+G.g.stale_components.join(', '):'latest complete month older than 75 days or a component failed'};
+    T.push(tile('Global M2',usdT(G.tot),`<span class="${cls(G.mom)}">${pct(G.mom,2)} MoM</span> · <span class="${cls(G.yoy)}">${pct(G.yoy,1)} YoY</span>`,'complete month '+mU(G.last),fr))}
+  const one=(id,k,fv,fs,days)=>{const s=ser(id,M);if(!s)return tile(k,'–','missing','',{st:true,why:'missing'});const fr=fresh(id,M);return tile(k,fv(s.v.at(-1)),fs?ch(id,days,fs):'',(s.s.freq.startsWith('Monthly')?mU(ymd(s.s.last_date)):dU(ymd(s.s.last_date))),fr)};
+  T.push(one('M2SL','US M2',v=>usdT(v),(a,b)=>`<span class="${cls(a-b)}">${pct((a/b-1)*100,1)} YoY</span>`,365));
+  T.push(one('DTWEXBGS','Dollar index (broad)',v=>v.toFixed(2),(a,b)=>`<span class="${cls(a-b)}">${pct((a/b-1)*100,1)} 1M</span>`,30));
+  T.push(one('DGS10','US 10Y yield',v=>v.toFixed(2)+'%',(a,b)=>`${(a-b)*100>=0?'+':''}${((a-b)*100).toFixed(0)}bp 1M`,30));
+  T.push(one('DFII10','US 10Y real yield',v=>v.toFixed(2)+'%',(a,b)=>`${(a-b)*100>=0?'+':''}${((a-b)*100).toFixed(0)}bp 1M`,30));
+  T.push(one('WALCL','Fed balance sheet',v=>'$'+(v/1e6).toFixed(2)+'T',(a,b)=>`<span class="${cls(a-b)}">${a-b>=0?'+':'-'}$${Math.abs((a-b)/1e3).toFixed(0)}B 4w</span>`,28));
+  T.push(one('SP500','S&P 500',v=>v.toLocaleString('en-US',{maximumFractionDigits:0}),(a,b)=>`<span class="${cls(a-b)}">${pct((a/b-1)*100,1)} 1M</span>`,30));
+  const a=ser('DGS10',M),b=ser('DFII10',M);if(a&&b){const fr=fresh('DFII10',M);T.push(tile('10Y breakeven',(a.v.at(-1)-b.v.at(-1)).toFixed(2)+'%','nominal − real','derived · '+dU(ymd(b.s.last_date)),fr))}
+  return T.join('')}
+function macHealth(M,src){const ids=Object.keys(M.series||{}),st=ids.filter(id=>fresh(id,M).st),sc=M.global_m2?.sum_check;
+  return`File updated ${dtU(Date.parse(M.updated))} · ${ids.length-st.length}/${ids.length} series fresh${st.length?' (⚠️ '+st.join(', ')+')':''} · failed: ${(M.failed||[]).length?(M.failed.map(x=>x.id).join(', ')):'none'} · M2 components sum ${sc?.latest?.ok&&sc.all_months_ok?'✓':'✗'} · ${src}`}
+async function renderMacro(force){const box=$('#macList'),y0=scrollY;
+  if(!MAC.M||force){if(!MAC.M)box.innerHTML='<div class="card mu">Loading macro data…</div>';try{const r=await dataFile('macro',force);MAC.M=r.v;MAC.src=r.src}catch(e){box.innerHTML='<div class="card mu">Could not load data/macro.json and there is no cached copy yet. Tap ↻ to retry.</div>';return}
+    try{await macBTC()}catch(e){MAC.btc=null}}
+  const M=MAC.M;$('#macTiles').innerHTML=macTiles(M);$('#macHealth').textContent=macHealth(M,MAC.src);
+  MAC.cards=buildMacro(M,MAC.btc);const ctl=s=>s.ctl==='lag'?`<div class="chips" style="margin-top:8px">${[0,30,60,90].map(d=>`<button class="pill ${MAC.lag===d?'on':''}" data-mlag="${d}">M2 +${d}d</button>`).join('')}</div>`:s.ctl==='chg'?`<div class="chips" style="margin-top:8px">${['mom','yoy'].map(d=>`<button class="pill ${MAC.chg===d?'on':''}" data-mchg="${d}">${d.toUpperCase()} changes</button>`).join('')}</div>`:s.ctl==='inv'?`<div class="chips" style="margin-top:8px"><button class="pill ${MAC.inv?'on':''}" data-minv="1">Inverted dollar</button><button class="pill ${MAC.inv?'':'on'}" data-minv="0">Dollar</button></div>`:'';
+  box.innerHTML=MAC.cards.map((s,i)=>{const stl=(s.uses||[]).filter(id=>fresh(id,M).st);return`<div class="card sig" data-mcard="${s.id}"><h3><span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px">${esc(s.title)}</span>${stl.length?`<span class="bias b-dn" title="${esc(stl.join(', '))}">⚠️ stale</span>`:''}<span class="sp"></span></h3>
+   <canvas class="cv" data-mg="${i}"></canvas><div class="mu" data-mr="${i}" style="margin:8px 0;font-size:13px">${esc(s.read)}</div>${ctl(s)}
+   ${s.id==='lead'?`<table class="cor num" style="margin:6px 0"><tr><th>Lag</th>${s.ll.map(x=>`<th>${x.lag}m</th>`).join('')}</tr><tr><th>r</th>${s.ll.map(x=>`<td>${x.r==null?'–':x.r.toFixed(2)}</td>`).join('')}</tr><tr><th>n</th>${s.ll.map(x=>`<td class="mu">${x.n}</td>`).join('')}</tr></table><small class="note" style="margin:0 0 8px">Correlation of changes, descriptive; not a trading signal. ${MAC.chg==='mom'?`Bars inside the shaded ±${s.band.toFixed(2)} band are indistinguishable from noise.`:'YoY windows overlap, which inflates r; treat as illustrative.'}</small>`:''}
+   ${s.id==='comp'?'<small class="note" style="margin:0 0 8px">USD totals move with FX: a weaker dollar raises global M2 in USD even if local money supply is flat.</small>':''}
+   <div class="flex"><button class="btn pri" data-mx="${i}|share">Share to X (4K)</button><button class="btn" data-mx="${i}|4k">4K ⬇</button><button class="btn" data-mx="${i}|8k">8K ⬇</button><button class="btn" data-mx="${i}|cap">Caption</button><button class="btn" data-mx="${i}|audit">🛡 Audit</button></div></div>`}).join('')||'<div class="card mu">No macro charts could be built from the data.</div>';
+  $$('[data-mg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,MAC.cards[+cv.dataset.mg])});
+  requestAnimationFrame(()=>{if(y0>0&&Math.abs(scrollY-y0)>2)scrollTo(0,y0)})}
+async function auditMacro(s){const M=MAC.M,R=[];R.single=1;
+  for(const id of s.uses||[]){const f=fresh(id,M),x=M.series[id];if(!x){R.push(['bad',`${id} is missing from macro.json.`]);continue}
+    R.push([f.failed?'warn':f.st?'warn':'ok',`${x.title}: last data ${x.last_date} (${Math.round(f.age)} days old; ${f.f.toLowerCase()} cadence allows ${f.lim}${f.lim===10?', H.10 weekly release':''})${f.failed?' · last fetch FAILED, previous value kept':''} · ${x.source}.`])}
+  if((s.uses||[]).some(id=>/M2/.test(id))){const g=M.global_m2,sc=g.sum_check?.latest,G=gm2(M),L=G.P[G.L],sum=L.slice(2).reduce((a,b)=>a+b,0),d=Math.abs(sum-L[1]);
+    R.push([sc?.ok&&g.sum_check.all_months_ok?'ok':'bad',`File's sum check: US + EA + JP + CN = ${usdT(sc?.sum_of_components)} vs total ${usdT(sc?.total)} for ${sc?.month} (all months ${g.sum_check.all_months_ok?'pass':'FAIL'}).`]);
+    R.push([d<0.01?'ok':'bad',`Re-added in the app: components ${usdT(sum)} vs total ${usdT(L[1])} (diff ${d.toFixed(3)}bn).`]);
+    R.push([g.stale_components?.length?'warn':'ok',`Latest complete month with all four economies: ${g.latest_complete_month}. ${g.stale_components?.length?'Stale: '+g.stale_components.join(', '):'No stale components.'}`]);
+    R.push(['info','M2 definitions differ by economy (US/EA seasonally adjusted, JP/CN not; JP is a monthly average, EA/CN end of month), and China M2 is read from PBoC tables. Fine for trend, not for precise level comparisons.'])}
+  if(s.btc&&MAC.btc){const B=MAC.btc,age=(Date.now()-B.d.t.at(-1))/DAY;R.push([age<2.5?'ok':'warn',`BTC history (${B.src}) last point ${age.toFixed(1)} days ago; monthly averages use complete UTC months only (through ${mU(B.m.t.at(-1))}).`]);
+    try{const live=await liveBTC();if(live.length>=2){const avg=live.reduce((a,b)=>a+b.v,0)/live.length,d=(B.d.v.at(-1)/avg-1)*100;R.push([Math.abs(d)<3?'ok':'warn',`BTC series' latest price is within ${Math.abs(d).toFixed(2)}% of the live consensus (${live.map(x=>x.n).join(', ')}).`])}}catch(e){}}
+  if(s.id==='lead'){R.push(['info',`r values are computed in the app from the file (Pearson, ${MAC.chg.toUpperCase()} % changes, n=${s.ll[0].n} at lag 0). With ~${s.ll[0].n} points, |r| below ${s.band.toFixed(2)} is within noise.`]);if(MAC.chg==='yoy')R.push(['warn','YoY changes overlap month to month, so the effective sample is much smaller than n. Say "illustrative" if you post this view.'])}
+  if((M.failed||[]).length)R.push(['warn',`Pipeline reported failed fetches on its last run: ${M.failed.map(x=>x.id).join(', ')}.`]);
+  R.push(['info','Single public source per series (FRED, ECB, BOJ, PBoC); there is no free second source to cross-check against in the app.']);
+  lintText(s.cap,null).forEach(x=>R.push(x));
+  if(/\b(caus|drives?|will|predict)/i.test(s.cap)&&!/not proof of cause|not a forecast|not a trading signal/i.test(s.cap))R.push(['warn','Caption implies causation or prediction; macro correlations are descriptive.']);return R}
+function macAct(i,a){const s=MAC.cards[i];if(!s)return;const fn=(x,W,H)=>drawSig(x,W,H,s),nm='macro-'+s.id;
+  if(a==='8k')exportPNG(fn,nm);if(a==='4k')exportPNG(fn,nm,3840,2160);if(a==='share')exportPNG(fn,nm,3840,2160,true);
+  if(a==='audit'){toast('Auditing…');auditMacro(s).then(R=>{showAudit(s.title,R);const b=document.querySelector(`[data-mx="${i}|audit"]`);if(b)b.textContent={ok:'✅ Audited',warn:'⚠️ Audited',bad:'❌ Audit'}[verdict(R)[0]]});return}
+  if(a==='cap'){NEWSPICK=null;tab('studio');$('#draft').value=s.cap+'\n\n'+(S.handle||'');countChars();toast('Caption in the post draft')}}
+function redrawMac(){const y=scrollY;renderMacro().then(()=>requestAnimationFrame(()=>scrollTo(0,y)))}
+// ---- News: upcoming calendar, ETF flows, India premium
+const KNAME={cpi:'CPI',jobs:'Jobs report',fomc_minutes:'FOMC minutes',fomc_decision:'FOMC'},KIND={fomc_decision:['Fed','b-nt'],fomc_minutes:['Fed','b-nt'],cpi:['CPI','b-dn'],jobs:['Jobs','b-up']};
+const cdown=t=>{let s=Math.round((t-Date.now())/1000);if(s<=0)return s>-3600?'now':'done';const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?`in ${d}d ${h}h`:h?`in ${h}h ${m}m`:`in ${m}m`};
+const NX={cal:null,etf:null,ind:null};
+function renderCal(){const C=NX.cal,el=$('#nxCal');if(!el)return;if(!C){el.innerHTML='<div class="card mu">Loading calendar…</div>';return}
+  const now=Date.now(),up=C.items.filter(x=>Date.parse(x.date_utc)>now-3600e3).slice(0,8),vt=Date.parse(C.valid_through+'T23:59:59Z'),soon=vt-now<30*DAY,stM=(x)=>x.verification==='verified'?'<span class="up" style="font-size:10px">✓ verified</span>':x.verification==='date_verified_time_assumed'?'<span class="mu" style="font-size:10px">tentative · time assumed</span>':`<span class="dn" style="font-size:10px">${esc(x.verification)}</span>`;
+  el.innerHTML=`<div class="card"><h3>Upcoming · macro calendar<span class="sp"></span><span class="mu" style="text-transform:none;letter-spacing:0;font-size:10px">all times UTC</span></h3>
+  ${soon?`<div class="bias b-dn" style="display:block;margin-bottom:8px">⚠️ Calendar only valid through ${dU(vt)}; update data/calendar.json.</div>`:''}
+  ${up.map(x=>{const t=Date.parse(x.date_utc),[k,c]=KIND[x.type]||['Macro','b-nt'];return`<div class="row"><span class="bias ${c}" style="min-width:42px;text-align:center">${k}</span><div style="min-width:0"><div class="nm" style="font-size:13px">${esc(x.title)}</div><div class="sub">${evU(t)} · ${stM(x)}</div></div><div class="r num"><div class="nm" data-cd="${t}" style="font-size:12px;white-space:nowrap">${cdown(t)}</div></div></div>`}).join('')||'<div class="mu">No upcoming events in the file.</div>'}
+  ${(()=>{const rest=C.items.filter(x=>Date.parse(x.date_utc)>now-3600e3).slice(8);return rest.length?`<div class="sub mu" style="margin-top:6px">+ ${rest.length} more scheduled through ${dU(Date.parse(rest.at(-1).date_utc))} (${[...new Set(rest.map(x=>KNAME[x.type]||x.type))].join(', ')})</div>`:''})()}${(C.unpublished||[]).map(u=>`<div class="sub mu" style="margin-top:4px">• ${esc(KNAME[u.type]||u.type)} · ${esc(u.period)}: not published yet</div>`).join('')}
+  <small class="note">Sources: federalreserve.gov, bls.gov. Valid through ${dU(vt)} · file updated ${dtU(Date.parse(C.updated))}.</small></div>`}
+const bizH=(a,b)=>{let h=0;for(let t=a;t<b;t+=36e5){const d=new Date(t).getUTCDay();if(d!==0&&d!==6)h++}return h};
+function etfStats(E,a){const d=E.datasets[a];if(!d)return null;const days=d.days.filter(x=>!x.pending&&x.total!=null),L=days.at(-1),sum=n=>days.slice(-n).reduce((s,x)=>s+x.total,0);return{d,days,L,s7:sum(7),s30:sum(30),last30:days.slice(-30)}}
+function drawEtf(ctx,W,H,a){const E=NX.etf,st=etfStats(E,a),A=a.toUpperCase(),{u,m}=cardBase(ctx,W,H,'Data: Farside Investors · US$m net daily flows · trading days');const top=m+90*u;
+  ctx.fillStyle=TH.tx;ctx.font=FT(54*u);ctx.fillText(`US spot ${A} ETF flows`,m,top+40*u);ctx.fillStyle=TH.ac;ctx.font=F(26*u,600);ctx.fillText(`${fM(st.L.total)} on ${dShort(ymd(st.L.date))} · 7 days ${fM(st.s7)} · 30 days ${fM(st.s30)}`,m,top+84*u);
+  const X=m,Y=top+150*u,Wd=W-2*m,Ht=H-Y-m-80*u;watermark(ctx,X,Y,Wd-86*u,Ht,u);const L=st.last30;bars(ctx,X,Y,Wd,Ht,u,{v:L.map(x=>x.total),lab:L.map(x=>dShort(ymd(x.date))),every:5,yf:v=>(v<0?'-':'')+'$'+Math.abs(v).toFixed(0)+'M'})}
+function etfCap(a){const st=etfStats(NX.etf,a),A=a.toUpperCase();return`US spot ${A} ETFs: ${fM(st.L.total,0)} on ${dShort(ymd(st.L.date))} (Farside).\n\nLast 7 trading days: ${fM(st.s7)}. Last 30: ${fM(st.s30)}.\n\nNet flows in US$m across ${st.d.funds.length} funds; data through ${dU(ymd(st.L.date))}.`}
+function renderEtf(){const el=$('#nxEtf');if(!el)return;const E=NX.etf;if(!E){el.innerHTML='';return}const a=MAC.etfA,S2={btc:etfStats(E,'btc'),eth:etfStats(E,'eth')},bh=bizH(Date.parse(E.updated),Date.now()),stale=bh>36||Object.values(E.datasets).some(d=>d.status!=='ok');
+  const col=(k)=>{const s=S2[k];if(!s?.L)return`<div class="stat"><div class="k">${k.toUpperCase()}</div><div class="v">–</div></div>`;return`<div class="stat"><div class="k">${k.toUpperCase()} · ${dShort(ymd(s.L.date))}</div><div class="v ${cls(s.L.total)}">${fM(s.L.total)}</div><div style="font-size:11px">7d <span class="${cls(s.s7)}">${fM(s.s7)}</span> · 30d <span class="${cls(s.s30)}">${fM(s.s30)}</span></div></div>`};
+  el.innerHTML=`<div class="card"><h3>ETF flows · US spot${stale?'<span class="bias b-dn">⚠️ stale</span>':''}<span class="sp"></span><span class="mu" style="text-transform:none;letter-spacing:0;font-size:10px">US$m</span></h3>
+   <div class="grid num">${col('btc')}${col('eth')}</div>
+   <div class="chips" style="margin:10px 0 6px"><button class="pill ${a==='btc'?'on':''}" data-etfa="btc">BTC 30d</button><button class="pill ${a==='eth'?'on':''}" data-etfa="eth">ETH 30d</button></div>
+   <canvas class="cv" id="etfCv"></canvas>
+   <div class="flex" style="margin-top:8px"><button class="btn pri" data-ex="share">Share to X (4K)</button><button class="btn" data-ex="4k">4K ⬇</button><button class="btn" data-ex="cap">Caption</button></div>
+   <small class="note">Farside Investors, daily net flows; days still pending are skipped. File updated ${dtU(Date.parse(E.updated))}${stale?` · ⚠️ ${Object.values(E.datasets).some(d=>d.status!=='ok')?'a source is '+Object.values(E.datasets).filter(d=>d.status!=='ok').map(d=>d.status).join('/'):bh+' weekday hours since the last data change'}`:''}.</small></div>`;
+  const cv=$('#etfCv');if(S2[a]?.L){const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawEtf(ctx,cv.width,cv.height,a)}}
+function drawInd(ctx,W,H){const I=NX.ind,L=I.latest,{u,m}=cardBase(ctx,W,H,'Data: CoinDCX, Coinbase, '+(I.sources?.usd_inr?.provider||'FX')+' · '+dtU(Date.parse(L.time)));const top=m+90*u;
+  ctx.fillStyle=TH.tx;ctx.font=FT(54*u);ctx.fillText('India crypto premium (CoinDCX)',m,top+40*u);ctx.fillStyle=TH.ac;ctx.font=F(26*u,600);ctx.fillText(`USDT ${pct(L.usdt_premium_pct,1)} · BTC ${pct(L.btc_premium_pct,1)} · BTC in USDT terms ${pct(L.btc_premium_in_usdt_pct,1)}`,m,top+84*u);
+  const X=m,Y=top+150*u,Wd=W-2*m,Ht=H-Y-m-80*u;watermark(ctx,X,Y,Wd-86*u,Ht,u);const h=I.history.filter(x=>Date.parse(x.time)>Date.now()-7*DAY),t=h.map(x=>Date.parse(x.time));
+  if(t.length<2){ctx.fillStyle=TH.mu;ctx.font=F(28*u,600);ctx.fillText('History is still building (hourly snapshots).',X,Y+60*u);return}
+  plot(ctx,X,Y,Wd,Ht,u,{t,xf:x=>dShort(x),yf:v=>v.toFixed(1)+'%',hl:[{v:0,c:hexA(TH.mu,.7),l:'0% = global price'}],series:[{v:h.map(x=>x.btc_premium_pct),c:TH.ac,w:3,l:'BTC premium'},{v:h.map(x=>x.usdt_premium_pct),c:TH.ac2||TH.vi,w:3,l:'USDT premium'},{v:h.map(x=>x.btc_premium_in_usdt_pct),c:TH.up,w:2.4,l:'BTC in USDT terms'}]})}
+function indCap(){const L=NX.ind.latest;return`Indians pay ~${L.usdt_premium_pct.toFixed(1)}% extra for USDT on CoinDCX; priced in USDT, BTC is only ${pct(L.btc_premium_in_usdt_pct,1)} vs global.\n\nBTC/INR premium vs global: ${pct(L.btc_premium_pct,1)}. So most of the gap is the USDT/rupee premium, not Bitcoin.\n\nCoinDCX, Coinbase, USD/INR mid-market · ${dtU(Date.parse(L.time))}.`}
+function renderInd(){const el=$('#nxInd');if(!el)return;const I=NX.ind;if(!I){el.innerHTML='';return}const L=I.latest,age=(Date.now()-Date.parse(I.updated))/36e5,stale=age>2;
+  el.innerHTML=`<div class="card"><h3>India premium · CoinDCX${stale?'<span class="bias b-dn">⚠️ stale</span>':''}<span class="sp"></span></h3>
+   <div class="grid num" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><div class="k">USDT premium</div><div class="v ${cls(-L.usdt_premium_pct)}">${pct(L.usdt_premium_pct,2)}</div></div><div class="stat"><div class="k">BTC premium</div><div class="v">${pct(L.btc_premium_pct,2)}</div></div><div class="stat"><div class="k">BTC in USDT</div><div class="v">${pct(L.btc_premium_in_usdt_pct,2)}</div></div></div>
+   <div style="margin:8px 0;font-size:13px;color:var(--tx2)">Most of the BTC gap is the <b>USDT/rupee premium</b>: priced in USDT, BTC on CoinDCX is only ${pct(L.btc_premium_in_usdt_pct,1)} vs the global price.</div>
+   <canvas class="cv" id="indCv"></canvas>
+   <div class="flex" style="margin-top:8px"><button class="btn" data-ix="4k">4K ⬇</button><button class="btn" data-ix="cap">Caption</button></div>
+   <small class="note">BTC/INR ₹${Math.round(L.btc_inr).toLocaleString('en-IN')} · USDT/INR ₹${L.usdt_inr} · BTC/USD $${Math.round(L.btc_usd).toLocaleString('en-US')} · USD/INR ${L.usd_inr.toFixed(2)} (${esc(I.sources?.usd_inr?.provider||'')}). Snapshot ${dtU(Date.parse(L.time))}${stale?` · ⚠️ ${age.toFixed(1)}h old`:''}.</small></div>`;
+  const cv=$('#indCv'),ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawInd(ctx,cv.width,cv.height)}
+async function renderNewsX(force){const y=scrollY;renderCal();renderEtf();renderInd();
+  const r=await Promise.allSettled([dataFile('calendar',force),dataFile('etf',force),dataFile('india',force)]);const g=x=>x.status==='fulfilled'?x.value.v:null;
+  NX.cal=g(r[0])||NX.cal;NX.etf=g(r[1])||NX.etf;NX.ind=g(r[2])||NX.ind;if(TAB!=='news')return;renderCal();renderEtf();renderInd();
+  if(!NX.cal)$('#nxCal').innerHTML='<div class="card mu">Calendar unavailable (data/calendar.json).</div>';requestAnimationFrame(()=>{if(y>0&&Math.abs(scrollY-y)>2)scrollTo(0,y)})}
+setInterval(()=>{if(TAB==='news'&&!document.hidden)$$('[data-cd]').forEach(e=>e.textContent=cdown(+e.dataset.cd))},30000);
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const ds=b.dataset;
+  if(ds.mx){const [i,a]=ds.mx.split('|');macAct(+i,a)}
+  if(ds.mlag!=null){MAC.lag=+ds.mlag;redrawMac()}if(ds.mchg){MAC.chg=ds.mchg;redrawMac()}if(ds.minv!=null){MAC.inv=+ds.minv;redrawMac()}
+  if(ds.etfa){MAC.etfA=ds.etfa;const y=scrollY;renderEtf();requestAnimationFrame(()=>scrollTo(0,y))}
+  if(ds.ex){const a=MAC.etfA;if(ds.ex==='cap'){NEWSPICK=null;tab('studio');$('#draft').value=etfCap(a)+'\n\n'+(S.handle||'');countChars();toast('Caption in the post draft')}else exportPNG((x,W,H)=>drawEtf(x,W,H,a),'etf-flows-'+a,3840,2160,ds.ex==='share')}
+  if(ds.ix){if(ds.ix==='cap'){NEWSPICK=null;tab('studio');$('#draft').value=indCap()+'\n\n'+(S.handle||'');countChars();toast('Caption in the post draft')}else exportPNG(drawInd,'india-premium',3840,2160)}});
 // ---------- tabs & events
 let TAB='markets';function tab(t,keep){const y=scrollY;TAB=t;$$('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t));$$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));if(!keep)scrollTo(0,0);else requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)});
-  if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart()}if(t==='insights'){renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(t==='news'){renderNews();if(!D.news.length)loadNews().then(renderNews)}if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
+  if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart()}if(t==='insights'){renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(t==='news'){renderNews();renderNewsX();if(!D.news.length)loadNews().then(renderNews)}if(t==='macro')renderMacro();if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
 document.addEventListener('click',e=>{const b=e.target.closest('button,[data-i]');if(!b)return;const ds=b.dataset;
   if(ds.t)tab(ds.t);
   if(ds.iv){CH.iv=ds.iv;renderChartCtl();loadChart()}
@@ -747,6 +932,7 @@ const TNAME={sap:'Obsidian Sapphire',neo:'AMOLED Neon',ch:'Onyx & Champagne',bb:
 $('#handle').value=S.handle;$('#handle').oninput=e=>{S.handle=e.target.value;save();renderStudio()};
 $('#curBtn').textContent=S.cur.toUpperCase();$('#curBtn').onclick=()=>{S.cur=S.cur==='usd'?'inr':'usd';save();$('#curBtn').textContent=S.cur.toUpperCase();refresh()};
 $('#sigRef').onclick=()=>renderSignals(true);
+$('#macRef').onclick=()=>{MAC.btc=null;renderMacro(true)};
 $('#refBtn').onclick=()=>{SIG=null;Object.keys(cache).forEach(k=>delete cache[k]);D.kl={};D.ins={};refresh(true)};
 let _rw=innerWidth;addEventListener('resize',()=>{if(Math.abs(innerWidth-_rw)<2)return;_rw=innerWidth;clearTimeout(window._rz);window._rz=setTimeout(()=>tab(TAB,1),200)});
 // ---------- boot
