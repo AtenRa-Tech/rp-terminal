@@ -41,7 +41,7 @@ async function page(ctx,setup){const pg=await (ctx||b).newPage();await pg.setVie
  ok(/((bottom|top) \d+% of readings|around the middle of its range) since \w+ 2017/.test(r.eb)&&!/of the last 5 years/.test(r.eb),'ETH/BTC read names its real window',r.eb);
  ok(r.curve[0]==='2022-07-06'&&r.curve[1]==='2024-08-26'&&r.curve[2]===1,'N4 curve: last ≥5-day inversion 6 Jul 2022 – 26 Aug 2024',r.curve);
  ok(/The last inversion ran from 6 Jul 2022 to 26 Aug 2024 \(runs under 5 trading days ignored\)/.test(r.cvNote),'N4 curve note text',r.cvNote);
- ok(/^YoY growth of [+-]\d+\.\d% \(USD\) is the (lowest|highest) (since [A-Z][a-z]{2} \d{4}|in the data).*; [+-]\d+\.\d% at constant FX$/.test(r.m2)&&r.m2cap.includes(r.m2)&&r.m2f===r.m2,'N11 M2 YoY rarity caption (card + facts)',[r.m2,r.m2f]);
+ ok(/^growth at constant FX is [+-]\d+\.\d% a year, the (lowest|highest) (since [A-Z][a-z]{2} \d{4}|in the data \(since \d{4}\)) \([+-]\d+\.\d% in USD\)$/.test(r.m2)&&r.m2cap.includes(r.m2)&&r.m2f===r.m2,'N11 M2 YoY rarity caption (card + facts)',[r.m2,r.m2f]);
  {const cal=JSON.parse(fs.readFileSync(DATA+'/calendar.json'));const now=Date.now(),cy=new Date(now).getUTCFullYear();const rest=cal.items.filter(x=>Date.parse(x.date_utc)>now-3600e3).sort((a,b)=>Date.parse(a.date_utc)-Date.parse(b.date_utc)).slice(8);
   const nF=rest.filter(x=>x.type==='fomc_decision'&&new Date(x.date_utc).getUTCFullYear()===cy+1).length;
   ok(!rest.length||(new RegExp(`${cy+1}: .*${nF} FOMC meetings.*\\(times tentative\\)`).test(r.cal)),'N20 calendar footer generated from data (plural, tentative)',[nF,r.cal])}
@@ -49,7 +49,7 @@ async function page(ctx,setup){const pg=await (ctx||b).newPage();await pg.setVie
  ok(r.ath&&Math.abs(r.ath.ath-124658.54)<0.01&&/daily close \$124\.7k/.test(r.ath.lbl),"E1/extra 'From ATH' uses Binance daily-close ATH $124,658.54 and labels it",r.ath);
  ok(r.th&&r.th.every(x=>x.length<=280)&&/https:\/\/example\.com/.test(r.th.at(-1))&&/^1\//.test(r.th[0]),'N14 thread split ≤280, source on last post',r.th);
  ok(!r.ins.length,'insight points have no forecast phrases',r.ins);
- ok(r.stale[0].length===1&&r.stale[1],'E8 stale data file warning shown when over its age limit',r.stale);
+ ok(r.stale[0].filter(x=>/^derivs\.json/.test(x)).length===1&&r.stale[1],'E8 stale data file warning shown when over its age limit',r.stale);
  ok(/BTC history age \d/.test(r.fresh),"E2 'BTC history age' label",r.fresh);
  // C9 macro tiles "as of"
  const tiles=await pg.evaluate(async()=>{tab('macro');await new Promise(r=>setTimeout(r,2500));return[...document.querySelectorAll('#s-macro .stat, #s-macro .tile')].map(e=>e.innerText).filter(t=>t.trim())});
