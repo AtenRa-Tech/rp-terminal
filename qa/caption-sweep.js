@@ -5,7 +5,7 @@
 const {chromium}=require('playwright-core');
 const ARGS=process.argv.slice(2),URL=ARGS.find(a=>!a.startsWith('--'))||'https://atenra-tech.github.io/rp-terminal/',LIVENEWS=!ARGS.includes('--no-live-news');
 const fs0=require('fs'),RDIR=process.env.RDIR||(__dirname+'/news-replay'),SNAPS=fs0.existsSync(RDIR)?fs0.readdirSync(RDIR).filter(f=>/^20.*\.json$/.test(f)).sort().map(f=>({f,...JSON.parse(fs0.readFileSync(RDIR+'/'+f))})):[];
-const BANNED=[/\bbuy(ing)? (zone|signal|the dip)\b/i,/\bsell(ing)? (zone|signal)\b/i,/\bvalue zone\b/i,/\bdeepest-value\b/i,/\baccumulat(e|ion)\b/i,/\bfire sale\b/i,/\bsell,? seriously\b/i,/\bevery (cycle|top|bottom)\b/i,/\balways\b/i,/\bnever\b/i,/\bin history\b/i,/\bbest (buy|entry|time)\b/i,/\bguarantee/i,/\bBREAKING\b/,/\bconfirmed\b/i,/\bINR\b|₹|\brupee|\bIndia/i];
+const BANNED=[/\bbuy(ing)? (zone|signal|the dip)\b/i,/\bsell(ing)? (zone|signal)\b/i,/\bvalue zone\b/i,/\bdeepest-value\b/i,/\baccumulat(e|ion)\b/i,/\bfire sale\b/i,/\bsell,? seriously\b/i,/\bevery (cycle|top|bottom)\b/i,/\balways\b/i,/\bnever\b/i,/\bin history\b/i,/\bbest (buy|entry|time)\b/i,/\bguarantee/i,/\bBREAKING\b/,/\bconfirmed\b/i];// regional + rule-1 call/lean lists are NOT duplicated here: they are read from the app's own RPT_WORDS (one source of truth, also used by the news filter and the draft audit)
 const STATUS=/\((?:[^)]*\b(?:busy|failed|429|timeout|error|fallback|pending)\b[^)]*)\)/i;
 const BADTOK=/\b(NaN|undefined|null|Infinity)\b|\[object/;
 function repeated(t){const w=t.replace(/https?:\/\/\S+/g,' ').toLowerCase().replace(/[^a-z0-9%$. ]/g,' ').split(/\s+/).filter(Boolean);const s=new Set();for(let i=0;i+4<=w.length;i++){const g=w.slice(i,i+4).join(' ');if(s.has(g))return g;s.add(g)}return null}
@@ -34,7 +34,10 @@ const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
  // live news (warning only)
  if(LIVENEWS){try{newsClusters().slice(0,6).forEach(c=>gen({kind:'news',n:c.lead},null,'newslive',1))}catch(e){out.push({c:'newslive',err:String(e),warn:1})}}
  return out},{SNAPS,LIVENEWS});
+const W=await p.evaluate(()=>window.RPT_WORDS?{region:[RPT_WORDS.region.source,RPT_WORDS.region.flags],rule1:RPT_WORDS.rule1.map(x=>[x[0].source,x[0].flags])}:null);
 await b.close();
+if(!W){console.error('caption sweep: app does not expose RPT_WORDS (shared word list)');process.exit(1)}
+BANNED.push(new RegExp(...W.region));const RULE1=W.rule1.map(x=>new RegExp(...x));// rule 1 on news captions runs through the app lint (headline text exempt), on every other card directly
 let fails=[];
 const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try{if(r.err){fails.push([r.c,'-','-',r.err]);continue}const t=r.t||'';const loc=[r.c,r.st,r.i];
  if(!t){if(r.picked)continue;continue}
@@ -43,6 +46,7 @@ const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try
  if(BADTOK.test(t))fails.push([...loc,'bad token '+t.match(BADTOK)[0]]);
  if(STATUS.test(t))fails.push([...loc,'status text '+t.match(STATUS)[0]]);
  for(const re of BANNED)if(re.test(t))fails.push([...loc,'banned "'+t.match(re)[0]+'"']);
+ if(!/^news/.test(r.c))for(const re of RULE1)if(re.test(t))fails.push([...loc,'rule 1 "'+t.match(re)[0]+'"']);
  if(r.lint&&r.lint.length)fails.push([...loc,'app lint: '+r.lint.join(',')]);
  const rp=repeated(t);if(rp)fails.push([...loc,'repeated phrase "'+rp+'"']);
  if(/\blive\b/i.test(t)&&/\b(\d{1,2} \w{3}|close)\b/i.test(t)&&!/\blive[^.]{0,25}\d\d:\d\d ?UTC/i.test(t))fails.push([...loc,'live and close values without labels']);

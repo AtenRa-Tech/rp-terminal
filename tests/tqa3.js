@@ -13,12 +13,14 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
  const run=(fn,w,h)=>{TX=[];window.AXLOG=[];const c=document.createElement('canvas');c.width=w;c.height=h;fn(c.getContext('2d'),w,h);const r={tx:TX.slice(),ax:window.AXLOG.slice()};window.AXLOG=null;return r};
  const dayLab=t=>axFull(t,false);
  const axOK=(ax,o={})=>{const bad=[];const A=ax.filter(a=>a.fn==='plot'&&a.date!==false||a.fn==='chart'||a.fn==='axis');
-   for(const a of A){if(a.last!==axFull(a.lastT,a.intra))bad.push('last label '+a.last+' != '+axFull(a.lastT,a.intra));
+   for(const a of A){const e1=new Date(a.lastT),short=a.intra?String(e1.getUTCHours()).padStart(2,'0')+':'+String(e1.getUTCMinutes()).padStart(2,'0'):e1.getUTCDate()+' '+AXMN[e1.getUTCMonth()];
+     // QA4 rule: end label = full date; shortened (no year) or hidden only when a month/year boundary label would otherwise collide with it
+     const endOK=a.last===axFull(a.lastT,a.intra)||(a.endMode==='short'&&a.last===short)||(a.endMode==='hidden'&&a.last==null);if(!endOK)bad.push('last label '+a.last+' != '+axFull(a.lastT,a.intra));
      if(Math.abs(a.lastT-a.dataLast)>1000)bad.push('axis end '+new Date(a.lastT).toISOString()+' != data end '+new Date(a.dataLast).toISOString());
      for(let i=1;i<a.boxes.length;i++)if(a.boxes[i][0]<a.boxes[i-1][1])bad.push('overlap '+a.labels[i-1]+'|'+a.labels[i]);
      if(a.boxes.length&&a.boxes.at(-1)[1]>a.xMax+1)bad.push('last label past right edge');
-     if(a.labels.length>1&&!a.intra&&a.k!=='y'&&!/\d{4}$/.test(a.labels[0]))bad.push('no year on first label '+a.labels[0]);
-     for(let i=1;i<a.ticks.length-1;i++){const y0=new Date(a.ticks[i-1]).getUTCFullYear(),y1=new Date(a.ticks[i]).getUTCFullYear();if(y1!==y0&&!a.intra&&!/\d{4}$/.test(a.labels[i]))bad.push('year change without year '+a.labels[i])}}
+     if(a.labels.length>1&&!a.intra&&!/^y$/i.test(a.k)&&!/\d{4}$/.test(a.labels[0])&&!a.labels.slice(1).some(l=>/\d{4}$/.test(l)))bad.push('no year on first label '+a.labels[0]);
+     for(let i=1;i<a.ticks.length-1;i++){const y0=new Date(a.ticks[i-1]).getUTCFullYear(),y1=new Date(a.ticks[i]).getUTCFullYear();if(y1!==y0&&!a.intra&&!/\d{4}$|’\d\d$/.test(a.labels[i]))bad.push('year change without year '+a.labels[i])}}
    for(const a of ax.filter(a=>a.fn==='bars'&&a.lastT!=null)){const want=a.mon?calLab(a.lastT,'m',true):axFull(a.lastT);if(a.last!==want)bad.push('bars last '+a.last+' != '+want);for(let i=1;i<a.boxes.length;i++)if(a.boxes[i][0]<a.boxes[i-1][1])bad.push('bars overlap')}
    return{n:A.length,bad}};
  const textOK=(tx,asof=true)=>{const bad=[],j=tx.join(' | ');if(!tx.some(t=>t.includes(HDL())))bad.push('no handle');const dl=tx.find(t=>/^Data: /.test(t));if(!dl)bad.push('no Data line');
@@ -39,7 +41,7 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
  const syn=(iv,n)=>{const st=ivMs[iv],t1=Math.floor(Date.now()/st)*st- (iv==='1w'?((new Date(Math.floor(Date.now()/864e5)*864e5).getUTCDay()+6)%7)*864e5-0:0);const t=[],o=[],h=[],l=[],c=[],v=[];let px=60000;for(let i=n-1;i>=0;i--){const tt=iv==='1w'?(()=>{const d=Math.floor(Date.now()/864e5)*864e5;return d-((new Date(d).getUTCDay()+6)%7)*864e5-i*6048e5})():t1-i*st;const op=px;px*=1+Math.sin(i/7)*.01+.002;t.push(tt);o.push(op);c.push(px);h.push(Math.max(op,px)*1.01);l.push(Math.min(op,px)*.99);v.push(100+i%17)}return{t,o,h,l,c,v,src:'Binance',pair:'BTC/USDT'}};
  for(const iv of Object.keys(ivMs))for(const [w,hh] of [[360*2,520*2],[412*2,560*2],[430*2,580*2],[3840,2160]])T(`CH_${iv}_${w}`,()=>{const d=syn(iv,500),o={...CH,iv,d,n:iv==='1d'?460:Math.min(CH.n||200,300),cross:null,ind:{...CH.ind,EMA:true,VOL:true,RSI:true,MACD:true}};const r=run((x,W,H)=>drawChart(x,W,H,o),w,hh);
    const a=axOK(r.ax),hd=r.ax.find(z=>z.fn==='chartHdr'),pr=r.ax.find(z=>z.fn==='price'),md=r.ax.find(z=>z.fn==='macdHdr'),rs=r.ax.find(z=>z.fn==='rsiHdr'),bad=[...a.bad];
-   if(!hd)bad.push('no header');else{if(!/^live \d\d:\d\d UTC$/.test(hd.tag))bad.push('OHLC not tagged live: '+hd.tag);if(hd.handle!==HDL()||!r.tx.includes(HDL()))bad.push('no handle');if(!/^Data: Binance BTCUSDT .* candles through .* · rendered \d{1,2} [A-Z][a-z]{2} \d\d:\d\d UTC$/.test(hd.data))bad.push('data line '+hd.data);
+   if(!hd)bad.push('no header');else{if(!/^live \d\d:\d\d UTC$/.test(hd.tag))bad.push('OHLC not tagged live: '+hd.tag);if(hd.handle!==HDL()||!r.tx.includes(HDL()))bad.push('no handle');if(!/^Data: Binance BTCUSDT .* candles (through|week ending) .* · rendered \d{1,2} [A-Z][a-z]{2} \d\d:\d\d UTC$/.test(hd.data))bad.push('data line '+hd.data);
      if(!hd.ema||!/^EMA20 [\d.,]+k?$/.test(hd.ema[0]))bad.push('ema legend '+hd.ema);if(hd.emaIdx!==hd.N-2)bad.push('EMA not on last completed close')}
    if(!md||!/MACD\(12,26,9\) \S+ · signal \S+ · hist \S+ · live/.test(md.text))bad.push('macd hdr '+(md&&md.text));if(!rs||!/^live/.test(rs.tag))bad.push('rsi tag');
    if(!pr||!pr.ticks.length)bad.push('no price ticks');else{const f=pr.step/10**Math.floor(Math.log10(pr.step));if(![1,2,2.5,5,10].some(x=>Math.abs(x-f)<1e-9))bad.push('step not nice '+pr.step);if(pr.ticks.some(t=>t.y>pr.volTop||t.y<pr.top))bad.push('price label outside price panel')}
@@ -48,7 +50,7 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
  T('CH_live_1d',()=>{if(!CH.d)return{pass:true,skip:'no live candles'};const r=run((x,W,H)=>drawChart(x,W,H,{...CH,cross:null}),824,1120),a=axOK(r.ax),ax=r.ax.find(z=>z.fn==='chart');return{labels:ax.labels,bad:a.bad,pass:!a.bad.length&&ax.lastT===CH.d.t.at(-1)}});
  // month-boundary rule: 15 months of daily candles -> month starts, year on first + January
  T('AX_month_boundaries',()=>{const t1=Date.UTC(2026,9,2),t0=Date.UTC(2025,6,1);const c=document.createElement('canvas').getContext('2d');c.font='15px sans-serif';window.AXLOG=[];const L=timeAxis(c,{t0,t1,xOf:t=>(t-t0)/(t1-t0)*1000,xMin:0,xMax:1000,y:0,col:'#fff'});window.AXLOG=null;const labs=L.map(x=>x.lab);
-   const ok=labs[0]==='Jul 2025'&&labs.includes('Jan 2026')&&labs.at(-1)==='2 Oct 2026'&&labs.slice(1,-1).every(l=>/^[A-Z][a-z]{2}$/.test(l)||l==='Jan 2026');return{labs,pass:ok}});
+   const ok=labs[0]==='Jul 2025'&&labs.includes('Jan 2026')&&['2 Oct 2026','2 Oct'].includes(labs.at(-1))&&labs.slice(1,-1).every(l=>/^[A-Z][a-z]{2}$/.test(l)||l==='Jan 2026');return{labs,pass:ok}});
  CanvasRenderingContext2D.prototype.fillText=orig;return out});
 // C14 needs both tabs rendered with the shared function
 const c14=await pg.evaluate(async()=>{await renderSignals();const a=document.querySelector('#sigTop [data-pnc]')?.textContent;tab('today');await new Promise(r=>setTimeout(r,3000));const b=document.querySelector('#postCnt [data-pnc]')?.textContent;const m=s=>(s||'').match(/^(\d+) of (\d+) charts/);return{a,b,pass:!!a&&a===b&&!!m(a)&&+m(a)[2]===todayItems().length}});R.C14_same_count=c14;

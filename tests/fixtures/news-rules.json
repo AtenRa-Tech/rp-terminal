@@ -222,5 +222,38 @@
  "opinion_no_penalty": [
   "SEC will rule on spot SOL ETF by Friday",
   "US? No: Bitcoin hashrate hits record"
+ ],
+ "draft_audit": [
+  {
+   "id": "D1_india_red",
+   "draft": "BTC in INR is ₹70 lakh. Data: CoinDCX.",
+   "expect": "bad"
+  },
+  {
+   "id": "D2_india_wazirx_rupee",
+   "draft": "WazirX volumes jump as rupee weakens. Source: WazirX",
+   "expect": "bad"
+  },
+  {
+   "id": "D3_call_words_red",
+   "draft": "BTC is in the buy zone, accumulate now. Data: Binance.",
+   "expect": "bad"
+  },
+  {
+   "id": "D4_lean_words_red",
+   "draft": "Bullish setup: funding supportive. Data: OKX.",
+   "expect": "bad"
+  },
+  {
+   "id": "D5_clean_control",
+   "draft": "BTC closed at $83,624 on 30 Sep (Binance), 0.94× its 2-year MA. Data: Binance.",
+   "expect": "no bad or warn"
+  },
+  {
+   "id": "D6_indicator_control",
+   "draft": "ETH/BTC is in the bottom 32% of readings since 2017. Data: Binance.",
+   "expect": "no bad or warn",
+   "_why": "'Indicator' must not match 'India'; 'bottom' is a measurement, not a call"
+  }
  ]
 }
