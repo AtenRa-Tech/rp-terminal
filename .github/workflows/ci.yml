@@ -7,9 +7,11 @@ name: CI and deploy
 on:
   push:
     branches: [main]
+    # data-only commits (the hourly data job, pushed with its deploy key) are deployed by the workflow_run trigger below, not tested twice
+    paths-ignore: ['data/**']
   pull_request:
     branches: [main]
-  # data commits are pushed with GITHUB_TOKEN, which does not trigger "push" workflows; redeploy after each data run instead
+  # redeploy after each successful data run (data-only pushes are ignored by the push trigger above)
   workflow_run:
     workflows: ["Refresh data"]
     types: [completed]

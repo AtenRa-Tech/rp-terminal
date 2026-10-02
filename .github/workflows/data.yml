@@ -28,7 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # Pushes go over SSH with the repo's write deploy key (secret DATA_DEPLOY_KEY). The main-branch ruleset requires the "test" check
+      # and lets only deploy keys bypass it, so this job can keep committing data hourly; the guard below makes sure that key can only ever change data/.
       - uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.DATA_DEPLOY_KEY }}
+
+      - name: Record the commit this run starts from (guard baseline)
+        run: echo "BASE=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -75,17 +82,39 @@ jobs:
           rm -f data/*.tmp
 
       - name: Commit if changed
+        id: commit
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/
           if git diff --cached --quiet; then
-            echo "No data changes"; exit 0
+            echo "No data changes"; echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          git commit -m "data: refresh $(date -u +%Y-%m-%dT%H:%MZ)"
+          git commit -q -m "data: refresh $(date -u +%Y-%m-%dT%H:%MZ)"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Guard - the data job may only change files under data/
+        id: guard
+        if: always() && steps.commit.outputs.changed == 'true'
+        run: |
+          # fail closed: any diff error blocks the push; --no-renames so a file moved into data/ also lists its old (non-data) path
+          files=$(git diff --no-renames --name-only "$BASE" HEAD) || { echo "::error::guard could not diff $BASE..HEAD"; exit 1; }
+          bad=$(printf '%s\n' "$files" | grep -v -e '^data/' -e '^$' || true)
+          if [ -n "$bad" ]; then echo "::error::refusing to push: this job may only change data/, but its commit touches: $(echo $bad)"; exit 1; fi
+          echo "guard ok, changed files:"; printf '%s\n' "$files"
+
+      - name: Push (SSH deploy key; guard re-checked after each rebase)
+        if: always() && steps.commit.outputs.changed == 'true' && steps.guard.outcome == 'success'
+        run: |
           for i in 1 2 3; do
-            git pull --rebase -q origin main && git push -q origin HEAD:main && exit 0
+            if git pull --rebase -q origin main; then
+              git merge-base --is-ancestor FETCH_HEAD HEAD || { echo "::error::HEAD is not on top of main"; exit 1; }
+              files=$(git diff --no-renames --name-only FETCH_HEAD HEAD) || { echo "::error::guard could not diff after rebase"; exit 1; }
+              bad=$(printf '%s\n' "$files" | grep -v -e '^data/' -e '^$' || true)
+              if [ -n "$bad" ]; then echo "::error::refusing to push after rebase: non-data paths $(echo $bad)"; exit 1; fi
+              git push -q origin HEAD:main && exit 0
+            fi
             sleep $((i * 5))
           done
           echo "push failed"; exit 1
