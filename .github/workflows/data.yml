@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # dispatch "CI and deploy" (data_redeploy) after a data push
 
 concurrency:
   group: refresh-data
@@ -104,17 +105,37 @@ jobs:
           if [ -n "$bad" ]; then echo "::error::refusing to push: this job may only change data/, but its commit touches: $(echo $bad)"; exit 1; fi
           echo "guard ok, changed files:"; printf '%s\n' "$files"
 
-      - name: Push (SSH deploy key; guard re-checked after each rebase)
+      - name: Push (SSH deploy key; guard re-checked on every attempt)
+        id: push
         if: always() && steps.commit.outputs.changed == 'true' && steps.guard.outcome == 'success'
         run: |
+          # No merge/rebase: a queued run starts from an older commit and its data files conflict with the newer data commit.
+          # Instead, start each attempt from the current origin/main and re-apply only the data files this run changed (whole files).
+          mine=$(git rev-parse HEAD); msg=$(git log -1 --format=%s "$mine")
+          changed=$(git diff --no-renames --name-only "$BASE" "$mine") || { echo "::error::could not list changed files"; exit 1; }
           for i in 1 2 3; do
-            if git pull --rebase -q origin main; then
+            if git fetch -q origin main; then
+              git reset -q --hard FETCH_HEAD
+              while IFS= read -r f; do
+                [ -n "$f" ] || continue
+                if git cat-file -e "$mine:$f" 2>/dev/null; then git checkout -q "$mine" -- "$f"; else git rm -q --ignore-unmatch -- "$f"; fi
+              done <<< "$changed"
+              git add -A -- data/
+              if git diff --cached --quiet; then echo "main already has this data, nothing to push"; exit 0; fi
+              git commit -q -m "$msg"
               git merge-base --is-ancestor FETCH_HEAD HEAD || { echo "::error::HEAD is not on top of main"; exit 1; }
-              files=$(git diff --no-renames --name-only FETCH_HEAD HEAD) || { echo "::error::guard could not diff after rebase"; exit 1; }
+              files=$(git diff --no-renames --name-only FETCH_HEAD HEAD) || { echo "::error::guard could not diff against main"; exit 1; }
               bad=$(printf '%s\n' "$files" | grep -v -e '^data/' -e '^$' || true)
-              if [ -n "$bad" ]; then echo "::error::refusing to push after rebase: non-data paths $(echo $bad)"; exit 1; fi
-              git push -q origin HEAD:main && exit 0
+              if [ -n "$bad" ]; then echo "::error::refusing to push: non-data paths $(echo $bad)"; exit 1; fi
+              git push -q origin HEAD:main && { echo "pushed $(git rev-parse --short HEAD): $(echo $files)"; echo "pushed=true" >> "$GITHUB_OUTPUT"; exit 0; }
             fi
             sleep $((i * 5))
           done
           echo "push failed"; exit 1
+
+      # Redeploy: CI ignores data-only pushes, and workflow_run never fires for data runs started by GITHUB_TOKEN, so start the deploy here.
+      - name: Redeploy the site with the new data ("CI and deploy", data_redeploy)
+        if: always() && steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=true && echo "dispatched CI and deploy (data_redeploy) for $(git rev-parse --short HEAD)"

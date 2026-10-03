@@ -66,9 +66,11 @@ async function page(ctx,setup){const pg=await (ctx||b).newPage();await pg.setVie
  ok(!lean.lint.length,'lint flags lean words',lean.lint);
  ok(lean.chips.filter(c=>!/No data/.test(c)).every(c=>/(Above|Below) 200DMA, [+-]\d|ETH\/BTC (up|down|flat), [+-]\d|Real yield (rising|falling), [+−]\d+bp|Funding (positive|negative|neutral), −?\d|ETF flows (positive|negative), [+-]|Stablecoins (rising|falling), [+-]/.test(c)),'Today chips name metric, direction and figure',lean.chips);
  // E9/E10 export drawing: labels inside frame, vol axis ≥0, altseason axis 0–100
+ {const vf=await require('./volfix.js')(pg);console.log('vol cards:',vf.live?'live':'no live vol extreme today, built from flattened-closes fixture',vf.ids.join(','))}
  const ex=await pg.evaluate(()=>{const spy=(s)=>{const c=document.createElement('canvas');c.width=1920;c.height=1080;const x=c.getContext('2d'),T=[];const f=x.fillText.bind(x);x.fillText=(t,a,b2,...r)=>{T.push([String(t),a,x.measureText(String(t)).width,x.textAlign]);return f(t,a,b2,...r)};drawSig(x,1920,1080,s);return T};
-  const rv=SIG.find(s=>s.id==='rv7ETH')||SIG.find(s=>/^rv/.test(s.id));const T=spy(rv),mk=T.find(t=>/^(LOW|HIGH)$/.test(t[0]));const neg=T.filter(t=>/^-\d+%$/.test(t[0])).map(t=>t[0]);
-  renderAlt();const A=spy(ALTOBJ),ax=A.filter(t=>/^-?\d+%$/.test(t[0])).map(t=>parseFloat(t[0]));return{mk,right:mk?(mk[3]==='right'?mk[1]:mk[1]+mk[2]):null,neg,ax}});
+  const rv=SIG.find(s=>s.id==='rv7ETH')||SIG.find(s=>/^rv/.test(s.id));const T=spy(rv),miss=spy(undefined),mk=T.find(t=>/^(LOW|HIGH)$/.test(t[0]));const neg=T.filter(t=>/^-\d+%$/.test(t[0])).map(t=>t[0]);
+  renderAlt();const A=spy(ALTOBJ),ax=A.filter(t=>/^-?\d+%$/.test(t[0])).map(t=>parseFloat(t[0]));return{id:rv&&rv.id,mk,right:mk?(mk[3]==='right'?mk[1]:mk[1]+mk[2]):null,neg,ax,miss:miss.map(t=>t[0])}});
+ ok(ex.miss.length===1&&ex.miss[0]==='—','E9 missing signal draws "—", no crash',ex.miss);
  ok(ex.mk&&ex.right<=1920-40,'E9 rv7 LOW/HIGH marker label inside the right edge',ex);ok(!ex.neg.length,'E9 volatility y-axis never below 0',ex.neg);ok(ex.ax.length&&ex.ax.every(v=>v>=0&&v<=100),'E10 altseason y-axis within 0–100%',ex.ax);
  ok(!pg.errs.length,'no page errors (normal load)',pg.errs);await pg.close()}
 // ---- B. CoinGecko 429

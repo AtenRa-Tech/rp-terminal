@@ -726,7 +726,8 @@ function buildSignals(d){const out=[],P=d.P,PB=d.CL?.BTC?.v?.length>800?d.CL.BTC
    const M={pi:pS,rainbow:pS,halv:pS,mayer:bb,'2y':bb,dd:bb,gold:d.PG&&d.BT?'Binance PAXGUSDT ÷ BTCUSDT daily closes'+thru(alignR(d.BT,d.PG)):''};
    out.forEach(s=>{if(!s.src&&M[s.id])s.dsrc=M[s.id]})}catch(e){console.warn('dsrc',e)}
   return out.sort((a,b)=>b.score-a.score)}
-function drawSig(ctx,W,H,s){const{u,m}=cardBase(ctx,W,H,'Data: '+(s.dsrc||s.src||'source not recorded'));
+function drawSig(ctx,W,H,s){if(!s||typeof s.draw!=='function'){/* signal gone (rebuilt list, source missed): blank frame with '—', never a crash or a fake card */ctx.fillStyle=TH.bg||'#000';ctx.fillRect(0,0,W,H);ctx.fillStyle=TH.mu;ctx.font=F(Math.min(W,H)/1000*64,700);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('—',W/2,H/2);ctx.textAlign='left';return null}
+  const{u,m}=cardBase(ctx,W,H,'Data: '+(s.dsrc||s.src||'source not recorded'));
   const top=m+90*u;ctx.fillStyle=TH.tx;ctx.font=FT(54*u);ctx.textBaseline='alphabetic';ctx.fillText(s.title,m,top+40*u);
   ctx.fillStyle=TH.ac;ctx.font=F(26*u,600);ctx.fillText(s.read,m,top+84*u);
   const X=m,Y=top+150*u,Wd=W-2*m,Ht=H-Y-m-80*u;watermark(ctx,X,Y,Wd-86*u,Ht,u);s.draw(ctx,X,Y,Wd,Ht,u)}
