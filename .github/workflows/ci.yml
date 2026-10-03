@@ -142,7 +142,11 @@ jobs:
           ref: ${{ steps.good.outputs.sha }}
       - run: mkdir _site && cp -r index.html manifest.webmanifest icons data _site/ && (cp sw.js _site/ 2>/dev/null || true)
       - uses: actions/configure-pages@v5
+      # own artifact name: the deploy job of this same run already uploaded "github-pages", and deploy-pages refuses when two share a name
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+          name: github-pages-rollback
       - uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-rollback
