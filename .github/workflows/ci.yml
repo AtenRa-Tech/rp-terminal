@@ -63,6 +63,13 @@ jobs:
         working-directory: ${{ runner.temp }}
         # one retry after 90 s only to ride out a CoinGecko/CoinPaprika rate limit; any second failure blocks
         run: node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }
+      - name: Stale-data gate (blocking) - a metric past its freshness limit gives no reading anywhere (team tests + boundary/mixed/scores/confidence)
+        run: |
+          set -e
+          node qa/stale-derivs.js http://localhost:8765/index.html
+          node qa/stale-captions.js http://localhost:8765/index.html
+          node qa/stale-derivs2.js http://localhost:8765/index.html
+          node qa/stale-conf.js http://localhost:8765/index.html
       - name: News replay diff (report only)
         continue-on-error: true
         run: node qa/news-replay.js run http://localhost:8765/index.html
@@ -107,6 +114,13 @@ jobs:
       - name: Export check on the live site (failure rolls back)
         working-directory: ${{ runner.temp }}
         run: node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL" || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL"; }
+      - name: Stale-data gate on the live site (blocking; failure rolls back)
+        run: |
+          set -e
+          node qa/stale-derivs.js "$SITE_URL"
+          node qa/stale-captions.js "$SITE_URL"
+          node qa/stale-derivs2.js "$SITE_URL"
+          node qa/stale-conf.js "$SITE_URL"
       - name: Data job fallback - dispatch "Refresh data" if a data file is stale (GitHub cron is best-effort)
         # not on data redeploys: a data run that could not refresh derivs.json must not re-trigger itself in a loop
         if: always() && !inputs.data_redeploy
