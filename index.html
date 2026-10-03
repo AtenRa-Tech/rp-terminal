@@ -603,7 +603,10 @@ function calLab(t,k,withYear){const d=new Date(t),M=d.getUTCMonth(),Y=d.getUTCFu
 //  'd'  daily-scale spans up to ~75 days: row 1 day markers, row 2 the year (first label and each year change)
 //  'm'  up to 30 months: row 1 month names (Jun Jul Aug Sep), row 2 the year under the first month and every January
 //  'y'  longer: years only, every 1/2/4/5/10 years to fit
-// Label count follows the plot's CSS width (about 4-6 on a phone, 8-10 on desktop and 4K/8K exports); coarser steps until nothing collides.
+// Label count follows plot width relative to the label font (never image height): narrow plots (phone) 4-6 labels, wide plots (desktop,
+//  16:9 / 1:1 / 4:5 exports, 4K/8K scaled alike) 8-10. If the span's own unit cannot reach the minimum, a finer unit is used (years ->
+//  half-years/quarters with the year on row 2; months -> 15/10/7/5-day dates; up to 2 surplus labels are dropped from the old end);
+//  a collision always beats the minimum (logged short:true).
 // Stronger gridlines mark the next-larger boundary (midnights / month starts / 1 January). No end label: the exact visible range is printed above the plot (axRange).
 const AXCLS={h:[['h',1],['h',2],['h',3],['h',6],['h',12]],dh:[['h',3],['h',6],['h',12]],d:[['d',1],['d',2],['d',3],['w',1],['w',2]],m:[['m',1],['m',2],['m',3],['m',6]],y:[['y',1],['y',2],['y',4],['y',5],['y',10]]};
 const AXDOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -617,35 +620,49 @@ const axStamp=(t,time)=>{const d=new Date(t);return AXDOW[d.getUTCDay()]+' '+axF
 function axTicks(t0,t1,k,n){const H=36e5,DY=864e5,out=[],d=new Date(t0);let c;
   if(k==='h'){c=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());for(;c<=t1;c+=n*H)if(c>=t0)out.push(c)}
   else if(k==='d'||k==='w'){c=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());if(c<t0)c+=DY;if(k==='w')c+=((8-new Date(c).getUTCDay())%7)*DY;for(;c<=t1;c+=(k==='w'?7:1)*n*DY)out.push(c)}
+  else if(k==='md'){const DS=n===2?[1,16]:n===3?[1,11,21]:[1,6,11,16,21,26];let yy=d.getUTCFullYear(),m=d.getUTCMonth();for(;;){if(Date.UTC(yy,m,1)>t1)break;for(const dd of DS){c=Date.UTC(yy,m,dd);if(c>=t0&&c<=t1)out.push(c)}m++;if(m>11){m=0;yy++}}}
   else if(k==='m'){let yy=d.getUTCFullYear(),m=d.getUTCMonth();if(Date.UTC(yy,m,1)<t0){m++;if(m>11){m=0;yy++}}for(;;){c=Date.UTC(yy,m,1);if(c>t1)break;if(m%n===0)out.push(c);m++;if(m>11){m=0;yy++}}}
   else{let yy=d.getUTCFullYear();if(Date.UTC(yy,0,1)<t0)yy++;for(;Date.UTC(yy,0,1)<=t1;yy++)if(yy%n===0)out.push(Date.UTC(yy,0,1))}
   return out}
 // labels per width: plot width in CSS px (on-screen canvas) or in font-relative units (offscreen export), ~64 px per label, 4..10
-function axMaxN(ctx,xMin,xMax){const cv=ctx.canvas,fpx=parseFloat((ctx.font.match(/([\d.]+)px/)||[0,10.5])[1])||10.5,k=cv&&cv.isConnected&&cv.clientWidth?cv.clientWidth/cv.width:10.5/fpx,css=(xMax-xMin)*k;return{css,maxN:Math.max(4,Math.min(10,Math.floor(css/64)))}}
+// width in label-font ems decides: < AXEM -> phone class (4-6), else desktop class (8-10); css kept for logs
+const AXEM=34;
+function axMaxN(ctx,xMin,xMax){const cv=ctx.canvas,fpx=parseFloat((ctx.font.match(/([\d.]+)px/)||[0,10.5])[1])||10.5,k=cv&&cv.isConnected&&cv.clientWidth?cv.clientWidth/cv.width:10.5/fpx,css=(xMax-xMin)*k,em=(xMax-xMin)/fpx,desk=em>=AXEM;return{css,em,desk,minN:desk?8:4,maxN:desk?10:6}}
+// every step, coarse -> fine; 'md' = fixed days of the month (2: 1,16 · 3: 1,11,21 · 6: 1,6,11,16,21,26)
+const AXST2=[['y',10],['y',5],['y',4],['y',2],['y',1],['m',6],['m',4],['m',3],['m',2],['m',1],['w',2],['md',2],['md',3],['w',1],['md',6],['d',3],['d',2],['d',1],['h',12],['h',6],['h',3],['h',2],['h',1]];
+const AXSTART={y:0,m:5,d:10,h:18},AXEND={y:17,m:17,d:17,h:22};
 // place labels at x positions; first/last are pushed inside the plot edges; returns null on collision (or the boxes)
 function axPlace(ctx,items,xMin,xMax,gap,drop){const out=[];for(const it of items){const w=ctx.measureText(it.lab).width;let x=it.x,al='center',b=[x-w/2,x+w/2];
     if(it.left){al='left';b=[x,x+w]}if(b[0]<xMin){if(x<xMin-1)continue;b=[xMin,xMin+w];x=xMin;al='left'}if(b[1]>xMax){if(x>xMax+1)continue;b=[xMax-w,xMax];x=xMax;al='right'}
     if(out.length&&b[0]<out.at(-1).b[1]+gap){if(!drop)return null;if(it.keep&&!out.at(-1).keep)out.pop();else continue}out.push({...it,x,al,b})}return out}
 function timeAxis(ctx,o){const {t0,t1,xOf,xMin,xMax,y,grid}=o,u=o.u||1,fpx=parseFloat((ctx.font.match(/([\d.]+)px/)||[0,10.5])[1])||10.5,gap=Math.max(10*u,fpx*.9),y2=o.y2??y+fpx*1.35;
-  const S=t1-t0,cls=o.cls||axCls(S,o.intra),{css,maxN}=axMaxN(ctx,xMin,xMax),DY=864e5,mid=t=>new Date(t).getUTCHours()===0&&new Date(t).getUTCMinutes()===0;
+  const S=t1-t0,cls=o.cls||axCls(S,o.intra),{css,em,desk,minN,maxN}=axMaxN(ctx,xMin,xMax),DY=864e5,mid=t=>new Date(t).getUTCHours()===0&&new Date(t).getUTCMinutes()===0;
   const lab1=(t,k)=>k==='h'?axHM(t):k==='m'?AXMN[new Date(t).getUTCMonth()]:k==='y'?String(new Date(t).getUTCFullYear()):axDay(t);
+  // first step (coarse -> fine) giving minN..maxN labels without collision; else the most labels that fit (collisions beat the minimum)
+  const pickMin=(steps,mk)=>{let best=null;for(const [k,n] of steps){const it0=mk(k,n);if(!it0.length||it0.length>maxN+2)continue;
+    // up to 2 over the maximum: the oldest labels are dropped (a 5.5-year span gets 10 half-year labels instead of 5 years)
+    const it=it0.length>maxN?it0.slice(it0.length-maxN):it0;let P=axPlace(ctx,it,xMin,xMax,gap);
+    // a label squeezed against a plot edge may collide with its neighbour: try without the edge label(s) before giving up the step
+    if(!P)for(const v of [it.slice(0,-1),it.slice(1),it.slice(1,-1)]){if(v.length<minN)continue;P=axPlace(ctx,v,xMin,xMax,gap);if(P)break}if(!P)continue;if(P.length>=minN)return{k,n,out:P,trim:it0.length-it.length};if(it0.length>maxN)continue;if(!best||P.length>best.out.length)best={k,n,out:P}}
+    if(best)return{...best,short:1};for(const [k,n] of steps){const it=mk(k,n);if(it.length)return{k,n,out:axPlace(ctx,it,xMin,xMax,gap,1)||[],dropped:1}}return{k:null,n:0,out:[]}};
   const pick=(steps,mk,limit)=>{let last=null;for(const [k,n] of steps){const it=mk(k,n);last={k,n,it};if(it.length>limit)continue;const P=axPlace(ctx,it,xMin,xMax,gap);if(P)return{k,n,out:P}}return last?{k:last.k,n:last.n,out:axPlace(ctx,last.it,xMin,xMax,gap,1)||[],dropped:1}:{k:null,n:0,out:[]}};
   let r1,r2=[],strong=[];
   if(cls==='dh'){// row 2 first: day markers at midnights, then as many times as fit between them on row 1 (never midnight)
     const d2=pick([['d',1],['d',2],['d',3],['w',1]],(k,n)=>axTicks(t0,t1,k,n).map(t=>({t,x:xOf(t),lab:axDay(t)})),maxN);r2=d2.out;
     r1=pick(AXCLS.dh,(k,n)=>axTicks(t0,t1,k,n).filter(t=>!mid(t)).map(t=>({t,x:xOf(t),lab:axHM(t)})),Math.round(maxN*1.5));if(r1.dropped)r1={k:r1.k,n:r1.n,out:[]}}
-  else{r1=pick(AXCLS[cls],(k,n)=>axTicks(t0,t1,k,n).map(t=>({t,x:xOf(t),lab:lab1(t,k)})),Math.min(10,maxN+1));// one over the width target when every label still fits without collision (Jun Jul Aug Sep Oct on a phone)
-    if(cls==='h'){const it=[{t:t0,x:xMin,lab:axDay(t0),left:1}];for(let c=Date.UTC(new Date(t0).getUTCFullYear(),new Date(t0).getUTCMonth(),new Date(t0).getUTCDate())+DY;c<=t1;c+=DY)it.push({t:c,x:xOf(c),lab:axDay(c),keep:1});r2=axPlace(ctx,it,xMin,xMax,gap,1)}
-    else if(cls==='d'||cls==='m'){let py=null;const it=[];for(const L of r1.out){const Y=new Date(L.t).getUTCFullYear();if(Y!==py)it.push({t:L.t,x:L.x+(L.al==='left'?ctx.measureText(L.lab).width/2:L.al==='right'?-ctx.measureText(L.lab).width/2:0),lab:String(Y),keep:py!=null});py=Y}r2=axPlace(ctx,it,xMin,xMax,gap,1)}}
+  else{r1=pickMin(AXST2.slice(AXSTART[cls],AXEND[cls]+1),(k,n)=>axTicks(t0,t1,k,n).map(t=>({t,x:xOf(t),lab:lab1(t,k)})));
+    const un=r1.k==='y'?'y':r1.k==='m'?'m':r1.k==='h'?'h':'d';
+    if(un==='h'){const it=[{t:t0,x:xMin,lab:axDay(t0),left:1}];for(let c=Date.UTC(new Date(t0).getUTCFullYear(),new Date(t0).getUTCMonth(),new Date(t0).getUTCDate())+DY;c<=t1;c+=DY)it.push({t:c,x:xOf(c),lab:axDay(c),keep:1});r2=axPlace(ctx,it,xMin,xMax,gap,1)}
+    else if(un==='d'||un==='m'){let py=null;const it=[];for(const L of r1.out){const Y=new Date(L.t).getUTCFullYear();if(Y!==py)it.push({t:L.t,x:L.x+(L.al==='left'?ctx.measureText(L.lab).width/2:L.al==='right'?-ctx.measureText(L.lab).width/2:0),lab:String(Y),keep:py!=null});py=Y}r2=axPlace(ctx,it,xMin,xMax,gap,1)}}
   // stronger gridlines one level up: midnights (hour scales), month starts (day scale), 1 January (month scale)
-  if(cls==='h'||cls==='dh')strong=axTicks(t0,t1,'d',1);else if(cls==='d')strong=axTicks(t0,t1,'m',1);else if(cls==='m')strong=axTicks(t0,t1,'y',1);
+  {const un=cls==='dh'||r1.k==='h'?'h':r1.k==='y'?'y':r1.k==='m'?'m':'d';if(un==='h')strong=axTicks(t0,t1,'d',1);else if(un==='d')strong=axTicks(t0,t1,'m',1);else if(un==='m')strong=axTicks(t0,t1,'y',1)}
   const row1y=cls==='dh'&&!r1.out.length?null:y,row2y=cls==='dh'&&!r1.out.length?y:y2;
   ctx.save();ctx.textBaseline=o.base||'top';
   if(grid){const gl=(t,c,w)=>{const x=xOf(t);if(x<xMin-.5||x>xMax+.5)return;ctx.strokeStyle=c;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x,grid.y0);ctx.lineTo(x,grid.y1);ctx.stroke()};
     for(const L of r1.out.concat(cls==='dh'?r2:[]))if(!strong.includes(L.t))gl(L.t,grid.c,grid.w);for(const t of strong)gl(t,grid.s||hexA(TH.mu,.42),(grid.w||u)*2.2)}
   ctx.fillStyle=o.col;if(row1y!=null)for(const L of r1.out){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,row1y)}
   ctx.fillStyle=o.col2||o.col;for(const L of r2){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,row2y)}ctx.restore();
-  axLog({fn:o.fn||'axis',cls,k:r1.k,n:r1.n,maxN,cssW:css,labels:r1.out.map(L=>L.lab),ticks:r1.out.map(L=>L.t),boxes:r1.out.map(L=>L.b),row2:{labels:r2.map(L=>L.lab),ticks:r2.map(L=>L.t),boxes:r2.map(L=>L.b),y:row2y},row1y,strong,
+  axLog({fn:o.fn||'axis',cls,k:r1.k,n:r1.n,short:!!r1.short,minN,maxN,em,desk,cssW:css,labels:r1.out.map(L=>L.lab),ticks:r1.out.map(L=>L.t),boxes:r1.out.map(L=>L.b),row2:{labels:r2.map(L=>L.lab),ticks:r2.map(L=>L.t),boxes:r2.map(L=>L.b),y:row2y},row1y,strong,
     range:axRange(t0,o.rangeEnd??t1,o.intra),last:null,endMode:'none',lastT:t1,t0,dataLast:o.dataLast??t1,intra:!!o.intra,xMax,xMin,gap,fpx,pxPerDay:(xOf(t1)-xOf(t0))/Math.max(1e-9,(t1-t0)/864e5)});return r1.out}
 
 // nice price steps (1, 2, 2.5, 5 × 10^k) and compact labels (60k, 80k, 100k)
@@ -661,9 +678,9 @@ function plot(ctx,X,Y,Wd,Ht,u,o){
   ctx.save();ctx.strokeStyle=hexA(TH.mu,.18);ctx.lineWidth=1*u;ctx.fillStyle=TH.mu;ctx.font=F(15*u,500);ctx.textBaseline='middle';
   for(let k=0;k<=4;k++){const yv=mn+(mx-mn)*k/4,yy=Y+Ht-Ht*k/4;ctx.beginPath();ctx.moveTo(X,yy);ctx.lineTo(X+Wd-R,yy);ctx.stroke();const real=lg?10**yv:yv;ctx.fillText(o.yf?o.yf(real):plain(real),X+Wd-R+10*u,yy)}
   if(o.days){// halving comparison: days since halving at round steps (0, 200, 400 ...), caption on row 2
-    const {maxN}=axMaxN(ctx,X,X+Wd-R),gp=12*u;let pk=null;for(const st of [100,200,250,500,1000]){const it=[];for(let v=Math.ceil(t0/st)*st;v<=t1;v+=st)it.push({t:v,x:xs(v),lab:String(v)});if(it.length>maxN)continue;const P=axPlace(ctx,it,X,X+Wd-R,gp);if(P){pk={st,P};break}}
+    const {minN,maxN,em,desk}=axMaxN(ctx,X,X+Wd-R),gp=12*u;let pk=null,bk=null;for(const st of [1000,500,250,200,100,50]){const it=[];for(let v=Math.ceil(t0/st)*st;v<=t1;v+=st)it.push({t:v,x:xs(v),lab:String(v)});if(it.length>maxN)continue;const P=axPlace(ctx,it,X,X+Wd-R,gp);if(!P)continue;if(P.length>=minN){pk={st,P};break}if(!bk||P.length>bk.P.length)bk={st,P}}pk=pk||bk;
     pk=pk||{st:0,P:[]};ctx.textBaseline='top';for(const L of pk.P){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,Y+Ht+10*u);ctx.strokeStyle=hexA(TH.mu,.12);ctx.lineWidth=u;ctx.beginPath();ctx.moveTo(xs(L.t),Y);ctx.lineTo(xs(L.t),Y+Ht);ctx.stroke()}
-    ctx.textAlign='right';ctx.fillText('days since halving',X+Wd-R,Y+Ht+30*u);ctx.textAlign='left';axLog({fn:'plot',date:false,days:true,step:pk.st,labels:pk.P.map(L=>L.lab),boxes:pk.P.map(L=>L.b),caption:'days since halving',maxN})}
+    ctx.textAlign='right';ctx.fillText('days since halving',X+Wd-R,Y+Ht+30*u);ctx.textAlign='left';axLog({fn:'plot',date:false,days:true,step:pk.st,labels:pk.P.map(L=>L.lab),boxes:pk.P.map(L=>L.b),caption:'days since halving',cls:'days',k:'+',n:pk.st,minN,maxN,em,desk,short:pk.P.length<minN,row2:{labels:[],boxes:[]}})}
   else if(o.xf){ctx.textAlign='center';ctx.textBaseline='top';for(let k=0;k<=4;k++){const tt=t0+(t1-t0)*k/4;ctx.fillText(o.xf(tt),Math.min(X+Wd-R-30*u,Math.max(X+30*u,xs(tt))),Y+Ht+10*u)}ctx.textAlign='left';axLog({fn:'plot',date:false})}
   else{const intraP=t1-t0<3*864e5;timeAxis(ctx,{fn:'plot',t0,t1,xOf:xs,xMin:X,xMax:X+Wd-R,y:Y+Ht+10*u,u,col:TH.mu,intra:intraP,grid:{c:hexA(TH.mu,.10),w:u,y0:Y,y1:Y+Ht,s:hexA(TH.mu,.30)},dataLast:dl0});
     const rg=axRange(t0,t1,intraP);ctx.save();ctx.font=F(14*u,600);ctx.fillStyle=TH.mu;ctx.textAlign='right';ctx.textBaseline='alphabetic';ctx.fillText(rg,X+Wd-R,Y-12*u);ctx.restore();axLog({fn:'plotRange',text:rg});

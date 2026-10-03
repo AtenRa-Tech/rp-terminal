@@ -121,6 +121,8 @@ jobs:
           node qa/stale-captions.js "$SITE_URL"
           node qa/stale-derivs2.js "$SITE_URL"
           node qa/stale-conf.js "$SITE_URL"
+      - name: Axis label minimum on the live site (blocking; failure rolls back)
+        run: URL="$SITE_URL" node tests/tqa6.js
       - name: Data job fallback - dispatch "Refresh data" if a data file is stale (GitHub cron is best-effort)
         # not on data redeploys: a data run that could not refresh derivs.json must not re-trigger itself in a loop
         if: always() && !inputs.data_redeploy

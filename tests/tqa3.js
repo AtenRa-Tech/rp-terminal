@@ -17,7 +17,7 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
      if(a.endMode!=='none'||a.last!=null)bad.push('end label present: '+a.last);
      if(Math.abs(a.lastT-a.dataLast)>1000)bad.push('axis end '+new Date(a.lastT).toISOString()+' != data end '+new Date(a.dataLast).toISOString());
      for(const [nm,B,Lb] of [['row1',a.boxes,a.labels],['row2',a.row2.boxes,a.row2.labels]]){for(let i=1;i<B.length;i++)if(B[i][0]<B[i-1][1])bad.push(nm+' overlap '+Lb[i-1]+'|'+Lb[i]);if(B.length&&(B.at(-1)[1]>a.xMax+1||B[0][0]<a.xMin-1))bad.push(nm+' label past plot edge')}
-     if(a.cls==='y'&&!a.labels.every(l=>/^\d{4}$/.test(l)))bad.push('years scale with non-year label '+a.labels.join('|'));
+     if(a.cls==='y'&&a.k==='y'&&!a.labels.every(l=>/^\d{4}$/.test(l)))bad.push('years scale with non-year label '+a.labels.join('|'));
      if((a.cls==='d'||a.cls==='m')&&a.labels.length){const yrs=[...new Set(a.ticks.map(t=>String(new Date(t).getUTCFullYear())))];if(yrs.some(y=>!a.row2.labels.includes(y)))bad.push('row 2 misses a year: '+yrs.join(',')+' vs '+a.row2.labels.join(','))}
      if((a.cls==='h'||a.cls==='dh')&&!a.row2.labels.length)bad.push('intraday axis without dates on row 2');
      if(a.labels.length>(a.cls==='dh'?Math.round(a.maxN*1.5):Math.min(10,a.maxN+1))||(a.cls==='dh'&&a.row2.labels.length>a.maxN))bad.push('too many labels for width: '+a.labels.length+' > '+a.maxN)}

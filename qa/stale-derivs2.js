@@ -1,5 +1,5 @@
 // CRYPTO GOD stale-derivatives suite v2. Usage: node qa/stale-derivs2.js [URL]
-// repo copy (team v2, 3 Oct): require via NODE_PATH, fixture in qa/fixtures, output to tmpdir
+// repo copy (team v2, 3 Oct): require via NODE_PATH, fixture in qa/fixtures, output to tmpdir; network frozen across page loads (S1 deterministic)
 // Builds derivs.json fixtures at run time from fixtures/derivs-stale.json by shifting timestamps
 // relative to "now", blocks live derivatives feeds, and checks:
 //  S1 scores: Opportunity scores + POST NOW count with a stale file == with derivs.json missing
@@ -20,8 +20,13 @@ const STRIP=t=>t.replace(/^.*(jumps|surges|plunges|headline).*$/gim,'');
 const FUND=[/Funding[^\n]{0,40}neutral/i,/neutral band/i,/funding[^\n]{0,30}[-+]?\d+\.\d{3,}%/i];
 const OI=[/OI [-+]?\d+(\.\d+)?%/,/open interest[^\n]{0,40}[-+]?\d+(\.\d+)?/i];
 const has=(t,res)=>res.map(r=>STRIP(t).match(r)).filter(Boolean).map(m=>m[0]);
+// cache-busting params (x=, v=, t=, _=, ts=) are ignored when matching frozen responses
+const FROZEN=new Map(),FKEY=u=>{try{const x=new (require('url').URL)(u);for(const q of ['x','v','t','_','ts','cb','nocache'])x.searchParams.delete(q);return x.toString()}catch(e){return u}};
 async function run(b,body){const pg=await b.newPage();await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
- pg.on('request',r=>{const u=r.url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return body==null?r.respond({status:404,body:''}):r.respond({status:200,contentType:'application/json',body:JSON.stringify(body)});r.continue()});
+ pg.on('request',r=>{const u=r.url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return body==null?r.respond({status:404,body:''}):r.respond({status:200,contentType:'application/json',body:JSON.stringify(body)});
+  // repo copy: every other GET is frozen - the first page load records it, later loads replay it, so prices/market data are identical and only derivs.json differs
+  const k=FKEY(u);if(r.method()==='GET'&&FROZEN.has(k)){const f=FROZEN.get(k);return r.respond({status:f.status,headers:f.headers,body:f.body}).catch(()=>{})}r.continue()});
+ pg.on('response',async res=>{try{const u=res.url(),k=FKEY(u),q=res.request();if(q.method()!=='GET'||BLOCK.test(u)||/derivs\.json/.test(u)||FROZEN.has(k)||res.status()>=300&&res.status()<400)return;const body=await res.buffer();const H0=res.headers(),h={'content-type':H0['content-type']||'application/octet-stream','access-control-allow-origin':'*'};FROZEN.set(k,{status:res.status(),headers:h,body})}catch(e){}});
  await pg.goto(URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});await new Promise(r=>setTimeout(r,15000));
  let txt='';for(const t of ['today','markets','signals']){await pg.click(`nav button[data-t="${t}"]`);await new Promise(r=>setTimeout(r,4000));txt+=`\n##${t}\n`+await pg.evaluate(()=>document.body.innerText)}
  const sig=txt.split('##signals')[1]||'',L=sig.split('\n'),scores={};for(let i=1;i<L.length;i++){const m=L[i].match(/^(\d{1,3}) ⓘ$/);if(m&&!scores[L[i-1]])scores[L[i-1]]=+m[1]}
