@@ -6,16 +6,26 @@
 // Usage: URL=... node tests/tqa6.js   (writes the per-case table to $TMPDIR/tqa6.json)
 const p=require('puppeteer-core'),fs=require('fs'),os=require('os'),path=require('path');const URL=process.env.URL||'http://localhost:8765/index.html';
 const rows=[];const coll=B=>{for(let i=1;i<(B||[]).length;i++)if(B[i][0]<B[i-1][1]-0.5)return true;return false};
+// short count allowed ONLY when (a) the span has fewer candles (or days, for multi-day intraday dates) than the minimum, or (b) no even step fits:
+// every step the app tried that gives min..max labels collided (the app logs each step's count + fit). Any other short count fails.
 const judge=(name,a,expectDesk)=>{if(!a){rows.push({name,pass:false,why:'no axis log'});return}
-  const dh=a.cls==='dh',n=dh?a.labels.length+a.row2.labels.length:a.labels.length,prim=dh?a.row2.labels.length:a.labels.length;
-  const okMax=dh?prim<=a.maxN&&a.labels.length<=Math.round(a.maxN*1.5):n<=a.maxN,okMin=n>=a.minN||a.short,noColl=!coll(a.boxes)&&!coll(a.row2.boxes),cls=expectDesk==null||a.desk===expectDesk;
-  rows.push({name,cls:a.cls,step:a.k+a.n,n,min:a.minN,max:a.maxN,short:!!a.short,em:+a.em.toFixed(1),labels:a.labels.join(' ')+(a.row2.labels.length?' / '+a.row2.labels.join(' '):''),pass:okMax&&okMin&&noColl&&cls,why:[!okMax&&'over max',!okMin&&'under min',!noColl&&'collision',!cls&&'wrong width class'].filter(Boolean).join(',')})};
+  const dh=a.cls==='dh',main=dh?a.row2.labels.length:a.labels.length,times=dh?a.labels.length:0;
+  const okMax=main<=a.maxN&&(!dh||times<=Math.max(0,main-1)),noColl=!coll(a.boxes)&&!coll(a.row2.boxes),cls=expectDesk==null||a.desk===expectDesk;
+  // multi-day intraday: at most ONE time label between two day markers
+  let oneTime=true;if(dh&&times){const D=a.row2.ticks;for(let i=0;i+1<D.length;i++){if(a.ticks.filter(t=>t>D[i]&&t<D[i+1]).length>1)oneTime=false}if(a.ticks.some(t=>t<D[0]||t>D.at(-1)))oneTime=false}
+  let okMin=main>=a.minN,shortOK=false,reason=null;
+  if(!okMin){reason=a.why||'(no reason logged)';
+    if(/^fewer candles/.test(reason))shortOK=a.nPts!=null&&a.nPts<a.minN;
+    else if(/^fewer days/.test(reason))shortOK=dh&&Math.ceil((a.lastT-a.t0)/864e5)<a.minN;
+    else if(/^no even step fits/.test(reason))shortOK=(a.ev||[]).every(e=>e.c<a.minN||e.c>a.maxN+2||e.fit===false);}
+  rows.push({name,cls:a.cls,step:String(a.k)+(a.n??''),n:main,times,min:a.minN,max:a.maxN,short:!okMin,reason,em:+a.em.toFixed(1),labels:a.labels.join(' ')+(a.row2.labels.length?' / '+a.row2.labels.join(' '):''),
+    pass:okMax&&(okMin||shortOK)&&noColl&&cls&&oneTime,why:[!okMax&&'over max',!okMin&&!shortOK&&'short without a valid reason',!noColl&&'collision',!cls&&'wrong width class',!oneTime&&'more than one time between day markers'].filter(Boolean).join(',')})};
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
 for(const [w,h] of [[412,915],[1440,900]]){const desk=w>=1000;const pg=await b.newPage();await pg.setViewport({width:w,height:h,deviceScaleFactor:w<500?3:1});pg.on('pageerror',e=>console.log('pageerror',e.message));
   await pg.goto(URL,{waitUntil:'domcontentloaded'});await pg.waitForFunction(()=>typeof drawChart==='function'&&typeof tab==='function',{timeout:60000});
   await pg.evaluate(()=>tab('chart'));await new Promise(r=>setTimeout(r,3000));
   const C=await pg.evaluate(async()=>{const out=[];for(const iv of Object.keys(IVMS)){CH.iv=iv;CH.rng=null;await loadChart();if(!CH.d)continue;
-      for(const r of Object.keys(RNG)){if(rngN(r)==null){out.push({iv,r,skip:'under 2 candles'});continue}CH.rng=r;applyRng();window.AXLOG=[];drawChartScreen();const a=AXLOG.find(x=>x.fn==='chart');window.AXLOG=null;out.push({iv,r,a})}}
+      for(const r of Object.keys(RNG)){if(rngN(r)==null){out.push({iv,r,skip:rngWhy(r)||'disabled'});continue}CH.rng=r;applyRng();window.AXLOG=[];drawChartScreen();const a=AXLOG.find(x=>x.fn==='chart');window.AXLOG=null;out.push({iv,r,a})}}
     CH.iv='1d';CH.rng=null;await loadChart();
     // chart export 16:9 (1D, 1Y)
     CH.rng='1Y';applyRng();window.AXLOG=[];render8k((x,W,H)=>drawChart(x,W,H,{...CH,cross:null}),1920,1080);out.push({iv:'1d',r:'1Y',exp:'chart 16:9',a:AXLOG.find(x=>x.fn==='chart')});window.AXLOG=null;CH.rng=null;
@@ -33,5 +43,5 @@ for(const [w,h] of [[412,915],[1440,900]]){const desk=w>=1000;const pg=await b.n
     for(const s of S)judge(`export studio chart ${s.r}`,s.a,true)}
   await pg.close()}
 await b.close();fs.writeFileSync(path.join(os.tmpdir(),'tqa6.json'),JSON.stringify(rows,null,1));
-let f=0,sh=0;for(const r of rows){if(!r.pass)f++;if(r.short)sh++;console.log((r.skip?'SKIP ':r.pass?'PASS ':'FAIL ')+r.name+(r.skip?' ('+r.skip+')':` [${r.cls} ${r.step}] n=${r.n} (${r.min}-${r.max}${r.short?', short: no step gives min..max without collision':''}) em=${r.em} :: ${r.labels}`)+(r.why?' !! '+r.why:''))}
+let f=0,sh=0;for(const r of rows){if(!r.pass)f++;if(r.short)sh++;console.log((r.skip?'SKIP ':r.pass?'PASS ':'FAIL ')+r.name+(r.skip?' ('+r.skip+')':` [${r.cls} ${r.step}] n=${r.n}${r.times?' +'+r.times+' times':''} (${r.min}-${r.max}${r.short?', short: '+r.reason:''}) em=${r.em} :: ${r.labels}`)+(r.why?' !! '+r.why:''))}
 console.log(`cases ${rows.filter(r=>!r.skip).length}, short ${sh}, FAILS: ${f}`);process.exit(f?1:0)})().catch(e=>{console.error(e);process.exit(2)});

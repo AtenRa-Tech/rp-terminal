@@ -192,6 +192,7 @@ html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{col
   <div class="card" style="padding:10px">
     <div class="flex" style="margin-bottom:8px"><select id="chCoin"></select><div class="chips" id="ivs" aria-label="Candle interval"></div></div>
     <div class="flex" style="margin-bottom:8px"><span class="mu" style="font-size:12px">Range</span><div class="chips" id="rngs" aria-label="Visible range"></div></div>
+    <div class="mu" id="rngWhy" style="font-size:11px;margin:-4px 0 8px"></div>
     <canvas id="chart" class="cv" style="touch-action:pan-y"></canvas>
     <div class="flex" style="margin-top:8px"><span class="mu" style="font-size:12px">Zoom</span><input type="range" id="zoom" min="30" max="500" value="120" style="flex:1"></div>
     <div class="chips" id="inds" style="margin-top:6px"></div>
@@ -357,6 +358,17 @@ async function klines(c,iv,limit=500){
     async()=>conv(await J('https://api.binance.com'+q),'Binance'),
     async()=>{const r=await J(`${CG}/coins/${c.id}/ohlc?vs_currency=usd&days=${IVS[iv].cg}`);return{t:r.map(x=>x[0]),o:r.map(x=>x[1]),h:r.map(x=>x[2]),l:r.map(x=>x[3]),c:r.map(x=>x[4]),v:r.map(()=>0),src:'CoinGecko',pair:c.sym.toUpperCase()+'/USD'}});
   D.kl[key]={t:Date.now(),v};return v}
+// chart history: up to KLP pages of 1000 Binance candles (paged back with endTime) so range buttons show what they say;
+// 'complete' = the exchange returned fewer than asked, i.e. the pair's whole history is loaded (ALL is only offered then)
+const KLP=3;
+async function klinesH(c,iv){const key=c.id+iv+'H';if(D.kl[key]&&Date.now()-D.kl[key].t<60000)return D.kl[key].v;
+  const sym=c.sym.toUpperCase()+'USDT',q=e=>`/api/v3/klines?symbol=${sym}&interval=${iv}&limit=1000${e?'&endTime='+e:''}`,pair=c.sym.toUpperCase()+'/USDT';
+  const conv=r=>({t:r.map(x=>+x[0]),o:r.map(x=>+x[1]),h:r.map(x=>+x[2]),l:r.map(x=>+x[3]),c:r.map(x=>+x[4]),v:r.map(x=>+x[5])});
+  const page=e=>first(async()=>conv(await J('https://data-api.binance.vision'+q(e))),async()=>conv(await J('https://api.binance.com'+q(e))));
+  let v;try{const a=await page(null);v={...a,src:'Binance',pair,complete:a.t.length<1000,pages:1};
+    for(let pg=1;pg<KLP&&!v.complete;pg++){let b;try{b=await page(v.t[0]-1)}catch(e){break}if(!b.t.length){v.complete=true;break}for(const k of ['t','o','h','l','c','v'])v[k]=b[k].concat(v[k]);v.pages++;if(b.t.length<1000)v.complete=true}}
+  catch(e){v=await klines(c,iv,1000);v={...v,complete:false,pages:1}}
+  D.kl[key]={t:Date.now(),v};return v}
 async function deriv(sym){sym=sym.toUpperCase();
   return first(async()=>{const [p,o]=await Promise.all([J(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`),J(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${sym}USDT`)]);if(sym==='BTC')D.fb.deriv=null;return{f:+p.lastFundingRate,oi:+o.openInterest*+p.markPrice,src:'Binance'}},
    async()=>{const [f,o]=await Promise.all([J(`https://www.okx.com/api/v5/public/funding-rate?instId=${sym}-USDT-SWAP`),J(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${sym}-USDT-SWAP`)]);if(!f.data?.length)throw 0;if(sym==='BTC')D.fb.deriv={fail:'Binance futures',use:'OKX',what:'live funding/OI'};return{f:+f.data[0].fundingRate,oi:+o.data[0].oiUsd,src:'OKX'}}).catch(()=>{if(sym==='BTC')D.fb.deriv={fail:'Binance futures and OKX',use:null,what:'live funding/OI'};return null})}
@@ -398,7 +410,7 @@ function drawChart(ctx,W,H,o){
   {const ly0=Y(c[N-1]);ctx.fillStyle=TH.mu;ctx.textAlign='left';const hid=[];pt.forEach(([v,gy])=>{if(Math.abs(gy-ly0)<TAGH*u/2+7*u){hid.push(fmtTick(v,pStep));return}ctx.fillText(fmtTick(v,pStep),right+6*u,gy)});axLog({fn:'price',step:pStep,hidden:hid,lastY:ly0,tagH:TAGH*u,labH:10.5*u,ticks:pt.map(([v,gy])=>({v,y:gy,lab:fmtTick(v,pStep)})),volTop,top:m.y})}
   // time axis: calendar boundaries, year on first label and year changes, final label at the last candle
   const intra=/m|h/.test(o.iv);ctx.font=F(10.5*u,500);
-  const wkR=o.iv==='1w';timeAxis(ctx,{fn:'chart',t0:d.t[st],t1:d.t[N-1],rangeEnd:wkR?Math.min(d.t[N-1]+6*864e5,Date.now()):d.t[N-1],xOf:t=>{let i=d.t.indexOf(t);if(i>=st)return X(i);i=d.t.findIndex(x=>x>=t);if(i<=st)return X(st);if(i<0)return X(N-1);return X(i-1)+(t-d.t[i-1])/(d.t[i]-d.t[i-1])*cw},xMin:left,xMax:right-2*u,y:H-bot+5*u,u,col:TH.mu,intra,grid:{c:TH.ln,w:u*.6,y0:top,y1:H-bot},dataLast:d.t[N-1]});
+  const wkR=o.iv==='1w';timeAxis(ctx,{fn:'chart',nPts:n,t0:d.t[st],t1:d.t[N-1],rangeEnd:wkR?Math.min(d.t[N-1]+6*864e5,Date.now()):d.t[N-1],xOf:t=>{let i=d.t.indexOf(t);if(i>=st)return X(i);i=d.t.findIndex(x=>x>=t);if(i<=st)return X(st);if(i<0)return X(N-1);return X(i-1)+(t-d.t[i-1])/(d.t[i]-d.t[i-1])*cw},xMin:left,xMax:right-2*u,y:H-bot+5*u,u,col:TH.mu,intra,grid:{c:TH.ln,w:u*.6,y0:top,y1:H-bot},dataLast:d.t[N-1]});
   // exact visible range above the plot (A4)
   {const rg=axRange(d.t[st],wkR?Math.min(d.t[N-1]+6*864e5,Date.now()):d.t[N-1],intra);ctx.font=F(10*u,600);ctx.fillStyle=TH.mu;ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillText(rg,left+4*u,78*u);axLog({fn:'chartRange',text:rg})}
   ctx.textAlign='left';
@@ -432,7 +444,7 @@ function drawChart(ctx,W,H,o){
   ctx.font=F(11*u,600);ctx.fillStyle=TH.mu;const ohlc=`O ${plain(op[ci])}  H ${plain(h[ci])}  L ${plain(l[ci])}  C ${plain(c[ci])}  `;ctx.fillText(ohlc,left+4*u,42*u);const ow=ctx.measureText(ohlc).width;ctx.fillStyle=ch>=0?TH.up:TH.dn;ctx.fillText(pct(ch),left+4*u+ow,42*u);const pw=ctx.measureText(pct(ch)+'  ').width;ctx.fillStyle=TH.mu;ctx.font=F(10*u,600);ctx.fillText('· '+tag,left+4*u+ow+pw,42*u);
   let emaL=null;if(o.ind.EMA){ctx.font=F(10.5*u,700);let xx=left+4*u;emaL=[];[['EMA20',e20,TH.ac],['EMA50',e50,TH.ac2],['EMA200',e200,TH.pk]].forEach(([t,a,col])=>{const s=t+' '+fmtK(a[ec]*1);emaL.push(s);ctx.fillStyle=col;ctx.fillText(s,xx,60*u);xx+=ctx.measureText(s).width+12*u});ctx.fillStyle=TH.mu;ctx.font=F(9.5*u,500);ctx.fillText(wk?'at close, '+wkEnd(d.t[ec]):'at close '+axFull(d.t[ec],intra),xx,60*u)}
   // data line + UTC timestamp (like every other export)
-  const ivN={'15m':'15-minute','1h':'1-hour','4h':'4-hour','1d':'daily','1w':'weekly'}[o.iv]||o.iv,dl=`Data: ${d.src||'exchange'} ${d.pair.replace('/','')} ${ivN} candles ${wk?'through the '+wkEnd(d.t[ec]):'through '+(intra?hmU2(d.t[ec]+ivMs):axFull(d.t[ec]))} · rendered ${hmU2(Date.now())}`;fitFont(ctx,dl,W-left-12*u,9.5*u,500);
+  const ivN={'15m':'15-minute','1h':'1-hour','4h':'4-hour','1d':'daily','1w':'weekly'}[o.iv]||o.iv,dl=`Data: ${d.src||'exchange'} ${d.pair.replace('/','')} ${ivN} candles ${chRangeTxt(d,st,ec,o.iv)} · rendered ${hmU2(Date.now())}`;fitFont(ctx,dl,W-left-12*u,9.5*u,500);
   stampCheck(dl);ctx.fillStyle=TH.mu;ctx.textBaseline='alphabetic';ctx.fillText(dl,left+4*u,H-6*u);
   axLog({fn:'chartHdr',tag,isOpen,ohlcC:c[ci],ema:emaL,emaIdx:ec,data:dl,handle:HDL(),N});
   if(o.cross!=null&&o.cross>=st){const x=X(o.cross);ctx.strokeStyle=hexA(TH.tx,.45);ctx.lineWidth=u;ctx.setLineDash([3*u,3*u]);ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,H-bot);ctx.stroke();ctx.setLineDash([]);
@@ -629,8 +641,9 @@ function axTicks(t0,t1,k,n){const H=36e5,DY=864e5,out=[],d=new Date(t0);let c;
 const AXEM=34;
 function axMaxN(ctx,xMin,xMax){const cv=ctx.canvas,fpx=parseFloat((ctx.font.match(/([\d.]+)px/)||[0,10.5])[1])||10.5,k=cv&&cv.isConnected&&cv.clientWidth?cv.clientWidth/cv.width:10.5/fpx,css=(xMax-xMin)*k,em=(xMax-xMin)/fpx,desk=em>=AXEM;return{css,em,desk,minN:desk?8:4,maxN:desk?10:6}}
 // every step, coarse -> fine; 'md' = fixed days of the month (2: 1,16 · 3: 1,11,21 · 6: 1,6,11,16,21,26)
-const AXST2=[['y',10],['y',5],['y',4],['y',2],['y',1],['m',6],['m',4],['m',3],['m',2],['m',1],['w',2],['md',2],['md',3],['w',1],['md',6],['d',3],['d',2],['d',1],['h',12],['h',6],['h',3],['h',2],['h',1]];
-const AXSTART={y:0,m:5,d:10,h:18},AXEND={y:17,m:17,d:17,h:22};
+// even steps only (supervisor 3 Oct): 10/5/2/1 years, half-years, quarters, months, then 15/10/7/5-day dates, days, hours
+const AXST2=[['y',10],['y',5],['y',2],['y',1],['m',6],['m',3],['m',1],['w',2],['md',2],['md',3],['w',1],['md',6],['d',3],['d',2],['d',1],['h',12],['h',6],['h',3],['h',2],['h',1]];
+const AXSTART={y:0,m:4,d:7,h:15},AXEND={y:14,m:14,d:14,h:19};
 // place labels at x positions; first/last are pushed inside the plot edges; returns null on collision (or the boxes)
 function axPlace(ctx,items,xMin,xMax,gap,drop){const out=[];for(const it of items){const w=ctx.measureText(it.lab).width;let x=it.x,al='center',b=[x-w/2,x+w/2];
     if(it.left){al='left';b=[x,x+w]}if(b[0]<xMin){if(x<xMin-1)continue;b=[xMin,xMin+w];x=xMin;al='left'}if(b[1]>xMax){if(x>xMax+1)continue;b=[xMax-w,xMax];x=xMax;al='right'}
@@ -639,17 +652,20 @@ function timeAxis(ctx,o){const {t0,t1,xOf,xMin,xMax,y,grid}=o,u=o.u||1,fpx=parse
   const S=t1-t0,cls=o.cls||axCls(S,o.intra),{css,em,desk,minN,maxN}=axMaxN(ctx,xMin,xMax),DY=864e5,mid=t=>new Date(t).getUTCHours()===0&&new Date(t).getUTCMinutes()===0;
   const lab1=(t,k)=>k==='h'?axHM(t):k==='m'?AXMN[new Date(t).getUTCMonth()]:k==='y'?String(new Date(t).getUTCFullYear()):axDay(t);
   // first step (coarse -> fine) giving minN..maxN labels without collision; else the most labels that fit (collisions beat the minimum)
-  const pickMin=(steps,mk)=>{let best=null;for(const [k,n] of steps){const it0=mk(k,n);if(!it0.length||it0.length>maxN+2)continue;
+  const EV=[];// every step tried: count + whether it fitted (logged so a short count can show why)
+  const pickMin=(steps,mk,noTrim)=>{let best=null;for(const [k,n] of steps){const it0=mk(k,n);EV.push({s:k+n,c:it0.length});if(!it0.length||it0.length>maxN+(noTrim?0:2))continue;
     // up to 2 over the maximum: the oldest labels are dropped (a 5.5-year span gets 10 half-year labels instead of 5 years)
     const it=it0.length>maxN?it0.slice(it0.length-maxN):it0;let P=axPlace(ctx,it,xMin,xMax,gap);
     // a label squeezed against a plot edge may collide with its neighbour: try without the edge label(s) before giving up the step
-    if(!P)for(const v of [it.slice(0,-1),it.slice(1),it.slice(1,-1)]){if(v.length<minN)continue;P=axPlace(ctx,v,xMin,xMax,gap);if(P)break}if(!P)continue;if(P.length>=minN)return{k,n,out:P,trim:it0.length-it.length};if(it0.length>maxN)continue;if(!best||P.length>best.out.length)best={k,n,out:P}}
+    if(!P)for(const v of [it.slice(0,-1),it.slice(1),it.slice(1,-1)]){if(v.length<minN)continue;P=axPlace(ctx,v,xMin,xMax,gap);if(P)break}EV.at(-1).fit=!!P;if(!P)continue;if(P.length>=minN)return{k,n,out:P,trim:it0.length-it.length};if(it0.length>maxN)continue;if(!best||P.length>best.out.length)best={k,n,out:P}}
     if(best)return{...best,short:1};for(const [k,n] of steps){const it=mk(k,n);if(it.length)return{k,n,out:axPlace(ctx,it,xMin,xMax,gap,1)||[],dropped:1}}return{k:null,n:0,out:[]}};
   const pick=(steps,mk,limit)=>{let last=null;for(const [k,n] of steps){const it=mk(k,n);last={k,n,it};if(it.length>limit)continue;const P=axPlace(ctx,it,xMin,xMax,gap);if(P)return{k,n,out:P}}return last?{k:last.k,n:last.n,out:axPlace(ctx,last.it,xMin,xMax,gap,1)||[],dropped:1}:{k:null,n:0,out:[]}};
-  let r1,r2=[],strong=[];
+  let r1,r2=[],strong=[],dhShort=0,dhStep=null;
   if(cls==='dh'){// row 2 first: day markers at midnights, then as many times as fit between them on row 1 (never midnight)
-    const d2=pick([['d',1],['d',2],['d',3],['w',1]],(k,n)=>axTicks(t0,t1,k,n).map(t=>({t,x:xOf(t),lab:axDay(t)})),maxN);r2=d2.out;
-    r1=pick(AXCLS.dh,(k,n)=>axTicks(t0,t1,k,n).filter(t=>!mid(t)).map(t=>({t,x:xOf(t),lab:axHM(t)})),Math.round(maxN*1.5));if(r1.dropped)r1={k:r1.k,n:r1.n,out:[]}}
+    // main row = dates (min/max apply here); at most ONE time (12:00) between two day markers, only with a date every day; the whole time row is dropped if it would collide
+    const d2=pickMin([['w',1],['d',3],['d',2],['d',1]],(k,n)=>axTicks(t0,t1,k,n).map(t=>({t,x:xOf(t),lab:axDay(t)})),1);r2=d2.out;dhShort=d2.short?1:0;dhStep=d2.k+d2.n;
+    let tm=[];if(d2.k==='d'&&d2.n===1&&r2.length>1){const it=r2.slice(0,-1).map((L,i)=>L.t+432e5).filter(t=>t<t1).map(t=>({t,x:xOf(t),lab:axHM(t)}));tm=axPlace(ctx,it,xMin,xMax,gap)||[]}
+    r1={k:'h',n:12,out:tm}}
   else{r1=pickMin(AXST2.slice(AXSTART[cls],AXEND[cls]+1),(k,n)=>axTicks(t0,t1,k,n).map(t=>({t,x:xOf(t),lab:lab1(t,k)})));
     const un=r1.k==='y'?'y':r1.k==='m'?'m':r1.k==='h'?'h':'d';
     if(un==='h'){const it=[{t:t0,x:xMin,lab:axDay(t0),left:1}];for(let c=Date.UTC(new Date(t0).getUTCFullYear(),new Date(t0).getUTCMonth(),new Date(t0).getUTCDate())+DY;c<=t1;c+=DY)it.push({t:c,x:xOf(c),lab:axDay(c),keep:1});r2=axPlace(ctx,it,xMin,xMax,gap,1)}
@@ -662,7 +678,9 @@ function timeAxis(ctx,o){const {t0,t1,xOf,xMin,xMax,y,grid}=o,u=o.u||1,fpx=parse
     for(const L of r1.out.concat(cls==='dh'?r2:[]))if(!strong.includes(L.t))gl(L.t,grid.c,grid.w);for(const t of strong)gl(t,grid.s||hexA(TH.mu,.42),(grid.w||u)*2.2)}
   ctx.fillStyle=o.col;if(row1y!=null)for(const L of r1.out){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,row1y)}
   ctx.fillStyle=o.col2||o.col;for(const L of r2){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,row2y)}ctx.restore();
-  axLog({fn:o.fn||'axis',cls,k:r1.k,n:r1.n,short:!!r1.short,minN,maxN,em,desk,cssW:css,labels:r1.out.map(L=>L.lab),ticks:r1.out.map(L=>L.t),boxes:r1.out.map(L=>L.b),row2:{labels:r2.map(L=>L.lab),ticks:r2.map(L=>L.t),boxes:r2.map(L=>L.b),y:row2y},row1y,strong,
+  const shortF=cls==='dh'?!!dhShort:!!r1.short,mainN=cls==='dh'?r2.length:r1.out.length,days=Math.ceil(S/864e5);
+  const why=!shortF?null:o.nPts!=null&&o.nPts<minN?`fewer candles than the minimum (${o.nPts} < ${minN})`:cls==='dh'&&days<minN?`fewer days than the minimum (${days} < ${minN})`:'no even step fits ('+EV.map(e=>e.s+':'+e.c+(e.fit===false?' collides':'')).join(', ')+')';
+  axLog({fn:o.fn||'axis',cls,k:cls==='dh'?dhStep:r1.k,n:cls==='dh'?'':r1.n,short:shortF,why,mainN,main:cls==='dh'?'dates':'row1',ev:EV.slice(),nPts:o.nPts??null,minN,maxN,em,desk,cssW:css,labels:r1.out.map(L=>L.lab),ticks:r1.out.map(L=>L.t),boxes:r1.out.map(L=>L.b),row2:{labels:r2.map(L=>L.lab),ticks:r2.map(L=>L.t),boxes:r2.map(L=>L.b),y:row2y},row1y,strong,
     range:axRange(t0,o.rangeEnd??t1,o.intra),last:null,endMode:'none',lastT:t1,t0,dataLast:o.dataLast??t1,intra:!!o.intra,xMax,xMin,gap,fpx,pxPerDay:(xOf(t1)-xOf(t0))/Math.max(1e-9,(t1-t0)/864e5)});return r1.out}
 
 // nice price steps (1, 2, 2.5, 5 × 10^k) and compact labels (60k, 80k, 100k)
@@ -891,6 +909,9 @@ function renderHeat(){const cv=$('#heat');const ctx=fit(cv,Math.min(520,cv.paren
 function heatGate(){let ok=false;try{ok=heatItems().length>0}catch(e){}const t=ok?'':'Heatmap data unavailable: export and share are off until tiles load';$$('[data-x="heat"]').forEach(b=>{b.disabled=!ok;b.title=t});const st=$('#stType')?.value==='heat';['#stExp','#stX','#stShare'].forEach(id=>{const b=$(id);if(b){b.disabled=st&&!ok;b.title=st&&!ok?t:''}});return ok}
 function renderTrend(){const tu=$('#trendUpd');if(tu)tu.textContent=D.trendAt?'CoinGecko · updated '+hmU(D.trendAt):'';$('#trend').innerHTML=D.trend.map(t=>`<div class="row">${safeUrl(t.thumb)?`<img src="${esc(safeUrl(t.thumb))}" alt="">`:''}<div><div class="nm">${esc(t.symbol)}</div><div class="sub">${esc(t.name)} · rank #${esc(t.market_cap_rank??'—')}</div></div><div class="r num"><div class="sub ${cls(t.data?.price_change_percentage_24h?.usd)}">${pct(t.data?.price_change_percentage_24h?.usd,1)}</div></div><button class="btn sm" data-add="${esc(t.id)}|${esc(t.symbol)}">+</button></div>`).join('')||'<div class="mu">Unavailable: CoinGecko trending did not answer.</div>'}
 // ---------- RENDER: chart
+// the range actually shown, first candle open -> last candle (weekly: 'week of' -> 'week ending'; intraday with times)
+function chRangeTxt(d,st,ec,iv){const intra=/m|h/.test(iv),ms=IVMS[iv]||864e5;if(iv==='1w')return`from the week of ${axFull(d.t[st])} through the week ending ${axFull(d.t[ec]+6*864e5)}`;
+  const a=d.t[st],b=d.t[ec]+ms,sy=new Date(a).getUTCFullYear()!==new Date(b).getUTCFullYear();return intra?`${sy?axFull(a):axDay(a)} ${axHM(a)} through ${axFull(b)} ${axHM(b)} UTC`:`${axFull(d.t[st])} through ${axFull(d.t[ec])}`}
 function chartCoin(){return S.watch[CH.i]||S.watch[0]}
 function renderChartCtl(){$('#chCoin').innerHTML=S.watch.map((w,i)=>`<option value="${i}" ${i===CH.i?'selected':''}>${w.sym.toUpperCase()}</option>`).join('');
   $('#ivs').innerHTML=Object.keys(IVS).map(k=>`<button class="pill ${k===CH.iv?'on':''}" data-iv="${k}">${k}</button>`).join('');
@@ -898,11 +919,15 @@ function renderChartCtl(){$('#chCoin').innerHTML=S.watch.map((w,i)=>`<option val
   $('#inds').innerHTML=Object.keys(CH.ind).map(k=>`<button class="pill ${CH.ind[k]?'on':''}" data-ind="${k}">${k}</button>`).join('')}
 // visible-range buttons (separate from candle intervals): 1W 1M 3M 1Y ALL -> number of candles, clamped to the candles loaded; a range shorter than 2 candles is disabled
 const RNG={'1W':7,'1M':30,'3M':91,'1Y':365,'ALL':Infinity},IVMS={'15m':9e5,'1h':36e5,'4h':144e5,'1d':864e5,'1w':6048e5};
-function rngN(r,iv=CH.iv,N=CH.d?.t?.length){if(!N)return null;if(r==='ALL')return N;const n=Math.ceil(RNG[r]*864e5/(IVMS[iv]||864e5));return n<2?null:Math.min(N,n)}
-function renderRng(){const el=$('#rngs');if(!el)return;el.innerHTML=Object.keys(RNG).map(k=>{const n=rngN(k);return`<button class="pill ${CH.rng===k?'on':''}" data-rng="${k}" ${n==null?'disabled title="shorter than two candles at this interval"':''}>${k}</button>`}).join('')}
+// a range button is offered only when the candles loaded show exactly that span (first candle open -> last candle close within 5%)
+function rngWhy(r,iv=CH.iv,d=CH.d){const N=d?.t?.length;if(!N)return'loading';const ivN={'15m':'15m','1h':'1h','4h':'4h','1d':'1D','1w':'1W'}[iv]||iv;
+  if(r==='ALL')return d.complete?null:`full history needs more than ${(d.pages||1)*1000} candles at ${ivN}`;const ms=IVMS[iv]||864e5,want=RNG[r]*864e5,n=Math.round(want/ms);
+  if(n<2)return`shorter than two candles at ${ivN}`;if(Math.abs(n*ms-want)/want>.05)return`${ivN} candles cannot show exactly ${r}`;if(n>N)return`needs more history at ${ivN} (${n} candles, ${N} loaded)`;return null}
+function rngN(r,iv=CH.iv,N){const d=CH.d;if(rngWhy(r,iv,d))return null;return r==='ALL'?d.t.length:Math.round(RNG[r]*864e5/(IVMS[iv]||864e5))}
+function renderRng(){const el=$('#rngs');if(!el)return;el.innerHTML=Object.keys(RNG).map(k=>{const n=rngN(k);return`<button class="pill ${CH.rng===k?'on':''}" data-rng="${k}" ${n==null?`disabled title="${esc(rngWhy(k)||'')}" data-why="${esc(rngWhy(k)||'')}"`:''}>${k}</button>`}).join('');const w=$('#rngWhy');if(w){const g={};Object.keys(RNG).forEach(k=>{const y=rngN(k)==null&&rngWhy(k);if(y&&y!=='loading')(g[y]=g[y]||[]).push(k)});w.textContent=Object.entries(g).map(([y,ks])=>ks.join(', ')+' off: '+y).join(' · ')}}
 function applyRng(){if(!CH.rng||!CH.d)return;const n=rngN(CH.rng);if(n==null){CH.rng=null;return}CH.n=n;const z=$('#zoom');if(z){z.max=Math.max(+z.max,n);z.value=n}}
 function drawChartScreen(){const cv=$('#chart');const ctx=fit(cv,Math.round(Math.min(innerHeight*.62,620)));CH.lay=drawChart(ctx,cv.width,cv.height,CH)}
-async function loadChart(){CH.d=null;drawChartScreen();try{CH.d=await klines(chartCoin(),CH.iv,1000);$('#zoom').max=CH.d.c.length;applyRng();renderRng();$('#chSrc').textContent='Data: '+CH.d.src}catch(e){$('#chSrc').textContent='Could not load candles for this coin.'}drawChartScreen()}
+async function loadChart(){CH.d=null;drawChartScreen();try{CH.d=await klinesH(chartCoin(),CH.iv);$('#zoom').max=CH.d.c.length;applyRng();renderRng();$('#chSrc').textContent='Data: '+CH.d.src}catch(e){$('#chSrc').textContent='Could not load candles for this coin.'}drawChartScreen()}
 // ---------- RENDER: insights
 async function renderInsights(){const box=$('#ins');const res=await Promise.allSettled(S.watch.map(w=>analyze(w)));res.forEach(r=>{if(r.status==='fulfilled')D.ins[r.value.w.id]=r.value});
   box.innerHTML=S.watch.map(w=>{const a=D.ins[w.id];if(!a)return`<div class="card"><h3>${w.sym}</h3><div class="mu">No candle data on Binance for this coin.</div></div>`;
@@ -1485,6 +1510,8 @@ function newsFacts(n){let CL=null;try{CL=newsClusters().find(c=>c.items.includes
 function mktFacts(ctx){const t=ctx.t,c=ctx.coin||S.watch[0],date=new Date().toLocaleString('en-GB',{timeZone:'UTC',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}).replace('Sept','Sep').replace(',','')+' UTC';
   if(t==='pulse'||t==='heat'){const g=D.glob,f=D.fng.at(-1),ch=g?.market_cap_change_percentage_24h_usd??null;
     return{...FDEF,fam:'market',label:'Market pulse',subj:'Crypto market cap',subjTk:'Total crypto market cap',now:big(g?.total_market_cap?.[S.cur]),chg:ch!=null?`${pct(ch)} in 24h`:'24h change not available',ctx:g?.market_cap_percentage?.btc!=null?`BTC dominance ${g.market_cap_percentage.btc.toFixed(1)}%`:'',ctx2:f?`alternative.me index: ${f.v}, ${f.c}, ${dShort(f.t)}`:'',mood:'',src:g?._src||D.srcMk||'market data',date}}
+  if(t==='chart'&&CH.d){const c=chartCoin(),d=CH.d,N=d.t.length,n=Math.min(CH.n,N),st=N-n,ec=d.t[N-1]+(IVMS[CH.iv]||0)>Date.now()&&N>1?N-2:N-1,sy=c.sym.toUpperCase(),ch=(d.c[N-1]/d.o[st]-1)*100,ivL={'15m':'15m','1h':'1h','4h':'4h','1d':'1D','1w':'1W'}[CH.iv];
+    return{...FDEF,fam:'market',label:`${sy} chart`,subj:sy,subjTk:'$'+sy,now:`${money(d.c[N-1])} (${ivL} candles ${chRangeTxt(d,st,ec,CH.iv)})`,chg:`${pct(ch,1)} over that range`,ctx:'',ctx2:'',mood:'',src:d.src||'exchange',date,range:{t0:d.t[st],t1:CH.iv==='1w'?d.t[ec]+6*864e5:/m|h/.test(CH.iv)?d.t[ec]+(IVMS[CH.iv]||0):d.t[ec],rng:CH.rng||null}}}
   const mk=D.mk[c.id]||{},a=D.ins[c.id],p24=mk.price_change_percentage_24h??null,sy=c.sym.toUpperCase();
   return{...FDEF,fam:'market',label:`${sy} ${t} card`,subj:sy,subjTk:'$'+sy,now:money(mk.current_price),chg:`${p24==null?'24h change n/a':pct(p24)+' in 24h'}, ${pct(mk.price_change_percentage_7d_in_currency,1)} over 7 days${ch30Of(c.id)!=null?`, ${pct(ch30Of(c.id),1)} over 30 days (completed closes)`:''}`,ctx:a?`RSI ${a.rsi?.toFixed(0)}`:'',ctx2:(A=>A&&A.pct<0?`${Math.abs(A.pct).toFixed(0)}% ${A.txt}`:'')(athOf(c.id)),mood:'',src:D.srcMk||'CoinGecko',date}}
 function capFacts(ctx,obj){if(ctx.kind==='alt')return altFacts();if(ctx.kind==='dd'||(ctx.kind==='studio'&&ctx.t==='dd'))return ddFacts(ctx.a||stSym());if(ctx.kind==='perf'||(ctx.kind==='studio'&&ctx.t==='perf'))return perfFacts(ctx.a||stSym());if(ctx.kind==='sig'){const s=obj||SIG?.find(x=>x.id===ctx.id);return s?sigFacts(s):null}if(ctx.kind==='mac'){const s=MAC.cards.find(x=>x.id===ctx.id);return s?macFacts(s):null}

@@ -2,7 +2,7 @@
 // A adaptive time axis: each visible-period rule (within a day / several days / few months / several years / halving days), label density at
 //   360 px and 1280 px CSS widths (4-6 phone, <=10 desktop), no collisions on either row, range buttons (1W 1M 3M 1Y ALL, clamped, separate from
 //   intervals), exact visible-range label, crosshair full timestamp across panels, rainbow years-only + 'Latest:' annotation, exports use the same axis,
-//   MACD header in its own band (P2), 1W Data line 'through the week ending' (P2)
+//   MACD header in its own band (P2), 1W Data line 'from the week of … through the week ending' (P2); ALL disabled with a reason when the 3-page history is incomplete; weekly 1M (5 weeks = 35d) disabled
 // B small grey labels meet WCAG AA 4.5:1 on all 4 themes and are >= 12px
 const p=require('puppeteer-core');const URL=process.env.URL||'http://localhost:8765/index.html';
 const R={};const T=(k,v)=>{R[k]=v};
@@ -11,14 +11,14 @@ async function page(w,h){const pg=await b.newPage();await pg.setViewport({width:
   await pg.goto(URL,{waitUntil:'domcontentloaded'});await pg.waitForFunction(()=>typeof drawChart==='function'&&typeof tab==='function',{timeout:60000});return pg}
 // --- synthetic period rules on an on-screen canvas of the given CSS width
 const SYN=async(pg,cssW)=>pg.evaluate(cssW=>{const c=document.createElement('canvas');c.style.width=cssW+'px';c.style.height='300px';c.width=cssW*2;c.height=600;document.body.appendChild(c);const ctx=c.getContext('2d');ctx.font=F(22,500);
-  const run=(t0,t1,intra)=>{window.AXLOG=[];timeAxis(ctx,{t0,t1,xOf:t=>40+(t-t0)/(t1-t0)*(c.width-200),xMin:40,xMax:c.width-160,y:500,u:2,col:'#fff',intra});const a=AXLOG[0];window.AXLOG=null;return{cls:a.cls,k:a.k,n:a.n,maxN:a.maxN,l:a.labels,r2:a.row2.labels,b1:a.boxes,b2:a.row2.boxes}};
+  const run=(t0,t1,intra)=>{window.AXLOG=[];timeAxis(ctx,{t0,t1,xOf:t=>40+(t-t0)/(t1-t0)*(c.width-200),xMin:40,xMax:c.width-160,y:500,u:2,col:'#fff',intra});const a=AXLOG[0];window.AXLOG=null;return{cls:a.cls,k:a.k,n:a.n,maxN:a.maxN,short:a.short,why:a.why,l:a.labels,r2:a.row2.labels,b1:a.boxes,b2:a.row2.boxes}};
   const U=Date.UTC,o={day:run(U(2026,9,3,0),U(2026,9,3,23),1),days:run(U(2026,8,29,0),U(2026,9,3,8),1),months:run(U(2026,5,1),U(2026,9,2),0),years:run(U(2010,6,18),U(2026,9,2),0)};c.remove();return o},cssW);
 const coll=B=>{for(let i=1;i<B.length;i++)if(B[i][0]<B[i-1][1])return true;return false};
 for(const [w,h] of [[360,800],[1280,900]]){const pg=await page(w,h);const S=await SYN(pg,w-40);const lim=w<500?6:10,lo=w<500?4:4;
   T(`PERIOD_within_day_${w}`,{...S.day,pass:S.day.cls==='h'&&S.day.l.includes('12:00')&&(w<500||S.day.l.includes('06:00')&&S.day.l.includes('18:00'))&&S.day.r2[0]==='3 Oct'&&S.day.l.every(x=>/^\d\d:\d\d$/.test(x)&&(+x.slice(0,2))%((S.day.k==='h'?S.day.n:1)||1)===0)&&S.day.l.length<=lim&&S.day.l.length>=(w<500?2:lo)});
   T(`PERIOD_several_days_${w}`,{...S.days,pass:S.days.cls==='dh'&&S.days.r2.slice(0,3).join()===(w<500?S.days.r2.slice(0,3).join():'29 Sep,30 Sep,1 Oct')&&S.days.r2.every(x=>/^\d{1,2} [A-Z][a-z]{2}$/.test(x))&&S.days.l.every(x=>/^\d\d:\d\d$/.test(x)&&x!=='00:00')&&S.days.r2.length<=lim&&S.days.l.length<=Math.round(S.days.maxN*1.5)});
   T(`PERIOD_few_months_${w}`,{...S.months,pass:S.months.cls==='m'&&S.months.r2.join()==='2026'&&(w<500?S.months.l.join()==='Jun,Jul,Aug,Sep,Oct':S.months.k!=='m'&&S.months.l.length>=8&&S.months.l.length<=10&&S.months.l.every(x=>/^\d{1,2} [A-Z][a-z]{2}$/.test(x)))});
-  T(`PERIOD_several_years_${w}`,{...S.years,pass:S.years.cls==='y'&&S.years.l.every(x=>/^\d{4}$/.test(x))&&[1,2,4,5,10].includes(S.years.n)&&S.years.l.length<=lim&&S.years.l.length>=lo&&(w>=1000||S.years.n>=4)&&!S.years.r2.length});
+  T(`PERIOD_several_years_${w}`,{...S.years,pass:S.years.cls==='y'&&S.years.l.every(x=>/^\d{4}$/.test(x))&&[1,2,5,10].includes(S.years.n)&&S.years.l.length<=lim&&(S.years.l.length>=lo||S.years.short&&/^no even step fits/.test(S.years.why||''))&&!S.years.r2.length});
   T(`NO_COLLISIONS_synthetic_${w}`,{pass:Object.values(S).every(x=>!coll(x.b1)&&!coll(x.b2))});
   T(`DENSITY_maxN_${w}`,{maxN:S.day.maxN,pass:w<500?S.day.maxN>=4&&S.day.maxN<=6:S.day.maxN>=8&&S.day.maxN<=10});
   // live chart at this width: 1h / 1d / 1w
@@ -28,12 +28,12 @@ for(const [w,h] of [[360,800],[1280,900]]){const pg=await page(w,h);const S=awai
      out[iv]={cls:a.cls,step:a.k+a.n,maxN:a.maxN,l:a.labels,r2:a.row2.labels,c1:a.boxes,c2:a.row2.boxes,range:rg&&rg.text,want,data:hd.data,macd:md&&{band:md.band,plotTop:md.plotTop}}}return out});
   for(const [iv,a] of Object.entries(L)){const nPrim=a.cls==='dh'?a.r2.length:a.l.length;
     T(`LIVE_${iv}_${w}`,{cls:a.cls,step:a.step,labels:a.l.join('|')+' / '+a.r2.join('|'),pass:!coll(a.c1)&&!coll(a.c2)&&nPrim<=lim&&nPrim>=Math.min(3,lo)&&a.range===a.want&&/ UTC$/.test(a.range)});
-    if(iv==='1w')T(`P2_1W_data_line_${w}`,{data:a.data,pass:/weekly candles through the week ending \d{1,2} [A-Z][a-z]{2} \d{4}/.test(a.data)});
+    if(iv==='1w')T(`P2_1W_data_line_${w}`,{data:a.data,pass:/weekly candles from the week of \d{1,2} [A-Z][a-z]{2}( \d{4})? through the week ending \d{1,2} [A-Z][a-z]{2} \d{4}/.test(a.data)});
     if(a.macd)T(`P2_MACD_own_band_${iv}_${w}`,{...a.macd,pass:a.macd.plotTop>=a.macd.band[1]-0.5&&a.macd.band[1]>a.macd.band[0]})}
   if(w===1280){// range buttons, crosshair, exports
     const RB=await pg.evaluate(async()=>{CH.iv='1d';await loadChart();const btn=k=>document.querySelector(`#rngs [data-rng="${k}"]`);const out={n:document.querySelectorAll('#rngs [data-rng]').length,sepIv:!document.querySelector('#ivs [data-rng]')};
       const N=CH.d.t.length;btn('1M').click();await new Promise(r=>setTimeout(r,200));out.m1=CH.n;window.AXLOG=[];drawChartScreen();out.rg1=AXLOG.find(x=>x.fn==='chartRange').text;window.AXLOG=null;
-      btn('1Y').click();await new Promise(r=>setTimeout(r,200));out.y1=CH.n;btn('ALL').click();await new Promise(r=>setTimeout(r,200));out.all=CH.n;out.N=N;
+      btn('1Y').click();await new Promise(r=>setTimeout(r,200));out.y1=CH.n;btn('ALL').click();await new Promise(r=>setTimeout(r,200));out.all=CH.n;out.N=N;out.complete=!!CH.d.complete;out.allDis=btn('ALL').disabled;out.allWhy=btn('ALL').dataset.why||null;
       const z=document.getElementById('zoom');z.value=90;z.dispatchEvent(new Event('input'));out.zoomClears=CH.rng===null&&!document.querySelector('#rngs .on');
       CH.iv='1w';renderChartCtl();await loadChart();out.w1dis=btn('1W').disabled;out.m1w=rngN('1M');CH.iv='1d';renderChartCtl();await loadChart();
       // crosshair: full timestamp, line through every panel
@@ -41,7 +41,7 @@ for(const [w,h] of [[360,800],[1280,900]]){const pg=await page(w,h);const S=awai
       // exports use the same axis (cls by span), desktop density
       const ex={};for(const iv of ['1h','1d','1w']){CH.iv=iv;await loadChart();window.AXLOG=[];const c=document.createElement('canvas');c.width=3840;c.height=2160;drawChart(c.getContext('2d'),3840,2160,{...CH,n:120,cross:null});const a=AXLOG.find(z=>z.fn==='chart');window.AXLOG=null;ex[iv]={cls:a.cls,maxN:a.maxN,l:a.labels,r2:a.row2.labels,c1:a.boxes,c2:a.row2.boxes}}
       CH.iv='1d';await loadChart();return{...out,cs,ex}});
-    T('RANGE_buttons',{...RB,cs:undefined,ex:undefined,pass:RB.n===5&&RB.sepIv&&RB.m1===30&&RB.y1===Math.min(365,RB.N)&&RB.all===RB.N&&RB.zoomClears&&RB.w1dis===true&&RB.m1w===5&&/^\d{1,2} [A-Z][a-z]{2} \d{4} – \d{1,2} [A-Z][a-z]{2} \d{4} UTC$/.test(RB.rg1)});
+    T('RANGE_buttons',{...RB,cs:undefined,ex:undefined,pass:RB.n===5&&RB.sepIv&&RB.m1===30&&RB.y1===Math.min(365,RB.N)&&(RB.complete?RB.all===RB.N:RB.allDis&&!!RB.allWhy)&&RB.zoomClears&&RB.w1dis===true&&RB.m1w===null&&/^\d{1,2} [A-Z][a-z]{2} \d{4} – \d{1,2} [A-Z][a-z]{2} \d{4} UTC$/.test(RB.rg1)});
     const DOW='(Mon|Tue|Wed|Thu|Fri|Sat|Sun)';T('CROSSHAIR_full_timestamp',{h:RB.cs['1h']?.text,d:RB.cs['1d']?.text,pass:new RegExp('^'+DOW+' \\d{1,2} [A-Z][a-z]{2} \\d{4} \\d\\d:\\d\\d UTC$').test(RB.cs['1h']?.text)&&new RegExp('^'+DOW+' \\d{1,2} [A-Z][a-z]{2} \\d{4} UTC$').test(RB.cs['1d']?.text)&&['RSI','MACD'].every(k=>RB.cs['1d'].panels.includes(k))&&RB.cs['1d'].bottom>RB.cs['1d'].top});
     T('EXPORT_same_axis_4k',{ex:Object.fromEntries(Object.entries(RB.ex).map(([k,v])=>[k,v.cls+' '+v.l.join('|')+' / '+v.r2.join('|')])),pass:Object.entries(RB.ex).every(([iv,v])=>v.cls===L[iv]?.cls&&v.maxN===10&&!coll(v.c1)&&!coll(v.c2))});
     // rainbow + halving
