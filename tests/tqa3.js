@@ -32,7 +32,8 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
  const ex=[];(SIG||[]).forEach(s=>ex.push(['sig:'+s.id,(x,W,H)=>drawSig(x,W,H,s)]));(MAC.cards||[]).forEach(s=>ex.push(['mac:'+s.id,(x,W,H)=>drawSig(x,W,H,s)]));
  try{const A=altCalc&&altObj?altObj():ALTOBJ;if(A)ex.push(['alt',(x,W,H)=>drawSig(x,W,H,A)])}catch(e){if(ALTOBJ)ex.push(['alt',(x,W,H)=>drawSig(x,W,H,ALTOBJ)])}
  if(NX.etf)['btc','eth'].forEach(a=>ex.push(['etf:'+a,(x,W,H)=>drawEtf(x,W,H,a)]));if(SIGD?.CL?.BTC){ex.push(['dd:BTC',(x,W,H)=>drawDD(x,W,H,'BTC')]);ex.push(['perf:BTC',(x,W,H)=>drawPerf(x,W,H,'BTC')])}
- out.EXPORT_COUNT={n:ex.length,ids:ex.map(e=>e[0]),pass:ex.length>=25};
+ {const dvMiss=typeof STALEM==='object'&&Object.keys(STALEM).some(k=>/ (funding|oi)$/.test(k))?Math.max(0,4-SIG.filter(s=>/^(fund|oicap)/.test(s.id)).length):0;// stale gate: funding/OI cards are removed while derivs.json is past its limit
+ out.EXPORT_COUNT={n:ex.length,dvMiss,ids:ex.map(e=>e[0]),pass:ex.length>=25-dvMiss}}
  for(const [id,fn] of ex)T('EX_'+id,()=>{const r=run(fn,3840,2160),t=textOK(r.tx),a=axOK(r.ax);const wm=r.ax.some(x=>x.fn==='wm')||r.tx.some(z=>z.includes(HDL()));return{dl:t.dl,axes:a.n,bad:[...t.bad,...a.bad,...(wm?[]:['no watermark'])],pass:!t.bad.length&&!a.bad.length&&wm}});
  // handle fallback: blank handle still draws @RPTIME
  T('WM_blank_handle_fallback',()=>{const h=S.handle;S.handle='';const r=run((x,W,H)=>drawSig(x,W,H,SIG[0]),1920,1080);S.handle=h;return{pass:r.tx.some(t=>t.includes('@RPTIME'))}});
