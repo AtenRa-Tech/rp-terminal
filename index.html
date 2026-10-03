@@ -384,7 +384,7 @@ function drawChart(ctx,W,H,o){
   const d=o.d,k=R(),u=H/600;ctx.fillStyle=TH.bg;ctx.fillRect(0,0,W,H);
   if(!d){ctx.fillStyle=TH.mu;ctx.font=F(16*u);ctx.fillText('Loading…',20*u,60*u);return}
   const c=d.c.map(x=>x*k),h=d.h.map(x=>x*k),l=d.l.map(x=>x*k),op=d.o.map(x=>x*k),N=c.length,n=Math.min(o.n,N),st=N-n;
-  const TAGH=18,top=72*u,bot=40*u,axis=66*u,left=6*u,right=W-axis,avail=H-top-bot;
+  const TAGH=18,top=86*u,bot=54*u,axis=66*u,left=6*u,right=W-axis,avail=H-top-bot;
   const sub=[];if(o.ind.RSI)sub.push('RSI');if(o.ind.MACD)sub.push('MACD');
   const sh=sub.length?0.19:0,mainH=avail*(1-sh*sub.length);const P={};let y=top;P.main={y,h:mainH};y+=mainH;for(const s of sub){P[s]={y,h:avail*sh};y+=avail*sh}
   const cw=(right-left)/n,X=i=>left+(i-st+0.5)*cw;
@@ -397,7 +397,9 @@ function drawChart(ctx,W,H,o){
   {const ly0=Y(c[N-1]);ctx.fillStyle=TH.mu;ctx.textAlign='left';const hid=[];pt.forEach(([v,gy])=>{if(Math.abs(gy-ly0)<TAGH*u/2+7*u){hid.push(fmtTick(v,pStep));return}ctx.fillText(fmtTick(v,pStep),right+6*u,gy)});axLog({fn:'price',step:pStep,hidden:hid,lastY:ly0,tagH:TAGH*u,labH:10.5*u,ticks:pt.map(([v,gy])=>({v,y:gy,lab:fmtTick(v,pStep)})),volTop,top:m.y})}
   // time axis: calendar boundaries, year on first label and year changes, final label at the last candle
   const intra=/m|h/.test(o.iv);ctx.font=F(10.5*u,500);
-  timeAxis(ctx,{fn:'chart',months:o.iv!=='1w',t0:d.t[st],t1:d.t[N-1],xOf:t=>{let i=d.t.indexOf(t);if(i>=st)return X(i);i=d.t.findIndex(x=>x>=t);if(i<=st)return X(st);if(i<0)return X(N-1);return X(i-1)+(t-d.t[i-1])/(d.t[i]-d.t[i-1])*cw},xMin:left,xMax:right-2*u,y:H-bot+5*u,u,col:TH.mu,intra,grid:{c:TH.ln,w:u*.6,y0:top,y1:H-bot},dataLast:d.t[N-1]});
+  const wkR=o.iv==='1w';timeAxis(ctx,{fn:'chart',t0:d.t[st],t1:d.t[N-1],rangeEnd:wkR?d.t[N-1]+6*864e5:d.t[N-1],xOf:t=>{let i=d.t.indexOf(t);if(i>=st)return X(i);i=d.t.findIndex(x=>x>=t);if(i<=st)return X(st);if(i<0)return X(N-1);return X(i-1)+(t-d.t[i-1])/(d.t[i]-d.t[i-1])*cw},xMin:left,xMax:right-2*u,y:H-bot+5*u,u,col:TH.mu,intra,grid:{c:TH.ln,w:u*.6,y0:top,y1:H-bot},dataLast:d.t[N-1]});
+  // exact visible range above the plot (A4)
+  {const rg=axRange(d.t[st],wkR?d.t[N-1]+6*864e5:d.t[N-1],intra);ctx.font=F(10*u,600);ctx.fillStyle=TH.mu;ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillText(rg,left+4*u,78*u);axLog({fn:'chartRange',text:rg})}
   ctx.textAlign='left';
   const ivMs={'15m':9e5,'1h':36e5,'4h':144e5,'1d':864e5,'1w':6048e5}[o.iv]||864e5,isOpen=d.t[N-1]+ivMs>Date.now(),ci=o.cross!=null&&o.cross>=st&&o.cross<N?o.cross:N-1,wk=o.iv==='1w',wkEnd=t=>'week ending '+axFull(t+6*864e5),tag=ci===N-1&&isOpen?liveLbl():wk?wkEnd(d.t[ci]):axFull(d.t[ci],intra)+' UTC',ec=isOpen?N-2:N-1;
   // volume
@@ -413,14 +415,14 @@ function drawChart(ctx,W,H,o){
   ctx.fillStyle=lc;rr(ctx,right+2*u,ly-TAGH/2*u,axis-4*u,TAGH*u,4*u);ctx.fill();ctx.fillStyle='#fff';ctx.font=F(10.5*u,700);ctx.fillText(plain(lp),right+6*u,ly);
   // sub panes
   const sx=a=>a.slice(st).map((v,j)=>[X(st+j),v]);
-  if(P.RSI){const p=P.RSI,r=rsi(c),YR=v=>p.y+6*u+(100-v)/100*(p.h-12*u);ctx.strokeStyle=TH.ln;ctx.lineWidth=u;ctx.beginPath();ctx.moveTo(left,p.y);ctx.lineTo(W,p.y);ctx.stroke();
+  if(P.RSI){const p=P.RSI,r=rsi(c),YR=v=>p.y+18*u+(100-v)/100*(p.h-24*u);ctx.strokeStyle=TH.ln;ctx.lineWidth=u;ctx.beginPath();ctx.moveTo(left,p.y);ctx.lineTo(W,p.y);ctx.stroke();
     ctx.fillStyle=hexA(TH.vi,.07);ctx.fillRect(left,YR(70),right-left,YR(30)-YR(70));ctx.setLineDash([3*u,3*u]);[70,30].forEach(v=>{ctx.strokeStyle=hexA(TH.vi,.4);ctx.beginPath();ctx.moveTo(left,YR(v));ctx.lineTo(right,YR(v));ctx.stroke();ctx.fillStyle=TH.mu;ctx.font=F(10*u,500);ctx.fillText(v,right+6*u,YR(v))});ctx.setLineDash([]);
     line(ctx,sx(r).map(([x,v])=>[x,v==null?null:YR(v)]),TH.vi,1.4*u);ctx.fillStyle=TH.vi;ctx.font=F(10.5*u,700);ctx.fillText('RSI 14  '+(r[ci]?.toFixed(1)??'–')+'  · '+tag,left+4*u,p.y+11*u);axLog({fn:'rsiHdr',v:r[ci],tag})}
-  if(P.MACD){const p=P.MACD,M=macd(c);let mx=0;for(let i=st;i<N;i++)[M.line[i],M.sig[i],M.hist[i]].forEach(v=>v!=null&&(mx=Math.max(mx,Math.abs(v))));mx=mx||1;const YM=v=>p.y+p.h/2-v/mx*(p.h/2-8*u);
+  if(P.MACD){const p=P.MACD,M=macd(c);let mx=0;for(let i=st;i<N;i++)[M.line[i],M.sig[i],M.hist[i]].forEach(v=>v!=null&&(mx=Math.max(mx,Math.abs(v))));mx=mx||1;const bandH=18*u,YM=v=>p.y+bandH+(p.h-bandH)/2-v/mx*((p.h-bandH)/2-6*u);
     ctx.strokeStyle=TH.ln;ctx.lineWidth=u;ctx.beginPath();ctx.moveTo(left,p.y);ctx.lineTo(W,p.y);ctx.stroke();
     for(let i=st;i<N;i++){const v=M.hist[i];if(v==null)continue;ctx.fillStyle=v>=0?(v>=(M.hist[i-1]??0)?hexA(TH.up,.85):hexA(TH.up,.4)):(v<=(M.hist[i-1]??0)?hexA(TH.dn,.85):hexA(TH.dn,.4));const y0=YM(0),y1=YM(v);ctx.fillRect(X(i)-cw*.35,Math.min(y0,y1),cw*.7,Math.abs(y1-y0))}
     line(ctx,sx(M.line).map(([x,v])=>[x,v==null?null:YM(v)]),TH.ac2,1.3*u);line(ctx,sx(M.sig).map(([x,v])=>[x,v==null?null:YM(v)]),TH.ac,1.3*u);
-    ctx.fillStyle=TH.ac2;const fm=v=>v==null||!isFinite(v)?'–':Math.abs(v)>=100?v.toFixed(0):Math.abs(v)>=1?v.toFixed(2):v.toPrecision(3),mt=`MACD(12,26,9) ${fm(M.line[ci])} · signal ${fm(M.sig[ci])} · hist ${fm(M.hist[ci])} · ${tag}`;fitFont(ctx,mt,right-left-8*u,10.5*u,700);ctx.fillText(mt,left+4*u,p.y+11*u);axLog({fn:'macdHdr',text:mt})}
+    ctx.fillStyle=TH.ac2;const fm=v=>v==null||!isFinite(v)?'–':Math.abs(v)>=100?v.toFixed(0):Math.abs(v)>=1?v.toFixed(2):v.toPrecision(3),mt=`MACD(12,26,9) ${fm(M.line[ci])} · signal ${fm(M.sig[ci])} · hist ${fm(M.hist[ci])} · ${tag}`;fitFont(ctx,mt,right-left-8*u,10.5*u,700);ctx.fillText(mt,left+4*u,p.y+bandH/2+1*u);axLog({fn:'macdHdr',text:mt,band:[p.y,p.y+bandH],plotTop:p.y+bandH})}
   // header
   const ch=(c[ci]/c[Math.max(0,ci-1)]-1)*100;
   ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillStyle=TH.tx;ctx.font=F(17*u,800);ctx.fillText(d.pair+' · '+o.iv.toUpperCase(),left+4*u,22*u);
@@ -429,10 +431,11 @@ function drawChart(ctx,W,H,o){
   ctx.font=F(11*u,600);ctx.fillStyle=TH.mu;const ohlc=`O ${plain(op[ci])}  H ${plain(h[ci])}  L ${plain(l[ci])}  C ${plain(c[ci])}  `;ctx.fillText(ohlc,left+4*u,42*u);const ow=ctx.measureText(ohlc).width;ctx.fillStyle=ch>=0?TH.up:TH.dn;ctx.fillText(pct(ch),left+4*u+ow,42*u);const pw=ctx.measureText(pct(ch)+'  ').width;ctx.fillStyle=TH.mu;ctx.font=F(10*u,600);ctx.fillText('· '+tag,left+4*u+ow+pw,42*u);
   let emaL=null;if(o.ind.EMA){ctx.font=F(10.5*u,700);let xx=left+4*u;emaL=[];[['EMA20',e20,TH.ac],['EMA50',e50,TH.ac2],['EMA200',e200,TH.pk]].forEach(([t,a,col])=>{const s=t+' '+fmtK(a[ec]*1);emaL.push(s);ctx.fillStyle=col;ctx.fillText(s,xx,60*u);xx+=ctx.measureText(s).width+12*u});ctx.fillStyle=TH.mu;ctx.font=F(9.5*u,500);ctx.fillText(wk?'at close, '+wkEnd(d.t[ec]):'at close '+axFull(d.t[ec],intra),xx,60*u)}
   // data line + UTC timestamp (like every other export)
-  const ivN={'15m':'15-minute','1h':'1-hour','4h':'4-hour','1d':'daily','1w':'weekly'}[o.iv]||o.iv,dl=`Data: ${d.src||'exchange'} ${d.pair.replace('/','')} ${ivN} candles ${wk?wkEnd(d.t[ec]):'through '+(intra?hmU2(d.t[ec]+ivMs):axFull(d.t[ec]))} · rendered ${hmU2(Date.now())}`;fitFont(ctx,dl,W-left-12*u,9.5*u,500);
+  const ivN={'15m':'15-minute','1h':'1-hour','4h':'4-hour','1d':'daily','1w':'weekly'}[o.iv]||o.iv,dl=`Data: ${d.src||'exchange'} ${d.pair.replace('/','')} ${ivN} candles ${wk?'through the '+wkEnd(d.t[ec]):'through '+(intra?hmU2(d.t[ec]+ivMs):axFull(d.t[ec]))} · rendered ${hmU2(Date.now())}`;fitFont(ctx,dl,W-left-12*u,9.5*u,500);
   stampCheck(dl);ctx.fillStyle=TH.mu;ctx.textBaseline='alphabetic';ctx.fillText(dl,left+4*u,H-6*u);
   axLog({fn:'chartHdr',tag,isOpen,ohlcC:c[ci],ema:emaL,emaIdx:ec,data:dl,handle:HDL(),N});
-  if(o.cross!=null&&o.cross>=st){const x=X(o.cross);ctx.strokeStyle=hexA(TH.tx,.45);ctx.lineWidth=u;ctx.setLineDash([3*u,3*u]);ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,H-bot);ctx.stroke();ctx.setLineDash([])}
+  if(o.cross!=null&&o.cross>=st){const x=X(o.cross);ctx.strokeStyle=hexA(TH.tx,.45);ctx.lineWidth=u;ctx.setLineDash([3*u,3*u]);ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,H-bot);ctx.stroke();ctx.setLineDash([]);
+    const ct=d.t[o.cross],cs=wk?'Week ending '+axStamp(ct+6*864e5,false):axStamp(ct,intra);ctx.font=F(10.5*u,700);const cw2=ctx.measureText(cs).width+12*u,bx=Math.max(left,Math.min(right-cw2,x-cw2/2)),by=H-bot+2*u;ctx.fillStyle=TH.bg;ctx.fillRect(bx-2*u,by,cw2+4*u,32*u);ctx.fillStyle=hexA(TH.tx,.92);rr(ctx,bx,by+2*u,cw2,18*u,4*u);ctx.fill();ctx.fillStyle=TH.bg;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(cs,bx+6*u,by+11*u);ctx.textBaseline='alphabetic';axLog({fn:'cross',text:cs,x,top,bottom:H-bot,panels:Object.keys(P)})}
   return{left,cw,st,N}}
 // ---------- heatmap (squarified treemap)
 function squarify(items,x,y,w,h){const out=[],tot=items.reduce((s,i)=>s+i.v,0);let rest=items.map(i=>({...i,a:i.v*w*h/tot}));
@@ -589,35 +592,57 @@ function calLab(t,k,withYear){const d=new Date(t),M=d.getUTCMonth(),Y=d.getUTCFu
   if(k==='y')return String(Y);if(k==='Y')return '’'+String(Y).slice(2);if(k==='m')return AXMN[M]+(withYear?' '+Y:'');if(k==='d')return dd+' '+AXMN[M]+(withYear?' '+Y:'');
   return hr===0&&d.getUTCMinutes()===0?dd+' '+AXMN[M]+(withYear?' '+Y:''):axP2(hr)+':'+axP2(d.getUTCMinutes())}
 // lay out a time axis: xOf(t) -> px; returns the drawn labels (also logged for tests). The last label = lastT (full date, or date + time intraday).
-function timeAxis(ctx,o){const {t0,t1,xOf,xMin,xMax,y,intra,grid}=o,gap=10*(o.u||1);
-  // month/year boundaries are never dropped to make room for the end label: the end label is shortened ("2 Oct 2026" -> "2 Oct"), and hidden only if it still collides.
-  // Between ticks, a year boundary wins a collision against an ordinary tick. Coarser steps are tried until nothing collides.
-  const isB=t=>{const d=new Date(t);return d.getUTCDate()===1&&d.getUTCHours()===0&&d.getUTCMinutes()===0},isY=t=>isB(t)&&new Date(t).getUTCMonth()===0;
-  const e1=new Date(t1),ends=[axFull(t1,intra),intra?axP2(e1.getUTCHours())+':'+axP2(e1.getUTCMinutes()):e1.getUTCDate()+' '+AXMN[e1.getUTCMonth()],null];
-  const endBox=lab=>{if(lab==null)return null;const lw=ctx.measureText(lab).width;let lx=xOf(t1),la='center';if(lx+lw/2>xMax){lx=xMax;la='right'}return{lab,lx,la,b:la==='right'?[xMax-lw,xMax]:[lx-lw/2,lx+lw/2]}};
-  const lay=(C,E,nfy)=>{const out=[];let prevY=null,first=true,skip=0,conflict=0;for(const t of C.ticks){const dt=new Date(t),Y=dt.getUTCFullYear(),wy=(first&&!nfy)||(prevY!=null&&Y!==prevY)||(C.k==='h'&&dt.getUTCMonth()===0&&dt.getUTCDate()===1&&dt.getUTCHours()===0);const lab=calLab(t,C.k,wy&&!/y/i.test(C.k)),w=ctx.measureText(lab).width,x=xOf(t);let b=[x-w/2,x+w/2],al='center',lxx=x;
-      if(b[0]<xMin){if(first&&x>=xMin-1){b=[xMin,xMin+w];al='left';lxx=xMin}else continue}
-      // a boundary tick within 7 days before the end label (e.g. 'Oct' next to '2 Oct 2026') is covered by the end label; a Jan tick only when the end label keeps its year
-      if(E&&b[1]>E.b[0]-gap){const sm=t1>=t&&t1-t<7*864e5;if(isB(t)&&!(sm&&(!isY(t)||E.lab===ends[0])))conflict++;else continue}
-      if(out.length&&b[0]<out.at(-1).b[1]+gap){skip++;if(isY(t)){while(out.length&&!isY(out.at(-1).t)&&b[0]<out.at(-1).b[1]+gap)out.pop();if(out.length&&b[0]<out.at(-1).b[1]+gap)continue}else continue}
-      out.push({t,x:lxx,tx:x,lab,b,al});prevY=Y;first=false}return{out,skip,conflict}};
-  // the first label drops its year only when that alone causes a collision and the full end label already shows the same year (no year change in range)
-  const layEnd=C=>{for(const e of ends){const E=endBox(e);let L=lay(C,E);if(L.skip&&!intra&&e===ends[0]&&C.ticks.length&&new Date(C.ticks[0]).getUTCFullYear()===e1.getUTCFullYear()){const L2=lay(C,E,1);if(!L2.skip&&!L2.conflict)L=L2}if(!L.conflict||e==null)return{...L,E}}};
-  const len={h:36e5,d:864e5,m:30.44*864e5,y:365.25*864e5,Y:365.25*864e5};let best=null;
-  for(const [k,n] of [...AXSTEPS,['Y',1]]){if((t1-t0)/(len[k]*n)>(xMax-xMin)/(ctx.measureText({m:'May',y:'2026',Y:'’26'}[k]||'00:00').width+gap))continue;const CC=(()=>{const H=36e5,DY=864e5,out=[],d=new Date(t0);let c;
-      if(k==='h'){c=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),0);for(;c<=t1;c+=n*H)if(c>=t0)out.push(c)}
-      else if(k==='d'){c=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());if(c<t0)c+=DY;if(n===7)c+=((8-new Date(c).getUTCDay())%7)*DY;for(;c<=t1;c+=n*DY)out.push(c)}
-      else if(k==='m'){let yy=d.getUTCFullYear(),m=d.getUTCMonth();if(Date.UTC(yy,m,1)<t0){m++;if(m>11){m=0;yy++}}for(;;){c=Date.UTC(yy,m,1);if(c>t1)break;if(m%n===0)out.push(c);m++;if(m>11){m=0;yy++}}}
-      else{let yy=d.getUTCFullYear();if(Date.UTC(yy,0,1)<t0)yy++;// 'Y' = compact year labels ('26) when full years cannot all fit
-      for(;Date.UTC(yy,0,1)<=t1;yy++)if(yy%n===0)out.push(Date.UTC(yy,0,1))}return{k,n,ticks:out}})();
-    const L=layEnd(CC);if(!L.out.length&&!L.E)continue;
-    // rank: at most one dropped tick > every year boundary labelled > fewest unlabelled month starts (ranges up to 18 months) > end label visible > fewest dropped ticks > finest step
-    const yrs=[];for(let yy=new Date(t0).getUTCFullYear()+1;Date.UTC(yy,0,1)<=t1;yy++)yrs.push(Date.UTC(yy,0,1));const has=t=>L.out.some(o=>o.t>=t&&o.t<t+7*864e5&&/\d{4}|’\d\d/.test(o.lab))||(L.E&&L.E.lab===ends[0]&&t1>=t&&t1<t+7*864e5);
-    const mos=[];{const d0=new Date(t0);let yy=d0.getUTCFullYear(),mm=d0.getUTCMonth()+1;for(;;){if(mm>11){mm=0;yy++}const bt=Date.UTC(yy,mm,1);if(bt>t1)break;mos.push(bt);mm++}}const hasM=t=>L.out.some(o=>o.t>=t&&o.t<t+7*864e5)||(L.E&&t1>=t&&t1<t+7*864e5);
-    const sc=[L.skip>1?1:0,yrs.filter(t=>!has(t)).length,o.months!==false&&(t1-t0)<=18*len.m?mos.filter(t=>!hasM(t)).length:0,L.E?0:1,L.skip],lt=(a,b)=>{for(let i=0;i<a.length;i++)if(a[i]!==b[i])return a[i]<b[i];return false};if(!best||lt(sc,best.sc))best={C:CC,out:L.out,E:L.E,sc};if(sc.join()==='0,0,0,0,0')break}
-  if(!best)best={C:{k:'d',n:1},out:[],E:endBox(ends[0])};const out=best.out.slice(),E=best.E;if(E)out.push({t:t1,x:E.lx,lab:E.lab,b:E.b,al:E.la,last:1});
-  ctx.save();ctx.textBaseline=o.base||'top';for(const L of out){if(grid&&!L.last){ctx.strokeStyle=grid.c;ctx.lineWidth=grid.w;ctx.beginPath();ctx.moveTo(L.tx,grid.y0);ctx.lineTo(L.tx,grid.y1);ctx.stroke()}ctx.fillStyle=o.col;ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,y)}ctx.restore();
-  axLog({fn:o.fn||'axis',k:best.C.k,n:best.C.n,labels:out.map(L=>L.lab),boxes:out.map(L=>L.b),ticks:out.map(L=>L.t),last:E?E.lab:null,endMode:E?(E.lab===ends[0]?'full':'short'):'hidden',lastT:t1,t0,dataLast:o.dataLast??t1,intra:!!intra,xMax,xMin,gap,monthW:Math.max(...AXMN.map(m=>ctx.measureText(m).width)),pxPerDay:(xOf(t1)-xOf(t0))/Math.max(1,(t1-t0)/864e5)});return out}
+// ---------- adaptive time axis (round 5). The visible span picks the scale:
+//  'h'  within ~1.5 days: row 1 times (06:00 12:00 18:00), row 2 the date at the start and at each midnight
+//  'dh' intraday candles over several days: row 1 a few times (midnights left to row 2), row 2 day markers (29 Sep, 30 Sep, 1 Oct)
+//  'd'  daily-scale spans up to ~75 days: row 1 day markers, row 2 the year (first label and each year change)
+//  'm'  up to 30 months: row 1 month names (Jun Jul Aug Sep), row 2 the year under the first month and every January
+//  'y'  longer: years only, every 1/2/4/5/10 years to fit
+// Label count follows the plot's CSS width (about 4-6 on a phone, 8-10 on desktop and 4K/8K exports); coarser steps until nothing collides.
+// Stronger gridlines mark the next-larger boundary (midnights / month starts / 1 January). No end label: the exact visible range is printed above the plot (axRange).
+const AXCLS={h:[['h',1],['h',2],['h',3],['h',6],['h',12]],dh:[['h',3],['h',6],['h',12]],d:[['d',1],['d',2],['d',3],['w',1],['w',2]],m:[['m',1],['m',2],['m',3],['m',6]],y:[['y',1],['y',2],['y',4],['y',5],['y',10]]};
+const AXDOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const axCls=(S,intra)=>{const DY=864e5;return S<=1.5*DY?'h':intra&&S<=12*DY?'dh':S<=75*DY?'d':S<=30*30.44*DY?'m':'y'};
+const axDay=t=>{const d=new Date(t);return d.getUTCDate()+' '+AXMN[d.getUTCMonth()]};
+const axHM=t=>{const d=new Date(t);return axP2(d.getUTCHours())+':'+axP2(d.getUTCMinutes())};
+// exact visible range above the plot: '12 Sep 2026 – 3 Oct 2026 UTC' (intraday adds times)
+const axRange=(t0,t1,intra)=>axFull(t0)+(intra?' '+axHM(t0):'')+' – '+axFull(t1)+(intra?' '+axHM(t1):'')+' UTC';
+// crosshair / tap: 'Fri 3 Oct 2026 08:00 UTC'
+const axStamp=(t,time)=>{const d=new Date(t);return AXDOW[d.getUTCDay()]+' '+axFull(t)+(time?' '+axHM(t):'')+' UTC'};
+function axTicks(t0,t1,k,n){const H=36e5,DY=864e5,out=[],d=new Date(t0);let c;
+  if(k==='h'){c=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());for(;c<=t1;c+=n*H)if(c>=t0)out.push(c)}
+  else if(k==='d'||k==='w'){c=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());if(c<t0)c+=DY;if(k==='w')c+=((8-new Date(c).getUTCDay())%7)*DY;for(;c<=t1;c+=(k==='w'?7:1)*n*DY)out.push(c)}
+  else if(k==='m'){let yy=d.getUTCFullYear(),m=d.getUTCMonth();if(Date.UTC(yy,m,1)<t0){m++;if(m>11){m=0;yy++}}for(;;){c=Date.UTC(yy,m,1);if(c>t1)break;if(m%n===0)out.push(c);m++;if(m>11){m=0;yy++}}}
+  else{let yy=d.getUTCFullYear();if(Date.UTC(yy,0,1)<t0)yy++;for(;Date.UTC(yy,0,1)<=t1;yy++)if(yy%n===0)out.push(Date.UTC(yy,0,1))}
+  return out}
+// labels per width: plot width in CSS px (on-screen canvas) or in font-relative units (offscreen export), ~64 px per label, 4..10
+function axMaxN(ctx,xMin,xMax){const cv=ctx.canvas,fpx=parseFloat((ctx.font.match(/([\d.]+)px/)||[0,10.5])[1])||10.5,k=cv&&cv.isConnected&&cv.clientWidth?cv.clientWidth/cv.width:10.5/fpx,css=(xMax-xMin)*k;return{css,maxN:Math.max(4,Math.min(10,Math.floor(css/64)))}}
+// place labels at x positions; first/last are pushed inside the plot edges; returns null on collision (or the boxes)
+function axPlace(ctx,items,xMin,xMax,gap,drop){const out=[];for(const it of items){const w=ctx.measureText(it.lab).width;let x=it.x,al='center',b=[x-w/2,x+w/2];
+    if(it.left){al='left';b=[x,x+w]}if(b[0]<xMin){if(x<xMin-1)continue;b=[xMin,xMin+w];x=xMin;al='left'}if(b[1]>xMax){if(x>xMax+1)continue;b=[xMax-w,xMax];x=xMax;al='right'}
+    if(out.length&&b[0]<out.at(-1).b[1]+gap){if(!drop)return null;if(it.keep&&!out.at(-1).keep)out.pop();else continue}out.push({...it,x,al,b})}return out}
+function timeAxis(ctx,o){const {t0,t1,xOf,xMin,xMax,y,grid}=o,u=o.u||1,fpx=parseFloat((ctx.font.match(/([\d.]+)px/)||[0,10.5])[1])||10.5,gap=Math.max(10*u,fpx*.9),y2=o.y2??y+fpx*1.35;
+  const S=t1-t0,cls=o.cls||axCls(S,o.intra),{css,maxN}=axMaxN(ctx,xMin,xMax),DY=864e5,mid=t=>new Date(t).getUTCHours()===0&&new Date(t).getUTCMinutes()===0;
+  const lab1=(t,k)=>k==='h'?axHM(t):k==='m'?AXMN[new Date(t).getUTCMonth()]:k==='y'?String(new Date(t).getUTCFullYear()):axDay(t);
+  const pick=(steps,mk,limit)=>{let last=null;for(const [k,n] of steps){const it=mk(k,n);last={k,n,it};if(it.length>limit)continue;const P=axPlace(ctx,it,xMin,xMax,gap);if(P)return{k,n,out:P}}return last?{k:last.k,n:last.n,out:axPlace(ctx,last.it,xMin,xMax,gap,1)||[],dropped:1}:{k:null,n:0,out:[]}};
+  let r1,r2=[],strong=[];
+  if(cls==='dh'){// row 2 first: day markers at midnights, then as many times as fit between them on row 1 (never midnight)
+    const d2=pick([['d',1],['d',2],['d',3],['w',1]],(k,n)=>axTicks(t0,t1,k,n).map(t=>({t,x:xOf(t),lab:axDay(t)})),maxN);r2=d2.out;
+    r1=pick(AXCLS.dh,(k,n)=>axTicks(t0,t1,k,n).filter(t=>!mid(t)).map(t=>({t,x:xOf(t),lab:axHM(t)})),maxN*2);if(r1.dropped)r1={k:r1.k,n:r1.n,out:[]}}
+  else{r1=pick(AXCLS[cls],(k,n)=>axTicks(t0,t1,k,n).map(t=>({t,x:xOf(t),lab:lab1(t,k)})),maxN);
+    if(cls==='h'){const it=[{t:t0,x:xMin,lab:axDay(t0),left:1}];for(let c=Date.UTC(new Date(t0).getUTCFullYear(),new Date(t0).getUTCMonth(),new Date(t0).getUTCDate())+DY;c<=t1;c+=DY)it.push({t:c,x:xOf(c),lab:axDay(c),keep:1});r2=axPlace(ctx,it,xMin,xMax,gap,1)}
+    else if(cls==='d'||cls==='m'){let py=null;const it=[];for(const L of r1.out){const Y=new Date(L.t).getUTCFullYear();if(Y!==py)it.push({t:L.t,x:L.x+(L.al==='left'?ctx.measureText(L.lab).width/2:L.al==='right'?-ctx.measureText(L.lab).width/2:0),lab:String(Y),keep:py!=null});py=Y}r2=axPlace(ctx,it,xMin,xMax,gap,1)}}
+  // stronger gridlines one level up: midnights (hour scales), month starts (day scale), 1 January (month scale)
+  if(cls==='h'||cls==='dh')strong=axTicks(t0,t1,'d',1);else if(cls==='d')strong=axTicks(t0,t1,'m',1);else if(cls==='m')strong=axTicks(t0,t1,'y',1);
+  const row1y=cls==='dh'&&!r1.out.length?null:y,row2y=cls==='dh'&&!r1.out.length?y:y2;
+  ctx.save();ctx.textBaseline=o.base||'top';
+  if(grid){const gl=(t,c,w)=>{const x=xOf(t);if(x<xMin-.5||x>xMax+.5)return;ctx.strokeStyle=c;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x,grid.y0);ctx.lineTo(x,grid.y1);ctx.stroke()};
+    for(const L of r1.out.concat(cls==='dh'?r2:[]))if(!strong.includes(L.t))gl(L.t,grid.c,grid.w);for(const t of strong)gl(t,grid.s||hexA(TH.mu,.42),(grid.w||u)*2.2)}
+  ctx.fillStyle=o.col;if(row1y!=null)for(const L of r1.out){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,row1y)}
+  ctx.fillStyle=o.col2||o.col;for(const L of r2){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,row2y)}ctx.restore();
+  axLog({fn:o.fn||'axis',cls,k:r1.k,n:r1.n,maxN,cssW:css,labels:r1.out.map(L=>L.lab),ticks:r1.out.map(L=>L.t),boxes:r1.out.map(L=>L.b),row2:{labels:r2.map(L=>L.lab),ticks:r2.map(L=>L.t),boxes:r2.map(L=>L.b),y:row2y},row1y,strong,
+    range:axRange(t0,o.rangeEnd??t1,o.intra),last:null,endMode:'none',lastT:t1,t0,dataLast:o.dataLast??t1,intra:!!o.intra,xMax,xMin,gap,fpx,pxPerDay:(xOf(t1)-xOf(t0))/Math.max(1e-9,(t1-t0)/864e5)});return r1.out}
+
 // nice price steps (1, 2, 2.5, 5 × 10^k) and compact labels (60k, 80k, 100k)
 const niceStep=r=>{const p=10**Math.floor(Math.log10(r||1)),f=r/p;return(f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p};
 const fmtTick=(v,s)=>{if(Math.abs(v)>=1e4&&s>=100){const k=v/1e3,dd=s%1e3===0?0:s%100===0?1:2;return k.toFixed(dd)+'k'}const dec=s>=1?(s%1?1:0):Math.min(8,Math.ceil(-Math.log10(s)+1e-9)+(Math.round(s/10**Math.floor(Math.log10(s))*10)%10?1:0));return v.toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec})};
@@ -630,8 +655,14 @@ function plot(ctx,X,Y,Wd,Ht,u,o){
   const R=86*u,xs=x=>X+(x-t0)/(t1-t0||1)*(Wd-R),ys=v=>Y+Ht-(tr(v)-mn)/(mx-mn)*Ht;
   ctx.save();ctx.strokeStyle=hexA(TH.mu,.18);ctx.lineWidth=1*u;ctx.fillStyle=TH.mu;ctx.font=F(15*u,500);ctx.textBaseline='middle';
   for(let k=0;k<=4;k++){const yv=mn+(mx-mn)*k/4,yy=Y+Ht-Ht*k/4;ctx.beginPath();ctx.moveTo(X,yy);ctx.lineTo(X+Wd-R,yy);ctx.stroke();const real=lg?10**yv:yv;ctx.fillText(o.yf?o.yf(real):plain(real),X+Wd-R+10*u,yy)}
-  if(o.xf){ctx.textAlign='center';ctx.textBaseline='top';for(let k=0;k<=4;k++){const tt=t0+(t1-t0)*k/4;ctx.fillText(o.xf(tt),Math.min(X+Wd-R-30*u,Math.max(X+30*u,xs(tt))),Y+Ht+10*u)}ctx.textAlign='left';axLog({fn:'plot',date:false})}
-  else timeAxis(ctx,{fn:'plot',t0,t1,xOf:xs,xMin:X,xMax:X+Wd-R,y:Y+Ht+10*u,u,col:TH.mu,intra:t1-t0<3*864e5,dataLast:dl0});
+  if(o.days){// halving comparison: days since halving at round steps (0, 200, 400 ...), caption on row 2
+    const {maxN}=axMaxN(ctx,X,X+Wd-R),gp=12*u;let pk=null;for(const st of [100,200,250,500,1000]){const it=[];for(let v=Math.ceil(t0/st)*st;v<=t1;v+=st)it.push({t:v,x:xs(v),lab:String(v)});if(it.length>maxN)continue;const P=axPlace(ctx,it,X,X+Wd-R,gp);if(P){pk={st,P};break}}
+    pk=pk||{st:0,P:[]};ctx.textBaseline='top';for(const L of pk.P){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,Y+Ht+10*u);ctx.strokeStyle=hexA(TH.mu,.12);ctx.lineWidth=u;ctx.beginPath();ctx.moveTo(xs(L.t),Y);ctx.lineTo(xs(L.t),Y+Ht);ctx.stroke()}
+    ctx.textAlign='right';ctx.fillText('days since halving',X+Wd-R,Y+Ht+30*u);ctx.textAlign='left';axLog({fn:'plot',date:false,days:true,step:pk.st,labels:pk.P.map(L=>L.lab),boxes:pk.P.map(L=>L.b),caption:'days since halving',maxN})}
+  else if(o.xf){ctx.textAlign='center';ctx.textBaseline='top';for(let k=0;k<=4;k++){const tt=t0+(t1-t0)*k/4;ctx.fillText(o.xf(tt),Math.min(X+Wd-R-30*u,Math.max(X+30*u,xs(tt))),Y+Ht+10*u)}ctx.textAlign='left';axLog({fn:'plot',date:false})}
+  else{const intraP=t1-t0<3*864e5;timeAxis(ctx,{fn:'plot',t0,t1,xOf:xs,xMin:X,xMax:X+Wd-R,y:Y+Ht+10*u,u,col:TH.mu,intra:intraP,grid:{c:hexA(TH.mu,.10),w:u,y0:Y,y1:Y+Ht,s:hexA(TH.mu,.30)},dataLast:dl0});
+    const rg=axRange(t0,t1,intraP);ctx.save();ctx.font=F(14*u,600);ctx.fillStyle=TH.mu;ctx.textAlign='right';ctx.textBaseline='alphabetic';ctx.fillText(rg,X+Wd-R,Y-12*u);ctx.restore();axLog({fn:'plotRange',text:rg});
+    if(o.latest){const lt='Latest: '+axFull(dl0??t1);ctx.save();ctx.font=F(14*u,700);ctx.fillStyle=TH.tx;ctx.textAlign='right';ctx.textBaseline='top';ctx.fillText(lt,X+Wd-R-8*u,Y+8*u);ctx.restore();axLog({fn:'latest',text:lt})}}
   for(const z of o.zones||[]){ctx.fillStyle=z.c;const a=ys(z.hi),b=ys(z.lo);ctx.fillRect(X,Math.max(Y,a),Wd-R,Math.min(Y+Ht,b)-Math.max(Y,a))}
   for(const b of o.bands||[]){ctx.fillStyle=b.c;ctx.beginPath();let st=false;b.t.forEach((x,i)=>{const yy=ys(b.v[i]);st?ctx.lineTo(xs(x),yy):ctx.moveTo(xs(x),yy);st=true});for(let i=b.t.length-1;i>=0;i--)ctx.lineTo(xs(b.t[i]),ys(b.v2[i]));ctx.closePath();ctx.fill()}
   for(const h of o.hl||[]){ctx.setLineDash([8*u,8*u]);ctx.strokeStyle=h.c;ctx.lineWidth=1.5*u;ctx.beginPath();ctx.moveTo(X,ys(h.v));ctx.lineTo(X+Wd-R,ys(h.v));ctx.stroke();ctx.setLineDash([])}
@@ -686,7 +717,7 @@ function buildSignals(d){const out=[],P=d.P,PB=d.CL?.BTC?.v?.length>800?d.CL.BTC
     const bands=cols.map((cc,i)=>({t:s.t,v:s.t.map(x=>fair(x)*10**(edges[i+1]*sd)),v2:s.t.map(x=>fair(x)*10**(edges[i]*sd)),c:hexA(cc,.32)}));
     return{id:'rainbow',title:'Bitcoin rainbow (log regression)',read:`Band ${bi+1}/9 · ${zs}`,score:sc,
      cap:`$BTC on the log-regression rainbow: band ${bi+1} of 9, ${zs}.\n\nModel fair value at the ${dU(t[N-1])} close is about ${usd(fair(t[N-1]),0)}; the close is ${pct((last/fair(t[N-1])-1)*100,0)} from it.\n\nFitted on every daily close since 2011.`,
-     draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:s.t,log:1,yf:usdK,bands,series:[{v:s.v,c:TH.tx,w:2.6,l:'BTC'}]})}});
+     draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:s.t,log:1,latest:1,yf:usdK,bands,series:[{v:s.v,c:TH.tx,w:2.6,l:'BTC'}]})}});
    add(()=>{const{t,v}=PB,N=v.length;let ath=0;const dd=v.map(x=>{ath=Math.max(ath,x);return(x/ath-1)*100}),cur=dd[N-1];const athI=v.lastIndexOf(Math.max(...v)),days=Math.round((t[N-1]-t[athI])/DAY);const sc=days<=3?97:cur<-50?82:clamp(25+Math.abs(cur),25,80);const s=sliceS({t,dd},Date.UTC(2013,0,1));
     return{id:'dd',m:cur,title:'Drawdown from all-time high',read:days<=3?'At or near a new all-time high':`${Math.abs(cur).toFixed(1)}% below the daily-close ATH of ${usd(v[athI],0)} (${days} days ago)`,score:sc,
      cap:days<=3?`$BTC closed at or near a new all-time high (completed daily closes through ${dU(t[N-1])}).`:`$BTC is ${Math.abs(cur).toFixed(1)}% below its all-time high daily close of ${usd(v[athI],0)}, set ${days} days ago.\n\nPast bear markets bottomed at ${[[2014,2015],[2018,2019],[2022,2022]].map(([a,b])=>{let m=0;t.forEach((x,i)=>{const y=new Date(x).getUTCFullYear();if(y>=a&&y<=b)m=Math.min(m,dd[i])});return m.toFixed(0)+'%'}).join(', ')} on this data.`,
@@ -696,7 +727,7 @@ function buildSignals(d){const out=[],P=d.P,PB=d.CL?.BTC?.v?.length>800?d.CL.BTC
     const cols=[TH.mu,TH.vi||TH.ac2,TH.ac2||TH.ac,TH.ac];const allD=[...new Set(cyc.flatMap(c=>c.dd))].sort((a,b)=>a-b);
     return{id:'halv',m:now,title:'Halving cycle overlay',read:`Day ${day} since the ${curC.y} halving · ${now.toFixed(2)}× the halving price`,score:78,
      cap:`$BTC is on day ${day} after the ${curC.y} halving, up ${now.toFixed(2)}× from the halving price.\n\n${past.map(p=>`${p.y} cycle on day ${day}: ${p.m?p.m.toFixed(2)+'×':'–'} (peaked on day ${p.pk})`).join('\n')}`,
-     draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:[0,1500],xf:x=>'Day '+Math.round(x),log:1,yf:v=>v.toFixed(v<10?1:0)+'×',series:cyc.map((cc,i)=>({t:cc.dd,v:cc.mm,c:cols[i+4-cyc.length]||TH.ac,w:i===cyc.length-1?4:2.2,l:cc.y+' halving'})),marks:[{t:day,v:now,c:TH.tx,l:'Latest close'}]}),xDays:1}});
+     draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:[0,1500],days:1,xf:x=>'Day '+Math.round(x),log:1,yf:v=>v.toFixed(v<10?1:0)+'×',series:cyc.map((cc,i)=>({t:cc.dd,v:cc.mm,c:cols[i+4-cyc.length]||TH.ac,w:i===cyc.length-1?4:2.2,l:cc.y+' halving'})),marks:[{t:day,v:now,c:TH.tx,l:'Latest close'}]}),xDays:1}});
    add(()=>{const WK=wkCloses(d.CL?.BTC)||wkCloses(P),W=WK.v,Wt=WK.t,wsrc=wkCloses(d.CL?.BTC)?'Binance BTCUSDT':(P.src||'BTC');const r=rsi(W,14),cur=r.at(-1),sc=cur<35||cur>80?93:clamp(Math.abs(cur-55)*2+20,20,80);const s=sliceS({t:Wt,r},Date.now()-8*365*DAY);
     return{id:'wrsi',m:cur,closed:Wt.at(-1),title:'Weekly RSI',read:`Weekly RSI ${cur.toFixed(1)} · week ending ${dU(Wt.at(-1))}`,readF:om=>`Weekly RSI ${cur.toFixed(1)} (week ending ${dU(Wt.at(-1))}) · ${om.pctTxt}`,score:sc,src:`${wsrc} weekly candles (Mon–Sun, completed) through ${dU(Wt.at(-1))}`,
      cap:`$BTC weekly RSI is ${cur.toFixed(1)} on completed Mon–Sun candles (week ending ${dU(Wt.at(-1))}).\n\n${cur<35?'Historically, readings this low lined up with past cycle lows.':cur>80?'Historically, readings above 80 lined up with euphoric phases.':'Mid-range: no extreme in either direction.'}`,
