@@ -7,12 +7,14 @@ await pg.waitForFunction(()=>TAB==='today'&&SIG&&SIG.length&&MK&&DV&&MAC.items,{
 // ---- Today
 const FEEDS=await require('./feeds.js')();console.log('feeds:',FEEDS.up?'up':'DOWN',FEEDS.why);if(FEEDS.up){await pg.waitForFunction(()=>D.news.length>0,{timeout:120000}).catch(()=>{});await pg.evaluate(()=>{try{paintToday()}catch(e){}});await W(1500)}
 const T=await pg.evaluate(()=>({alt:document.querySelector('#altToday')?.innerText,clus:[...document.querySelectorAll('#todayBox .cl')].map(c=>c.innerText.replace(/\n/g,' | ')),
-  news:[...document.querySelectorAll('#todayBox [data-nsb]')].map(b=>b.textContent),deriv:SIG.filter(s=>/^(fund|oicap)/.test(s.id)).map(s=>s.id+' '+s.score+' '+s.why)}));
+  news:[...document.querySelectorAll('#todayBox [data-nsb]')].map(b=>b.textContent),deriv:SIG.filter(s=>/^(fund|oicap)/.test(s.id)).map(s=>s.id+' '+s.score+' '+s.why),dvStale:typeof STALEM==='object'?Object.keys(STALEM).filter(k=>/^(BTC|ETH) (funding|oi)$/.test(k)):[]}));
+// stale gate: when data/derivs.json is past its limit (data job late), the right behaviour is 'data stale' in the cluster and no funding/OI cards
+if(T.dvStale.length)console.log('NOTE derivs.json stale in this run: '+T.dvStale.join(', ')+' -> checking the stale behaviour instead');
 console.log(JSON.stringify(T,null,1));
 ok(/B90/.test(T.alt||'')&&/B30/.test(T.alt||'')&&/ETH\/BTC/.test(T.alt||''),'Today altseason card shows B90, B30, ETH/BTC');
 ok(/confidence \d+%/.test(T.alt||''),'Today alt card shows confidence');
-ok(T.clus.some(c=>/Open interest rising/.test(c)&&!/derivs.json loading/.test(c)),'OI rising input filled in clusters');
-ok(T.deriv.some(x=>/^fundBTC/.test(x))&&T.deriv.some(x=>/^oicapBTC/.test(x)),'funding and OI/market-cap signals in the engine');
+ok(T.dvStale.includes('BTC oi')?T.clus.some(c=>/Open interest \(BTC\) \| data stale \(cache \d+[hd], /.test(c)):T.clus.some(c=>/Open interest rising/.test(c)&&!/derivs.json loading/.test(c)),'OI rising input filled in clusters (or data stale label when derivs.json is past its limit)');
+ok(T.dvStale.length?(!T.deriv.some(x=>/^fundBTC/.test(x))||!T.dvStale.includes('BTC funding'))&&(!T.deriv.some(x=>/^oicapBTC/.test(x))||!T.dvStale.includes('BTC oi')):T.deriv.some(x=>/^fundBTC/.test(x))&&T.deriv.some(x=>/^oicapBTC/.test(x)),'funding and OI/market-cap signals in the engine (absent when their data is stale)');
 const newsLive=T.news.length>=1||FEEDS.up;if(!newsLive)console.log('SKIP: feeds unreachable ('+FEEDS.why+') — news scores on Today / breakdown on tap; news scoring covered by tnewsfx');
 if(newsLive)ok(T.news.length>=1,'news scores shown on Today');
 await pg.screenshot({path:'c-today.png'});
