@@ -1148,7 +1148,7 @@ const RULE={
 function btcFund(){const DL=DV?.assets?.BTC?.latest;if(DL?.funding!=null)return{f:DL.funding,src:(DV.assets.BTC.funding?.source||'OKX')+' via derivs.json'};const dv=D.ins.bitcoin?.dv;return dv&&dv.f!=null?{f:dv.f,src:(dv.src||'Binance')+' live'+(STALEM['BTC funding']?' (derivs.json stale)':' (derivs.json unavailable)')}:null}
 const FUND_BAND=.01,fundSt=f=>f>FUND_BAND?'Funding positive':f<-FUND_BAND?'Funding negative':'Funding neutral';
 const st30=()=>{const s=SIGD?.ST;if(!s||s.v.length<31)return null;const n=s.v.length;return(s.v[n-1]/s.v[n-31]-1)*100};
-const etfStale=()=>{try{if(!NX.etf?.last_date)return false;const lt=ymd(NX.etf.last_date)+DAY,bh=bizH(lt,Date.now());if(bh>48){STALEM.etf={age:(Date.now()-lt)/36e5,src:'Farside'};return true}delete STALEM.etf;return false}catch(e){return false}};
+const etfStale=()=>{try{if(!NX.etf?.last_date)return false;const lt=ymd(NX.etf.last_date)+DAY,bh=bizH(lt,Date.now());if(bh>48){STALEM.etf={age:(Date.now()-lt)/36e5,src:'Farside',lim:48,limT:'48 business-hour'};return true}delete STALEM.etf;return false}catch(e){return false}};
 const etf7=()=>{if(!NX.etf||etfStale())return null;try{const m=etfComb(NX.etf),k=[...m.keys()].sort();return k.length<7?null:k.slice(-7).reduce((s,x)=>s+m.get(x),0)}catch(e){return null}};
 function macDeltas(){const M=MAC.M;if(!M)return null;const o={};try{const G=gm2(M);o.yoy=G?.yoyCC??G?.yoy;o.yoyUSD=G?.yoy;o.m2m=G?mU(G.t.at(-1)):'';const dx=ser('DTWEXBGS',M);if(dx){const j=back(dx,91);o.dxy=dx.v.at(-1);o.dxy3=(o.dxy/dx.v[j]-1)*100}
   const ry=ser('DFII10',M);if(ry){const j=back(ry,91);o.ry=ry.v.at(-1);o.ry3=(o.ry-ry.v[j])*100}}catch(e){}return o}
@@ -1166,7 +1166,7 @@ function marketStates(){const out=[],P=SIGD?.P;
     out.push({k:'Macro',st:`Real yield ${md.ry3>=0?'rising':'falling'}, ${md.ry3>=0?'+':'−'}${Math.abs(Math.round(md.ry3))}bp 3M`,why:`Dollar ${pct(md.dxy3,1)} in 3 months; 10Y real yield ${md.ry.toFixed(2)}% (${md.ry3>=0?'+':''}${Math.round(md.ry3)}bp); global M2 ${pct(md.yoy,1)} YoY at constant FX (${md.m2m}). Score ${sc>=0?'+':''}${sc}`,rule:RULE.macro})}
   else out.push({k:'Macro',st:'No data',why:MAC.fail?'macro.json unavailable (offline and no saved copy)':'Loading macro.json…',rule:RULE.macro});
   const BF=btcFund();if(BF){const f=BF.f*100,o=oiChg('BTC',7);out.push({k:'Derivatives',st:`${fundSt(f)}, ${f<0?'−':''}${Math.abs(f).toFixed(4)}%/8h`,why:`BTC funding ${f.toFixed(4)}% per 8h (${BF.src})${o?`; OI ${pct(o.ch,1)} in 7 days in BTC terms (${o.src})`:''}`,rule:RULE.deriv})}
-  else if(STALEM['BTC funding'])out.push({k:'Derivatives',st:'Funding: '+staleTxt('BTC funding'),stale:1,why:`Live funding feeds (Binance, OKX) did not answer and the cached derivs.json funding is ${ageTxt(STALEM['BTC funding'].age)} old (limit ${DVLIM.funding}h), so no reading is shown`,rule:RULE.deriv});
+  else if(STALEM['BTC funding'])out.push({k:'Derivatives',st:'Funding: '+staleTxt('BTC funding'),stale:1,why:`Live funding feeds (Binance, OKX) did not answer and the cached derivs.json funding is ${ageTxt(STALEM['BTC funding'].age,1,DVLIM.funding)} old, past its ${DVLIM.funding}h limit, so no reading is shown`,rule:RULE.deriv});
   else out.push({k:'Derivatives',st:'No data',why:Object.keys(D.ins).length?'Funding unavailable from Binance and OKX right now':'Loading funding…',rule:RULE.deriv});
   const s3=st30(),e7=etf7();if(s3!=null||e7!=null){const st=e7!=null?`ETF flows ${e7>=0?'positive':'negative'}, ${fM(e7,1)} 7d`:`Stablecoins ${s3>=0?'rising':'falling'}, ${pct(s3,1)} 30d`;
     out.push({k:'Liquidity',st,why:[s3!=null?`Stablecoins ${pct(s3,1)} in 30 days`:'stablecoins n/a',e7!=null?`BTC+ETH ETFs ${fM(e7,1)} over 7 trading days`:'ETF flows n/a'].join('; '),rule:RULE.liq})}
@@ -1179,10 +1179,10 @@ function clusters(){const P=SIGD?.P,out=[],md=macDeltas()||{},I=(l,v,ok)=>({l,v,
   const PB=SIGD?.CL?.BTC?.v?.length>800?SIGD.CL.BTC:P;if(PB&&PB.v.length>800){const v=PB.v,N=v.length;mayer=v[N-1]/sma(v,200)[N-1];r2=v[N-1]/sma(v,730)[N-1];dd=(v[N-1]/Math.max(...v)-1)*100;wr=rsi((wkCloses(SIGD.CL?.BTC)||wkCloses(P)).v,14).at(-1);pi=sma(v,111)[N-1]/(2*sma(v,350)[N-1])}
   if(SIGD?.H){const v=SIGD.H.v,N=v.length;hr=sma(v,30)[N-1]/sma(v,60)[N-1]}
   const fs=f!=null?(f*100).toFixed(4)+'%/8h · '+btcFund().src:'';
-  out.push({name:'Low volatility, rising OI, flat funding',desc:'Measurements only: BTC 7-day volatility low, open interest rising, funding inside the ±0.01%/8h band, stablecoin supply rising.',in:[
+  out.push({name:'Low volatility, rising OI, flat funding',desc:'Measurements only: BTC 7-day volatility low, rising OI (BTC terms), funding near zero, stablecoin supply rising.',in:[
     vol?I(`BTC 7-day volatility in the bottom 20% since ${vol.from}`,`${vol.cur.toFixed(1)}% · bottom ${Math.max(1,Math.round(vol.share))}%`,vol.share<=20):na('BTC 7-day volatility in the bottom 20% (last 5 years)','loading'),
-    (()=>{const o=oiChg('BTC',7);return o?I('Open interest rising (BTC terms, +3% in 7 days)',`${pct(o.ch,1)} · ${o.src}`,o.ch>3):na('Open interest (BTC)',STALEM['BTC oi']?staleTxt('BTC oi'):DV?'n/a':'derivs.json loading')})(),
-    f!=null?I('Funding neutral (|rate| ≤ 0.01%/8h)',fs,fundSt(f*100)==='Funding neutral'):STALEM['BTC funding']?na('Funding (BTC perpetual)',staleTxt('BTC funding')):na('Funding neutral (|rate| ≤ 0.01%/8h)','n/a'),
+    (()=>{const o=oiChg('BTC',7);return o?I('Open interest rising (BTC terms, +3% in 7 days)',`${pct(o.ch,1)} · ${o.src}`,o.ch>3):na('Open interest (BTC)',STALEM['BTC oi']?'OI: '+staleTxt('BTC oi'):DV?'n/a':'derivs.json loading')})(),
+    f!=null?I('Funding neutral (|rate| ≤ 0.01%/8h)',fs,fundSt(f*100)==='Funding neutral'):STALEM['BTC funding']?na('Funding (BTC perpetual)','Funding: '+staleTxt('BTC funding')):na('Funding neutral (|rate| ≤ 0.01%/8h)','n/a'),
     s3!=null?I('Stablecoin supply rising (30 days)',pct(s3,1),s3>0):na('Stablecoin supply rising (30 days)','n/a')]});
   out.push({name:'Low-percentile readings',desc:'Valuation and momentum readings at the low end of their history (completed closes).',in:[
     mayer!=null?I('Mayer Multiple < 1.0',mayer.toFixed(2),mayer<1):na('Mayer Multiple < 1.0','n/a'),wr!=null?I('Weekly RSI < 40',wr.toFixed(1),wr<40):na('Weekly RSI < 40','n/a'),
@@ -1221,7 +1221,7 @@ function topNews(){const W=S.watch.map(w=>{const nm=(D.mk[w.id]?.name||w.id).rep
   return D.news.slice(0,80).map(n=>{const age=(Date.now()-n.t)/36e5,hit=W.find(([s,re])=>re.test(n.title+' '+n.desc)),out=[...new Set(D.news.filter(m=>m!==n&&m.src!==n.src&&simT(m.title,n.title)>=.5).map(m=>m.src))];
     return{n,sc:(hit?2:0)+(out.length?2:0)+(age<6?2:age<24?1:0)-(age>48?2:0),hit:hit?.[0],out,age}}).sort((a,b)=>b.sc-a.sc||b.n.t-a.n.t).slice(0,3)}
 function freshLine(){const p=[];let stale=0;
-  if(MAC.M){const ids=Object.keys(MAC.M.series||{});const st=ids.filter(id=>{try{return fresh(id,MAC.M).st}catch(e){return false}});stale+=st.length;p.push(`macro ${ids.length-st.length}/${ids.length} fresh`)}else p.push('macro loading');{const dc=dataConf();stale+=dc.stale.filter(k=>!/^macro /.test(k)).length;if(dc.pct!=null)p.push(`<span id="dataConf" class="${dc.stale.length?'dn':''}">data confidence ${dc.pct}%${dc.stale.length?' ('+esc(dc.stale.map(k=>k.replace(/^macro /,'')+' '+staleTxt(k)).slice(0,4).join('; '))+')':''}</span>`)}
+  if(MAC.M){const ids=Object.keys(MAC.M.series||{});const st=ids.filter(id=>{try{return fresh(id,MAC.M).st}catch(e){return false}});stale+=st.length;p.push(`macro ${ids.length-st.length}/${ids.length} fresh`)}else p.push('macro loading');{const dc=dataConf();stale+=dc.stale.filter(k=>!/^macro /.test(k)).length;if(dc.pct!=null)p.push(`<span id="dataConf" class="${dc.stale.length?'dn':''}">data confidence ${dc.pct}%${dc.stale.length?' ('+esc(dc.stale.map(staleLbl).slice(0,4).join('; '))+')':''}</span>`)}
   if(NX.etf?.last_date){const lt=ymd(NX.etf.last_date)+DAY,bh=bizH(lt,Date.now());if(bh>48)stale++;p.push(`ETF flows through ${dShort(ymd(NX.etf.last_date))}${bh>48?' (stale)':''}`)}
   if(SIGD?.P){const ag=(Date.now()-SIGD.P.t.at(-1))/DAY;if(ag>2.5)stale++;p.push(`BTC history age ${ag.toFixed(1)}d (last completed close)`)}
   const fst=dataStale();stale+=fst.length;if(fst.length)p.push('stale data files: '+fst.join(', '));
@@ -1235,7 +1235,7 @@ const DLIM={derivs:3,market:8,etf:30,calendar:24*8};function dataStale(){const o
 function fbList(){const o=[],fmt=x=>x.use?`${x.use} for ${x.what} (primary ${x.fail} failed)`:`no ${x.what} (primary ${x.fail} failed)`;[...(D.fb?.mk||[]),...(D.fb?.sig||[])].forEach(x=>o.push(fmt(x)));if(D.fb?.deriv)o.push(fmt(D.fb.deriv));
   try{const at=DV?.attempts||[],fl=at.filter(a=>a.tried?.length>1&&!a.tried[0].ok&&a.tried.some(t=>t.ok));if(fl.length){const prim=[...new Set(fl.map(a=>a.tried[0].source))].join('/'),use=[...new Set(fl.map(a=>a.tried.find(t=>t.ok).source))].join('/');o.push(`${use} for derivs.json (primary ${prim} futures failed)`)}}catch(e){}
   return[...new Set(o)]}
-function stB(st){return st==='No data'||/data stale/.test(st)?'b-nd':'b-nt'}
+function stB(st){return st==='No data'||/: stale, /.test(st)?'b-nd':'b-nt'}
 let TODAYL=false;
 async function renderToday(){paintToday();if(TODAYL)return;TODAYL=true;
   const jobs=[ensureSig().then(paintToday),ensureMac().then(paintToday),dataFile('etf').then(r=>{NX.etf=r.v;paintToday()}).catch(()=>{}),dataFile('calendar').then(r=>{NX.cal=r.v;paintToday()}).catch(()=>{}),(D.news.length?Promise.resolve():loadNews()).then(paintToday).catch(()=>{})];
@@ -1528,12 +1528,17 @@ let DVRAW=null;async function ensureDV(){if(!DVRAW){try{DVRAW=(await dataFile('d
 // Limits per metric from the newest point: open interest and basis are hourly (3h, like the job cadence), funding settles every 8h (12h).
 // Live feeds (deriv()) are fresh by definition; the cached file only counts while inside the limit. STALEM keeps age + source for the 'data stale' labels.
 const DVLIM={oi:3,basis:3,funding:12},STALEM={};
-const ageTxt=h=>h<48?Math.round(h)+'h':Math.round(h/24)+'d';
-function staleTxt(k){const x=STALEM[k];return x?`data stale (cache ${ageTxt(x.age)}, ${x.src})`:''}
-function gateDV(v){if(!v?.assets)return v;const now=Date.now(),out={...v,assets:{}},fAge=v.updated?(now-Date.parse(v.updated))/36e5:0,fOld=fAge>DLIM.derivs;// whole file past the job limit (3h) -> every metric in it is stale too
+// ages: hours+minutes under 48h ('12h10m'), whole days above. A past-limit age is rounded UP, never down to look inside the limit.
+const ageTxt=(h,past,lim)=>{if(h<48){let m=past?Math.ceil(h*60):Math.floor(h*60);if(past&&lim!=null&&m<=lim*60)m=lim*60+1;const hh=Math.floor(m/60),mm=m%60;return hh+'h'+(mm||past?mm+'m':'')}
+  let d=past?Math.ceil(h/24):Math.floor(h/24);if(past&&lim!=null&&d*24<=lim)d=Math.floor(lim/24)+1;return d+'d'};
+const staleLbl=k=>k.replace(/^macro /,'').replace(/ funding$/,' Funding').replace(/ oi$/,' OI').replace(/ basis$/,' Basis').replace(/^etf$/,'ETF flows')+': '+staleTxt(k);
+const limTxt=l=>l<48?l+'h':Math.round(l/24)+'d';
+// status text (after the metric name): 'stale, 12h10m old, past 12h limit (OKX)'
+function staleTxt(k){const x=STALEM[k];return x?`stale, ${ageTxt(x.age,1,x.lim)} old, past ${x.limT||limTxt(x.lim)} limit (${x.src})`:''}
+function gateDV(v){if(!v?.assets)return v;const now=Date.now(),out={...v,assets:{}};// each metric's own limit decides (ruling 3 Oct): a late file keeps funding while its newest funding point is inside 12h
   for(const k of Object.keys(STALEM))if(/^(BTC|ETH|[A-Z]+) (funding|oi|basis)$/.test(k))delete STALEM[k];
   for(const [a,A0] of Object.entries(v.assets)){const A={...A0},L={...(A0.latest||{})};const lastP=x=>x?.points?.length?x.points.at(-1)[0]:null;
-    const chk=(m,t,src,drop)=>{if(t==null)return;const age=Math.max((now-t)/36e5,fOld?fAge:0);if(age>DVLIM[m]||fOld){STALEM[a+' '+m]={age,src:String(src||'derivs.json').split(' ')[0],t,lim:DVLIM[m]};drop()}};
+    const chk=(m,t,src,drop)=>{if(t==null)return;const age=(now-t)/36e5;if(age>DVLIM[m]){STALEM[a+' '+m]={age,src:String(src||'derivs.json').split(' ')[0],t,lim:DVLIM[m]};drop()}};
     chk('funding',Math.max(L.funding_t??0,lastP(A.funding)??0)||null,A.funding?.source,()=>{delete A.funding;L.funding=null;L.funding_t=null});
     chk('oi',Math.max(L.oi_t??0,lastP(A.oi_hourly)??0)||null,A.oi_hourly?.source||A.oi_daily?.source,()=>{delete A.oi_hourly;delete A.oi_daily;L.oi_usd=null;L.oi_coin=null;L.oi_t=null});
     chk('basis',Math.max(L.basis_t??0,lastP(A.basis_hourly)??0)||null,A.basis_hourly?.source,()=>{delete A.basis_hourly;L.basis_pct=null;L.basis_t=null});

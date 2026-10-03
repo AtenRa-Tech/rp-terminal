@@ -1,7 +1,7 @@
 // Stale gate: data confidence + chip label (RP X). Usage: node qa/stale-conf.js [URL]. Exit 1 = block.
 // Same fixture as stale-derivs2 (timestamps shifted relative to now), live derivatives feeds blocked.
 // C1 Today "data confidence" with a 4-day-old derivs.json is lower than with a 10-minute-old one
-// C2 Derivatives chip reads "Funding: data stale (cache <age>, <source>)" and gives no reading; with fresh data it gives a reading
+// C2 Derivatives chip reads "Funding: stale, <age> old, past 12h limit (<source>)" and gives no reading; with fresh data it gives a reading
 // C3 app-side: with the stale file no funding/OI signal cards exist (not selectable in Studio), and capFacts for them is unavailable
 const p=require('puppeteer-core'),fs=require('fs'),path=require('path');
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
@@ -20,7 +20,7 @@ async function run(b,body){const pg=await b.newPage();await pg.setViewport({widt
  const fresh=await run(b,aged(10*60e3)),stale=await run(b,aged(4*24*H));await b.close();const fails=[];
  console.log('fresh',JSON.stringify(fresh));console.log('stale',JSON.stringify(stale));
  if(!(stale.pct<fresh.pct))fails.push(`C1 data confidence stale ${stale.pct} not below fresh ${fresh.pct}`);
- if(!/^Funding: data stale \(cache \d+[hd], [A-Za-z]+\)$/.test(stale.st))fails.push('C2 stale chip label: "'+stale.st+'"');
+ if(!/^Funding: stale, (\d+h\d+m|\d+d) old, past 12h limit \([A-Za-z]+\)$/.test(stale.st))fails.push('C2 stale chip label: "'+stale.st+'"');
  if(/neutral|positive|negative|%\/8h/i.test(stale.st))fails.push('C2 stale chip gives a reading: "'+stale.st+'"');
  if(!/%\/8h/.test(fresh.st))fails.push('C2 fresh chip has no reading: "'+fresh.st+'"');
  if(stale.der.length)fails.push('C3 stale file still builds derivative cards: '+stale.der.join(','));if(!fresh.der.length)fails.push('C3 fresh file builds no derivative cards (control)');
