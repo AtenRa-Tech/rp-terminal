@@ -51,8 +51,10 @@ let yF=0,mF=0,mEx=0,oF=0,wF=0;for(const r of AX){if(r.missY.length){yF++;console
  if(r.ov.length){oF++;console.log('FAIL PRICE_TAG_overlap '+JSON.stringify(r))}
  if(r.wk){const m1=(r.wk.legend||'').match(/week ending (\d{1,2} \w{3} \d{4})/),m2=(r.wk.data||'').match(/week ending (\d{1,2} \w{3} \d{4})/);if(!m1||!m2||m1[1]!==m2[1]){wF++;console.log('FAIL WEEK_ending '+JSON.stringify(r.wk))}}}
 const d120=AX.filter(r=>r.iv==='1d'&&r.nn===120);R.AXIS_years_all_timeframes={configs:AX.length,pass:AX.length>=60&&!yF};
-R.AXIS_months_when_they_fit={configs:AX.length,exempt_physically_impossible:mEx,pass:!mF&&d120.length>0&&d120.every(r=>!r.missM.length)};
-R.AXIS_1d_default_every_month_and_end={sample:d120.map(r=>r.W+': '+r.labels),pass:d120.length>0&&d120.every(r=>!r.missM.length)};
+// axis-minimum ruling: when months give fewer than the minimum, finer dates (15/10/7/5-day) replace month names, so the month check applies to month steps only
+const mOK=r=>!/^m\d/.test(r.step)||!r.missM.length;
+R.AXIS_months_when_they_fit={configs:AX.length,exempt_physically_impossible:mEx,pass:!mF&&d120.length>0&&d120.every(mOK)};
+R.AXIS_1d_default_every_month_and_end={sample:d120.map(r=>r.W+': '+r.step+' '+r.labels),pass:d120.length>0&&d120.every(mOK)};
 R.PRICE_TAG_hides_overlapping_axis_label={pass:!oF};R.WEEK_ending_convention={sample:AX.find(r=>r.wk)?.wk,pass:!wF&&AX.some(r=>r.wk)};
 let f=0;for(const[k,v]of Object.entries(R)){const ok=v&&v.pass;if(!ok)f++;console.log((ok?'PASS ':'FAIL ')+k+' '+JSON.stringify(v).slice(0,400))}
 console.log('FAILS: '+f);await b.close();process.exit(f?1:0)})().catch(e=>{console.error(e);process.exit(2)});

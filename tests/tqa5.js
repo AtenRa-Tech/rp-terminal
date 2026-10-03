@@ -17,7 +17,7 @@ const coll=B=>{for(let i=1;i<B.length;i++)if(B[i][0]<B[i-1][1])return true;retur
 for(const [w,h] of [[360,800],[1280,900]]){const pg=await page(w,h);const S=await SYN(pg,w-40);const lim=w<500?6:10,lo=w<500?4:4;
   T(`PERIOD_within_day_${w}`,{...S.day,pass:S.day.cls==='h'&&S.day.l.includes('12:00')&&(w<500||S.day.l.includes('06:00')&&S.day.l.includes('18:00'))&&S.day.r2[0]==='3 Oct'&&S.day.l.every(x=>/^\d\d:\d\d$/.test(x)&&(+x.slice(0,2))%((S.day.k==='h'?S.day.n:1)||1)===0)&&S.day.l.length<=lim&&S.day.l.length>=(w<500?2:lo)});
   T(`PERIOD_several_days_${w}`,{...S.days,pass:S.days.cls==='dh'&&S.days.r2.slice(0,3).join()===(w<500?S.days.r2.slice(0,3).join():'29 Sep,30 Sep,1 Oct')&&S.days.r2.every(x=>/^\d{1,2} [A-Z][a-z]{2}$/.test(x))&&S.days.l.every(x=>/^\d\d:\d\d$/.test(x)&&x!=='00:00')&&S.days.r2.length<=lim&&S.days.l.length<=Math.round(S.days.maxN*1.5)});
-  T(`PERIOD_few_months_${w}`,{...S.months,pass:S.months.cls==='m'&&S.months.l.join()==='Jun,Jul,Aug,Sep,Oct'&&S.months.r2.join()==='2026'});
+  T(`PERIOD_few_months_${w}`,{...S.months,pass:S.months.cls==='m'&&S.months.r2.join()==='2026'&&(w<500?S.months.l.join()==='Jun,Jul,Aug,Sep,Oct':S.months.k!=='m'&&S.months.l.length>=8&&S.months.l.length<=10&&S.months.l.every(x=>/^\d{1,2} [A-Z][a-z]{2}$/.test(x)))});
   T(`PERIOD_several_years_${w}`,{...S.years,pass:S.years.cls==='y'&&S.years.l.every(x=>/^\d{4}$/.test(x))&&[1,2,4,5,10].includes(S.years.n)&&S.years.l.length<=lim&&S.years.l.length>=lo&&(w>=1000||S.years.n>=4)&&!S.years.r2.length});
   T(`NO_COLLISIONS_synthetic_${w}`,{pass:Object.values(S).every(x=>!coll(x.b1)&&!coll(x.b2))});
   T(`DENSITY_maxN_${w}`,{maxN:S.day.maxN,pass:w<500?S.day.maxN>=4&&S.day.maxN<=6:S.day.maxN>=8&&S.day.maxN<=10});
