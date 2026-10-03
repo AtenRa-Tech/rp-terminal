@@ -160,6 +160,14 @@ html[data-theme=sap] .pill.on,html[data-theme=sap] .btn.pri{background:linear-gr
 html[data-theme=ch] .btn.pri.sm,html[data-theme=ch] .btn.pri{color:var(--onac)}
 html[data-theme=bb] .btn.pri.sm,html[data-theme=bb] .btn.pri{color:#000}
 html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{color:#fff}
+/* C: desktop/tablet layout. Signals and Macro charts are compact previews (thumbnail, name, score, key figure) in a grid; tap/click expands the
+   selected chart to full width. Macro tiles 2 columns on phone and tablet, 4 on desktop; macro charts 1 / 2 / 4 columns. Phone (<700px) unchanged. */
+@media (min-width:700px){.pgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}.pgrid>.card{margin:0;min-width:0}
+  .pgrid>.sig:not(.open) .full{display:none}.pgrid>.sig:not(.open){cursor:zoom-in}.pgrid>.sig.open{grid-column:1/-1}
+  .pgrid>.sig:not(.open) h3{font-size:12px}.pgrid>.sig .xhint{display:inline}.pgrid>.sig.open .xhint{display:none}}
+@media (min-width:1100px){#sigList.pgrid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}}
+@media (min-width:1200px){#macTiles{grid-template-columns:repeat(4,1fr)}#macList.pgrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.xhint{display:none;font-size:12px;color:var(--mu)}
 @media (prefers-reduced-motion:reduce){#ticker div{animation:none!important}#ticker{overflow-x:auto}.flash{animation:none!important}*{transition:none!important;scroll-behavior:auto!important}}
 </style>
 </head><body>
@@ -202,7 +210,7 @@ html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{col
 <!-- SIGNALS -->
 <section id="s-signals">
   <div class="card"><h3>Rare signals · post finder<span class="sp"></span><button class="btn sm" id="sigRef">↻ Rescan</button></h3><div id="sigTop" class="mu" style="font-size:13px">Ranks rare Bitcoin cycle, on-chain and macro charts by how worth posting they are right now.</div></div>
-  <div id="sigList"></div>
+  <div id="sigList" class="pgrid"></div>
   <small class="note"><span id="oppInfo"></span> Tap a score for its breakdown. Charts carry your handle as a watermark. Not financial advice.</small>
 </section>
 <!-- INSIGHTS -->
@@ -225,7 +233,7 @@ html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{col
     <div class="grid num" id="macTiles"><div class="mu">Loading…</div></div>
     <small class="note" id="macHealth"></small></div>
   <div id="macForces"></div>
-  <div id="macList"></div>
+  <div id="macList" class="pgrid"></div>
   <small class="note">Macro data refreshes every 6 hours via GitHub Actions (FRED, ECB, BOJ, PBoC). Each tile shows its own last data date; ⚠️ marks data older than its normal cadence. All times UTC. Not financial advice.</small>
 </section>
 <!-- STUDIO -->
@@ -773,8 +781,8 @@ async function renderSignals(force){const box=$('#sigList'),y0=scrollY;if(!SIG||
   const ORD=SIG.slice().sort((a,b)=>b.score-a.score);
   box.innerHTML=ORD.map(s=>{const i=SIG.indexOf(s),k='sig|'+s.id;return`<div class="card sig" data-sid="${s.id}"><h3>${postNow(s)?'<span class="bias b-up">POST NOW</span>':''}<span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px;min-width:0">${esc(s.title)}</span><span class="sp"></span><button class="btn sm num" data-sb="${k}" title="Opportunity score: tap for the breakdown">${s.score} ⓘ</button></h3>
    <div class="sbx ${OPEN.has(k)?'on':''}" data-sbx="${k}">${OPEN.has(k)?sbHTML(s):''}</div>
-   <canvas class="cv" data-sg="${i}"></canvas><div class="mu" style="margin:8px 0 3px;font-size:13px">${esc(s.read)}</div><div style="margin:0 0 8px;font-size:12px;color:var(--tx2)">${esc(s.why||'')}</div>
-   <div class="flex"><button class="btn pri" data-sx="${i}|share">Share to X (4K)</button><button class="btn" data-sx="${i}|4k">4K ⬇</button><button class="btn" data-sx="${i}|8k">8K ⬇</button><button class="btn" data-sx="${i}|cap">Captions</button><button class="btn" data-sx="${i}|audit">🛡 Audit</button></div></div>`}).join('');
+   <canvas class="cv" data-sg="${i}"></canvas><div class="mu" style="margin:8px 0 3px;font-size:13px">${esc(s.read)}</div><span class="xhint">Click to expand</span><div class="full"><div style="margin:0 0 8px;font-size:12px;color:var(--tx2)">${esc(s.why||'')}</div>
+   <div class="flex"><button class="btn pri" data-sx="${i}|share">Share to X (4K)</button><button class="btn" data-sx="${i}|4k">4K ⬇</button><button class="btn" data-sx="${i}|8k">8K ⬇</button><button class="btn" data-sx="${i}|cap">Captions</button><button class="btn" data-sx="${i}|audit">🛡 Audit</button></div></div></div>`}).join('');
   $$('[data-sg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,SIG[+cv.dataset.sg])});
   try{await ensureMac()}catch(e){}$('#sigTop').innerHTML=`<span data-pnc></span> Highest Opportunity score first.`;paintPostCnt();
   requestAnimationFrame(()=>{if(y0>0&&Math.abs(scrollY-y0)>2)scrollTo(0,y0)})}
@@ -1006,10 +1014,10 @@ async function renderMacro(force){const box=$('#macList'),y0=scrollY;
   const M=MAC.M;$('#macTiles').innerHTML=macTiles(M);$('#macHealth').textContent=macHealth(M,MAC.src);paintForces();if(!NX.etf)dataFile('etf').then(r=>{NX.etf=r.v;paintForces()}).catch(()=>{});if(!SIGD)ensureSig().then(paintForces);
   MAC.cards=buildMacro(M,MAC.btc);if(force)MAC.items=null;if(!MAC.items)MAC.items=macItems();macCaps();const ctl=s=>s.ctl==='lag'?`<div class="chips" style="margin-top:8px">${[0,30,60,90].map(d=>`<button class="pill ${MAC.lag===d?'on':''}" data-mlag="${d}">M2 +${d}d</button>`).join('')}</div>`:s.ctl==='chg'?`<div class="chips" style="margin-top:8px">${['mom','yoy'].map(d=>`<button class="pill ${MAC.chg===d?'on':''}" data-mchg="${d}">${d.toUpperCase()} changes</button>`).join('')}</div>`:s.ctl==='inv'?`<div class="chips" style="margin-top:8px"><button class="pill ${MAC.inv?'on':''}" data-minv="1">Inverted dollar</button><button class="pill ${MAC.inv?'':'on'}" data-minv="0">Dollar</button></div>`:'';
   box.innerHTML=MAC.cards.map((s,i)=>{const stl=(s.uses||[]).filter(id=>fresh(id,M).st);return`<div class="card sig" data-mcard="${s.id}"><h3><span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px">${esc(s.title)}</span>${stl.length?`<span class="bias b-dn" title="${esc(stl.join(', '))}">⚠️ stale</span>`:''}<span class="sp"></span></h3>
-   <div class="mu" style="font-size:12px;margin:-2px 0 6px">As of ${macAsOf(s)}</div><canvas class="cv" data-mg="${i}"></canvas><div class="mu" data-mr="${i}" style="margin:8px 0;font-size:13px">${esc(s.read)}</div>${s.note?`<small class="note" style="margin:0 0 8px;display:block">${esc(s.note)}</small>`:''}${ctl(s)}
+   <div class="mu" style="font-size:12px;margin:-2px 0 6px">As of ${macAsOf(s)}</div><canvas class="cv" data-mg="${i}"></canvas><div class="mu" data-mr="${i}" style="margin:8px 0;font-size:13px">${esc(s.read)}</div><span class="xhint">Click to expand</span><div class="full">${s.note?`<small class="note" style="margin:0 0 8px;display:block">${esc(s.note)}</small>`:''}${ctl(s)}
    ${s.id==='lead'?leadTable(s):''}
    ${s.id==='comp'?'<small class="note" style="margin:0 0 8px">USD totals move with FX: a weaker dollar raises global M2 in USD even if local money supply is flat.</small>':''}
-   <div class="flex"><button class="btn pri" data-mx="${i}|share">Share to X (4K)</button><button class="btn" data-mx="${i}|4k">4K ⬇</button><button class="btn" data-mx="${i}|8k">8K ⬇</button><button class="btn" data-mx="${i}|cap">Caption</button><button class="btn" data-mx="${i}|audit">🛡 Audit</button></div></div>`}).join('')||'<div class="card mu">No macro charts could be built from the data.</div>';
+   <div class="flex"><button class="btn pri" data-mx="${i}|share">Share to X (4K)</button><button class="btn" data-mx="${i}|4k">4K ⬇</button><button class="btn" data-mx="${i}|8k">8K ⬇</button><button class="btn" data-mx="${i}|cap">Caption</button><button class="btn" data-mx="${i}|audit">🛡 Audit</button></div></div></div>`}).join('')||'<div class="card mu">No macro charts could be built from the data.</div>';
   $$('[data-mg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,MAC.cards[+cv.dataset.mg])});
   requestAnimationFrame(()=>{if(y0>0&&Math.abs(scrollY-y0)>2)scrollTo(0,y0)})}
 async function auditMacro(s){const M=MAC.M,R=[];R.single=1;
@@ -1257,7 +1265,7 @@ function paintToday(){const el=$('#todayBox');if(!el||TAB!=='today')return;const
   <div class="card"><h3>Important news</h3>${newsTopHTML()}<small class="note">Stories are merged across outlets, then scored 0–100: freshness 30, pickup 20, size 20, price reaction 20, your coins 10, opinion headlines −15. 70+ = POST NOW. Tap a score for the breakdown.</small></div>
   <div class="card"><h3>Next event</h3>${evH}<div class="msw" style="margin-top:8px">${freshLine()}</div></div>`;
   if(y>0)requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)})}
-async function openChart(k){const [kind,id]=k.split('|');const go=el=>{if(!el)return;const top=el.getBoundingClientRect().top+scrollY-64;scrollTo(0,top);el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')};
+async function openChart(k){const [kind,id]=k.split('|');const go=el=>{if(!el)return;if(el.parentElement?.classList.contains('pgrid')&&matchMedia('(min-width:700px)').matches){el.parentElement.querySelectorAll(':scope>.sig.open').forEach(c=>{if(c!==el){c.classList.remove('open');pgRedraw(c)}});el.classList.add('open');pgRedraw(el)}const top=el.getBoundingClientRect().top+scrollY-64;scrollTo(0,top);el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')};
   if(kind==='sig'){tab('signals');await renderSignals();requestAnimationFrame(()=>go(document.querySelector(`#s-signals [data-sid="${id}"]`)))}
   else{tab('macro');await renderMacro();requestAnimationFrame(()=>go(document.querySelector(`[data-mcard="${id}"]`)))}}
 function findItem(k){const [kind,id]=k.split('|');return kind==='sig'?SIG?.find(s=>s.id===id):(MAC.items||[]).find(s=>s.id===id)}
@@ -1835,6 +1843,9 @@ document.addEventListener('keydown',e=>{
 // ---------- tabs & events
 let TAB='today';function tab(t,keep){const y=scrollY;let goIns=false;if(t==='insights'){t='markets';goIns=true}TAB=t;$$('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t||(t==='markets'&&s.id==='s-insights')));$$('nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===t);b.setAttribute('aria-current',b.dataset.t===t?'page':'false')});if(!keep)scrollTo(0,0);else requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)});
   if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart()}if(t==='markets'){renderAlt();renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(goIns)requestAnimationFrame(()=>{const e=$('#s-insights');scrollTo(0,e.getBoundingClientRect().top+scrollY-60)});if(t==='today')renderToday();if(t==='news'){renderNews();renderNewsX();if(!D.news.length)loadNews().then(renderNews)}if(t==='macro')renderMacro();if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
+function pgRedraw(card){const sg=card.querySelector('[data-sg]'),mg=card.querySelector('[data-mg]');const cv=sg||mg;if(!cv)return;const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,sg?SIG[+sg.dataset.sg]:MAC.cards[+mg.dataset.mg])}
+document.addEventListener('click',e=>{const card=e.target.closest('.pgrid>.sig');if(!card||!matchMedia('(min-width:700px)').matches||e.target.closest('button,a,input,select,textarea,label,.sbx'))return;
+  const was=card.classList.contains('open');card.parentElement.querySelectorAll(':scope>.sig.open').forEach(c=>{c.classList.remove('open');pgRedraw(c)});if(!was){card.classList.add('open');pgRedraw(card);card.scrollIntoView({block:'start',behavior:'smooth'})}});
 document.addEventListener('click',e=>{const b=e.target.closest('button,[data-i]');if(!b)return;const ds=b.dataset;
   if(ds.t)tab(ds.t);
   if(ds.iv){CH.iv=ds.iv;renderChartCtl();loadChart()}
