@@ -56,7 +56,8 @@ const t0=Date.now();await pg.goto(URL);const tDom=Date.now()-t0;await ready(pg);
   return{t,after:document.getElementById('altCard').innerText,u:altUniv()}});
  ok(/Top \d+ coins trading on Binance\/OKX \(down to rank \d+\)/.test(r.t),'altseason label names universe and rank cutoff',r.t.slice(0,300));ok(new RegExp(`${r.u.sk.length} skipped \\(no data\\)`).test(r.t),'altseason shows K skipped (no data)',r.u);
  ok(!r.u.sk.length||r.u.sk.every(x=>r.after.includes(x.sym)),'skipped names revealed on tap',r.u.sk)}
-{const r=await pg.evaluate(()=>SIG.filter(s=>/^rv/.test(s.id)).map(s=>({id:s.id,title:s.title,caps:STY.flatMap(([st])=>CAPT[sigFacts(s).fam][st].map(f=>tidy(f(sigFacts(s))))).filter(Boolean)})));
+{const vf=await require('./volfix.js')(pg);console.log('vol cards:',vf.live?'live':'no live vol extreme today, built from flattened-closes fixture',vf.ids.join(','));
+ const r=await pg.evaluate(()=>SIG.filter(s=>/^rv/.test(s.id)).map(s=>({id:s.id,title:s.title,caps:STY.flatMap(([st])=>CAPT[sigFacts(s).fam][st].map(f=>tidy(f(sigFacts(s))))).filter(Boolean)})));
  ok(r.length&&r.every(x=>/Binance/.test(x.title)),'volatility cards name the exchange in the title',r.map(x=>x.title));ok(r.every(x=>x.caps.every(c=>/Binance/.test(c))),'every vol caption names Binance closes',r.flatMap(x=>x.caps.filter(c=>!/Binance/.test(c))))}
 {const r=await pg.evaluate(async()=>{tab('macro');await new Promise(r=>setTimeout(r,3500));return[...document.querySelectorAll('#s-macro .card')].filter(c=>c.querySelector('canvas[data-mg]')).map(c=>({h:c.querySelector('h3')?.innerText.split('\n')[0],t:c.innerText}))});
  ok(r.length>=8&&r.every(c=>/As of (\d{1,2} \w+ \d{4}|\w+ \d{4})/.test(c.t)),'every macro card prints "As of <date>"',r.filter(c=>!/As of/.test(c.t)).map(c=>c.h));
