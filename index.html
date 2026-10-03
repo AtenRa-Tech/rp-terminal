@@ -168,6 +168,7 @@ html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{col
 @media (min-width:1100px){#sigList.pgrid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}}
 @media (min-width:1200px){#macTiles{grid-template-columns:repeat(4,1fr)}#macList.pgrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .xhint{display:none;font-size:12px;color:var(--mu)}
+[hidden]{display:none!important}.star{color:var(--mu)}.star.on{color:var(--ac2);border-color:var(--ac2)}.ctools input[type=search]{background:var(--p2);color:var(--tx);border:1px solid var(--bd);border-radius:var(--r2);padding:8px 12px;font:inherit;font-size:14px}
 @media (prefers-reduced-motion:reduce){#ticker div{animation:none!important}#ticker{overflow-x:auto}.flash{animation:none!important}*{transition:none!important;scroll-behavior:auto!important}}
 </style>
 </head><body>
@@ -210,6 +211,7 @@ html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{col
 <!-- SIGNALS -->
 <section id="s-signals">
   <div class="card"><h3>Rare signals · post finder<span class="sp"></span><button class="btn sm" id="sigRef">↻ Rescan</button></h3><div id="sigTop" class="mu" style="font-size:13px">Ranks rare Bitcoin cycle, on-chain and macro charts by how worth posting they are right now.</div></div>
+  <div class="card ctools" data-tools="sig"><div class="flex"><input type="search" class="cq" data-cq="sig" placeholder="Search charts (e.g. funding, RSI, M2)" aria-label="Search charts" style="flex:1;min-width:160px"><button class="btn sm cfav" data-cfav="sig" aria-pressed="false">★ Favourites</button></div><div class="chips" style="margin-top:8px"><button class="pill on" data-ccat="All">All</button><button class="pill" data-ccat="Price">Price</button><button class="pill" data-ccat="On-chain">On-chain</button><button class="pill" data-ccat="Derivatives">Derivatives</button><button class="pill" data-ccat="Macro">Macro</button><button class="pill" data-ccat="Altseason">Altseason</button><button class="pill" data-ccat="Volatility">Volatility</button></div><div class="mu cnone" style="display:none;margin-top:6px;font-size:13px"></div></div>
   <div id="sigList" class="pgrid"></div>
   <small class="note"><span id="oppInfo"></span> Tap a score for its breakdown. Charts carry your handle as a watermark. Not financial advice.</small>
 </section>
@@ -233,6 +235,7 @@ html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{col
     <div class="grid num" id="macTiles"><div class="mu">Loading…</div></div>
     <small class="note" id="macHealth"></small></div>
   <div id="macForces"></div>
+  <div class="card ctools" data-tools="mac"><div class="flex"><input type="search" class="cq" data-cq="mac" placeholder="Search charts (e.g. funding, RSI, M2)" aria-label="Search charts" style="flex:1;min-width:160px"><button class="btn sm cfav" data-cfav="mac" aria-pressed="false">★ Favourites</button></div><div class="chips" style="margin-top:8px"><button class="pill on" data-ccat="All">All</button><button class="pill" data-ccat="Price">Price</button><button class="pill" data-ccat="On-chain">On-chain</button><button class="pill" data-ccat="Derivatives">Derivatives</button><button class="pill" data-ccat="Macro">Macro</button><button class="pill" data-ccat="Altseason">Altseason</button><button class="pill" data-ccat="Volatility">Volatility</button></div><div class="mu cnone" style="display:none;margin-top:6px;font-size:13px"></div></div>
   <div id="macList" class="pgrid"></div>
   <small class="note">Macro data refreshes every 6 hours via GitHub Actions (FRED, ECB, BOJ, PBoC). Each tile shows its own last data date; ⚠️ marks data older than its normal cadence. All times UTC. Not financial advice.</small>
 </section>
@@ -779,11 +782,11 @@ let SIG=null,SIGL=false,SIGD=null;
 async function renderSignals(force){const box=$('#sigList'),y0=scrollY;if(!SIG||force){box.innerHTML='<div class="card mu">Scanning 15 years of Bitcoin data for rare signals…</div>';await ensureSig(force)}
   if(!SIG.length){box.innerHTML='<div class="card mu">Could not load signal data. Tap ↻ to retry.</div>';return}
   const ORD=SIG.slice().sort((a,b)=>b.score-a.score);
-  box.innerHTML=ORD.map(s=>{const i=SIG.indexOf(s),k='sig|'+s.id;return`<div class="card sig" data-sid="${s.id}"><h3>${postNow(s)?'<span class="bias b-up">POST NOW</span>':''}<span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px;min-width:0">${esc(s.title)}</span><span class="sp"></span><button class="btn sm num" data-sb="${k}" title="Opportunity score: tap for the breakdown">${s.score} ⓘ</button></h3>
+  box.innerHTML=ORD.map(s=>{const i=SIG.indexOf(s),k='sig|'+s.id;return`<div class="card sig" data-sid="${s.id}" data-cat="${sigCat(s.id)}" data-name="${esc((s.title+' '+s.id+' '+(s.read||'')).toLowerCase())}"><h3>${favBtn('sig:'+s.id)}${postNow(s)?'<span class="bias b-up">POST NOW</span>':''}<span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px;min-width:0">${esc(s.title)}</span><span class="sp"></span><button class="btn sm num" data-sb="${k}" title="Opportunity score: tap for the breakdown">${s.score} ⓘ</button></h3>
    <div class="sbx ${OPEN.has(k)?'on':''}" data-sbx="${k}">${OPEN.has(k)?sbHTML(s):''}</div>
    <canvas class="cv" data-sg="${i}"></canvas><div class="mu" style="margin:8px 0 3px;font-size:13px">${esc(s.read)}</div><span class="xhint">Click to expand</span><div class="full"><div style="margin:0 0 8px;font-size:12px;color:var(--tx2)">${esc(s.why||'')}</div>
    <div class="flex"><button class="btn pri" data-sx="${i}|share">Share to X (4K)</button><button class="btn" data-sx="${i}|4k">4K ⬇</button><button class="btn" data-sx="${i}|8k">8K ⬇</button><button class="btn" data-sx="${i}|cap">Captions</button><button class="btn" data-sx="${i}|audit">🛡 Audit</button></div></div></div>`}).join('');
-  $$('[data-sg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,SIG[+cv.dataset.sg])});
+  applyFlt('sig');$$('[data-sg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,SIG[+cv.dataset.sg])});
   try{await ensureMac()}catch(e){}$('#sigTop').innerHTML=`<span data-pnc></span> Highest Opportunity score first.`;paintPostCnt();
   requestAnimationFrame(()=>{if(y0>0&&Math.abs(scrollY-y0)>2)scrollTo(0,y0)})}
 function sigAct(i,a){const s=SIG[i];if(!s)return;const fn=(x,W,H)=>drawSig(x,W,H,s),nm='signal-'+s.id;
@@ -1013,12 +1016,12 @@ async function renderMacro(force){const box=$('#macList'),y0=scrollY;
     try{await macBTC()}catch(e){MAC.btc=null}}
   const M=MAC.M;$('#macTiles').innerHTML=macTiles(M);$('#macHealth').textContent=macHealth(M,MAC.src);paintForces();if(!NX.etf)dataFile('etf').then(r=>{NX.etf=r.v;paintForces()}).catch(()=>{});if(!SIGD)ensureSig().then(paintForces);
   MAC.cards=buildMacro(M,MAC.btc);if(force)MAC.items=null;if(!MAC.items)MAC.items=macItems();macCaps();const ctl=s=>s.ctl==='lag'?`<div class="chips" style="margin-top:8px">${[0,30,60,90].map(d=>`<button class="pill ${MAC.lag===d?'on':''}" data-mlag="${d}">M2 +${d}d</button>`).join('')}</div>`:s.ctl==='chg'?`<div class="chips" style="margin-top:8px">${['mom','yoy'].map(d=>`<button class="pill ${MAC.chg===d?'on':''}" data-mchg="${d}">${d.toUpperCase()} changes</button>`).join('')}</div>`:s.ctl==='inv'?`<div class="chips" style="margin-top:8px"><button class="pill ${MAC.inv?'on':''}" data-minv="1">Inverted dollar</button><button class="pill ${MAC.inv?'':'on'}" data-minv="0">Dollar</button></div>`:'';
-  box.innerHTML=MAC.cards.map((s,i)=>{const stl=(s.uses||[]).filter(id=>fresh(id,M).st);return`<div class="card sig" data-mcard="${s.id}"><h3><span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px">${esc(s.title)}</span>${stl.length?`<span class="bias b-dn" title="${esc(stl.join(', '))}">⚠️ stale</span>`:''}<span class="sp"></span></h3>
+  box.innerHTML=MAC.cards.map((s,i)=>{const stl=(s.uses||[]).filter(id=>fresh(id,M).st);return`<div class="card sig" data-mcard="${s.id}" data-cat="Macro" data-name="${esc((s.title+' '+s.id+' '+(s.read||'')).toLowerCase())}"><h3>${favBtn('mac:'+s.id)}<span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px">${esc(s.title)}</span>${stl.length?`<span class="bias b-dn" title="${esc(stl.join(', '))}">⚠️ stale</span>`:''}<span class="sp"></span></h3>
    <div class="mu" style="font-size:12px;margin:-2px 0 6px">As of ${macAsOf(s)}</div><canvas class="cv" data-mg="${i}"></canvas><div class="mu" data-mr="${i}" style="margin:8px 0;font-size:13px">${esc(s.read)}</div><span class="xhint">Click to expand</span><div class="full">${s.note?`<small class="note" style="margin:0 0 8px;display:block">${esc(s.note)}</small>`:''}${ctl(s)}
    ${s.id==='lead'?leadTable(s):''}
    ${s.id==='comp'?'<small class="note" style="margin:0 0 8px">USD totals move with FX: a weaker dollar raises global M2 in USD even if local money supply is flat.</small>':''}
    <div class="flex"><button class="btn pri" data-mx="${i}|share">Share to X (4K)</button><button class="btn" data-mx="${i}|4k">4K ⬇</button><button class="btn" data-mx="${i}|8k">8K ⬇</button><button class="btn" data-mx="${i}|cap">Caption</button><button class="btn" data-mx="${i}|audit">🛡 Audit</button></div></div></div>`}).join('')||'<div class="card mu">No macro charts could be built from the data.</div>';
-  $$('[data-mg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,MAC.cards[+cv.dataset.mg])});
+  applyFlt('mac');$$('[data-mg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,MAC.cards[+cv.dataset.mg])});
   requestAnimationFrame(()=>{if(y0>0&&Math.abs(scrollY-y0)>2)scrollTo(0,y0)})}
 async function auditMacro(s){const M=MAC.M,R=[];R.single=1;
   for(const id of s.uses||[]){const f=fresh(id,M),x=M.series[id];if(!x){R.push(['bad',`${id} is missing from macro.json.`]);continue}
@@ -1843,6 +1846,22 @@ document.addEventListener('keydown',e=>{
 // ---------- tabs & events
 let TAB='today';function tab(t,keep){const y=scrollY;let goIns=false;if(t==='insights'){t='markets';goIns=true}TAB=t;$$('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t||(t==='markets'&&s.id==='s-insights')));$$('nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===t);b.setAttribute('aria-current',b.dataset.t===t?'page':'false')});if(!keep)scrollTo(0,0);else requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)});
   if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart()}if(t==='markets'){renderAlt();renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(goIns)requestAnimationFrame(()=>{const e=$('#s-insights');scrollTo(0,e.getBoundingClientRect().top+scrollY-60)});if(t==='today')renderToday();if(t==='news'){renderNews();renderNewsX();if(!D.news.length)loadNews().then(renderNews)}if(t==='macro')renderMacro();if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
+// E: chart search, favourites (localStorage 'rpt_favs', star on each chart, pinned first) and category filters on Signals and Macro
+const sigCat=id=>/^(fund|oicap)/.test(id)?'Derivatives':/^rv/.test(id)?'Volatility':/^(hash|stable)$/.test(id)?'On-chain':/^(ethbtc|alt)/.test(id)?'Altseason':'Price';
+const FLT={sig:{q:'',cat:'All',fav:false},mac:{q:'',cat:'All',fav:false}};
+function favs(){try{return new Set(JSON.parse(localStorage.rpt_favs||'[]'))}catch(e){return new Set()}}
+function favBtn(k){const on=favs().has(k);return`<button class="btn sm star${on?' on':''}" data-fav="${k}" aria-pressed="${on}" title="${on?'Remove from':'Add to'} favourites" style="margin-right:6px;padding:2px 7px">${on?'★':'☆'}</button>`}
+function applyFlt(w){const box=$(w==='sig'?'#sigList':'#macList'),T=document.querySelector(`[data-tools="${w}"]`);if(!box||!T)return;const f=FLT[w],F=favs();let n=0;
+  const cards=[...box.querySelectorAll(':scope>.sig')];cards.forEach(c=>{const k=(w==='sig'?'sig:'+c.dataset.sid:'mac:'+c.dataset.mcard),q=f.q.trim().toLowerCase(),ok=(!q||q.split(/\s+/).every(x=>(c.dataset.name||'').includes(x)))&&(f.cat==='All'||c.dataset.cat===f.cat)&&(!f.fav||F.has(k));c.hidden=!ok;if(ok)n++;c.dataset.pin=F.has(k)?1:0});
+  cards.filter(c=>c.dataset.pin==='1').reverse().forEach(c=>box.prepend(c));// favourites pinned first, rest keep score order
+  T.querySelectorAll('[data-ccat]').forEach(b=>b.classList.toggle('on',b.dataset.ccat===f.cat));const fb=T.querySelector('[data-cfav]');fb.classList.toggle('on',f.fav);fb.setAttribute('aria-pressed',f.fav);
+  const no=T.querySelector('.cnone');no.style.display=n?'none':'block';no.innerHTML=n?'':(w==='sig'&&f.cat==='Macro'?'Macro charts are on the Macro tab. <button class="btn sm" data-t2="macro">Open Macro</button>':f.fav&&!F.size?'No favourites yet: tap ☆ on a chart to add it.':'No chart matches this search/filter.');T.dataset.shown=n}
+document.addEventListener('input',e=>{const q=e.target.closest('[data-cq]');if(!q)return;FLT[q.dataset.cq].q=q.value;applyFlt(q.dataset.cq)});
+document.addEventListener('click',e=>{const b=e.target.closest('button[data-ccat],button[data-cfav],button[data-fav],button[data-t2]');if(!b)return;
+  if(b.dataset.t2){tab(b.dataset.t2);return}const T=b.closest('[data-tools]');
+  if(b.dataset.ccat&&T){FLT[T.dataset.tools].cat=b.dataset.ccat;applyFlt(T.dataset.tools);return}
+  if(b.dataset.cfav&&T){FLT[T.dataset.tools].fav=!FLT[T.dataset.tools].fav;applyFlt(T.dataset.tools);return}
+  if(b.dataset.fav){e.stopPropagation();const F=favs(),k=b.dataset.fav;F.has(k)?F.delete(k):F.add(k);try{localStorage.rpt_favs=JSON.stringify([...F])}catch(x){}const on=F.has(k);b.classList.toggle('on',on);b.textContent=on?'★':'☆';b.setAttribute('aria-pressed',on);b.title=(on?'Remove from':'Add to')+' favourites';applyFlt(k.startsWith('sig:')?'sig':'mac')}},true);
 function pgRedraw(card){const sg=card.querySelector('[data-sg]'),mg=card.querySelector('[data-mg]');const cv=sg||mg;if(!cv)return;const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,sg?SIG[+sg.dataset.sg]:MAC.cards[+mg.dataset.mg])}
 document.addEventListener('click',e=>{const card=e.target.closest('.pgrid>.sig');if(!card||!matchMedia('(min-width:700px)').matches||e.target.closest('button,a,input,select,textarea,label,.sbx'))return;
   const was=card.classList.contains('open');card.parentElement.querySelectorAll(':scope>.sig.open').forEach(c=>{c.classList.remove('open');pgRedraw(c)});if(!was){card.classList.add('open');pgRedraw(card);card.scrollIntoView({block:'start',behavior:'smooth'})}});
