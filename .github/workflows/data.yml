@@ -7,8 +7,8 @@ on:
     # Cron syntax checked (valid, UTC); this file is on the default branch (main) and the workflow state is "active".
     # GitHub runs schedules best-effort (new schedules can take hours to start; runs are delayed or dropped under load),
     # so ci.yml also dispatches this job when derivs.json is 2h+ old, and the app shows stale-data warnings per file cadence.
-    # four times an hour, off the :00 peak: GitHub drops many scheduled runs (2026-10-01..03 only ~6 of ~48 hourly runs fired,
-    # gaps up to 6h), so four off-peak chances an hour keep derivs.json well under its 3h freshness limit when some are dropped
+    # four times an hour, off the :00 peak: GitHub drops many scheduled runs (1 Oct 23:00Z - 3 Oct 06:30Z: 8 of 31 hourly runs fired,
+    # gaps up to 7.2h), so four off-peak chances an hour keep derivs.json well under its 3h freshness limit when some are dropped
     - cron: '7,22,37,52 * * * *'
     - cron: '0 21 * * 4'
   workflow_dispatch:
