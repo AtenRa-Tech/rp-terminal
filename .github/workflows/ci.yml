@@ -129,7 +129,7 @@ jobs:
         run: |
           age=$(curl -s "${SITE_URL}data/derivs.json?v=$(date +%s)" | python3 -c "import json,sys,datetime as d;u=json.load(sys.stdin)['updated'];print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" || echo 999)
           echo "derivs.json age ${age}h"
-          if [ "$age" -ge 3 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
+          if [ "$age" -ge 2 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
 
   rollback:
     needs: smoke

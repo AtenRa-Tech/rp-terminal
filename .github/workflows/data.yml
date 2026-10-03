@@ -6,8 +6,10 @@ on:
     # plus Thursday 21:00 and 22:00 UTC (after the Fed's H.4.1 release at 16:30 ET, so WALCL/WDTGAL land the same day)
     # Cron syntax checked (valid, UTC); this file is on the default branch (main) and the workflow state is "active".
     # GitHub runs schedules best-effort (new schedules can take hours to start; runs are delayed or dropped under load),
-    # so ci.yml also dispatches this job when derivs.json is over 3h old, and the app shows stale-data warnings per file cadence.
-    - cron: '17 * * * *'
+    # so ci.yml also dispatches this job when derivs.json is 2h+ old, and the app shows stale-data warnings per file cadence.
+    # twice an hour, off the :00 peak: GitHub drops many scheduled runs (2026-10-01..03 only ~6 of ~48 hourly runs fired,
+    # gaps up to 6h), so two chances an hour keep derivs.json well under its 3h freshness limit when some are dropped
+    - cron: '7,37 * * * *'
     - cron: '0 21 * * 4'
   workflow_dispatch:
     inputs:
@@ -50,6 +52,8 @@ jobs:
             FULL="${{ inputs.full }}"
           elif [ $((10#$H % 6)) -eq 0 ]; then
             FULL=true
+          elif [ "$(python3 -c "import json,datetime as d;u=min(json.load(open('data/'+f))['updated'] for f in ('market.json','macro.json','etf.json'));print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" 2>/dev/null || echo 99)" -ge 6 ]; then
+            FULL=true   # a dropped 0/6/12/18 run must not leave macro/ETF/market a whole cycle behind
           elif [ "$DOW" = "4" ] && { [ "$H" = "21" ] || [ "$H" = "22" ]; }; then
             FULL=true
           else
