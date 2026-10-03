@@ -2,7 +2,7 @@
 // 1 draft audit uses the ONE shared word list (RPT_WORDS: news filter + lintBanned + caption sweep); regional terms and call/lean words are red, controls clean (fixtures: news-rules.json draft_audit)
 // 2 Global market card names the source that supplied the totals, with its time; 3 Fear & Greed reads "alternative.me index: 72, Greed, 2 Oct" everywhere
 // 4 on-screen correlation table states "30 daily returns to <last completed day>"; 5 heatmap export/share disabled until tiles have data
-// 6 chart axes: every year boundary labelled on every timeframe/zoom/width; every month boundary labelled whenever a "Mmm YYYY" label fits between month starts
+// 6 chart axes (round-5 adaptive axis): every year boundary labelled (row 2 or years scale) on every timeframe/zoom/width; on a months scale with a 1-month step every month start is labelled
 // 7 1W uses "week ending <date>" in legend and Data line; 8 axis price labels hidden where the last-price tag overlaps; 9 watchlist sparklines carry their period label (7d)
 const p=require('puppeteer-core'),fs=require('fs');const URL=process.env.URL||'http://localhost:8765/index.html';
 const FIX=JSON.parse(fs.readFileSync((process.env.FIX||__dirname+'/fixtures')+'/news-rules.json','utf8'));
@@ -38,21 +38,21 @@ const AX=await pg.evaluate(async()=>{const res=[];const DAY=864e5;
  for(const iv of ['15m','1h','4h','1d','1w']){CH.iv=iv;await loadChart();if(!CH.d)continue;const N=CH.d.t.length;
   for(const nn of [60,120,250,500])for(const [W,H] of [[640,1000],[720,1116],[860,1240],[3840,2160]]){if(nn>N)continue;window.AXLOG=[];const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');const of=ctx.fillText.bind(ctx);const TX=[];ctx.fillText=(t,...a)=>{TX.push(String(t));return of(t,...a)};
    drawChart(ctx,W,H,{...CH,n:nn,cross:null});const a=AXLOG.find(x=>x.fn==='chart'),pr=AXLOG.find(x=>x.fn==='price'),hd=AXLOG.find(x=>x.fn==='chartHdr');window.AXLOG=null;
-   const t0=CH.d.t[N-nn],t1=a.lastT,u0=H/600,pxD=a.pxPerDay||(W-72*u0)/nn*(iv==='1w'?1/7:iv==='1d'?1:{'4h':6,'1h':24,'15m':96}[iv]),gap0=a.gap||10*u0,labs=a.labels.map((l,i)=>({l,t:a.ticks[i],last:a.last!=null&&i===a.labels.length-1}));
+   const t0=CH.d.t[N-nn],t1=a.lastT,u0=H/600,pxD=a.pxPerDay||(W-72*u0)/nn*(iv==='1w'?1/7:iv==='1d'?1:{'4h':6,'1h':24,'15m':96}[iv]),gap0=a.gap||10*u0,labs=a.labels.map((l,i)=>({l,t:a.ticks[i]})).concat(a.row2.labels.map((l,i)=>({l,t:a.row2.ticks[i],r2:1})));// round 5: years sit on row 2 (or are the row-1 labels on a years scale)
    const yrs=[],mos=[];{const d=new Date(t0);let y=d.getUTCFullYear(),m=d.getUTCMonth()+1;for(;;){if(m>11){m=0;y++}const bt=Date.UTC(y,m,1);if(bt>t1)break;mos.push(bt);if(m===0)yrs.push(bt);m++}}
    const inWin=(L,bt)=>L.t>=bt&&L.t<bt+7*DAY;const missY=yrs.filter(bt=>!labs.some(L=>inWin(L,bt)&&/\d{4}|’\d\d/.test(L.l))).map(x=>new Date(x).toISOString().slice(0,7));
    const missM=mos.filter(bt=>!labs.some(L=>inWin(L,bt))).map(x=>new Date(x).toISOString().slice(0,7));
    ctx.font=F(10.5*H/600,500);const fitM=pxD*28>=ctx.measureText('Sep 2026').width+gap0;
    const ov=pr.lastY==null?['(no overlap logging: old build)']:pr.ticks.filter(tk=>!pr.hidden.includes(tk.lab)&&Math.abs(tk.y-pr.lastY)<pr.tagH/2+pr.labH/2).map(t=>t.lab);
    const wk=iv==='1w'?{legend:TX.find(t=>/^at close/.test(t)),data:hd.data}:null;
-   res.push({iv,nn,W,labels:a.labels.join(' | '),end:a.endMode,missY,missM,fitM,ov,wk})}}return res});
+   res.push({iv,nn,W,cls:a.cls,step:a.k+a.n,labels:a.labels.join(' | ')+(a.row2.labels.length?' / '+a.row2.labels.join(' | '):''),end:a.endMode,missY,missM,fitM:a.cls==='m'&&a.k==='m'&&a.n===1,ov,wk})}}return res});
 let yF=0,mF=0,mEx=0,oF=0,wF=0;for(const r of AX){if(r.missY.length){yF++;console.log('FAIL AXIS_year '+JSON.stringify(r))}
- if(r.missM.length){if(r.fitM&&r.iv!=='1w'){mF++;console.log('FAIL AXIS_month '+JSON.stringify(r))}else mEx++}
+ if(r.missM.length){if(r.fitM){mF++;console.log('FAIL AXIS_month '+JSON.stringify(r))}else mEx++}
  if(r.ov.length){oF++;console.log('FAIL PRICE_TAG_overlap '+JSON.stringify(r))}
  if(r.wk){const m1=(r.wk.legend||'').match(/week ending (\d{1,2} \w{3} \d{4})/),m2=(r.wk.data||'').match(/week ending (\d{1,2} \w{3} \d{4})/);if(!m1||!m2||m1[1]!==m2[1]){wF++;console.log('FAIL WEEK_ending '+JSON.stringify(r.wk))}}}
 const d120=AX.filter(r=>r.iv==='1d'&&r.nn===120);R.AXIS_years_all_timeframes={configs:AX.length,pass:AX.length>=60&&!yF};
 R.AXIS_months_when_they_fit={configs:AX.length,exempt_physically_impossible:mEx,pass:!mF&&d120.length>0&&d120.every(r=>!r.missM.length)};
-R.AXIS_1d_default_every_month_and_end={sample:d120.map(r=>r.W+': '+r.labels),pass:d120.length>0&&d120.every(r=>r.end!=='hidden'&&!r.missM.length)};
+R.AXIS_1d_default_every_month_and_end={sample:d120.map(r=>r.W+': '+r.labels),pass:d120.length>0&&d120.every(r=>!r.missM.length)};
 R.PRICE_TAG_hides_overlapping_axis_label={pass:!oF};R.WEEK_ending_convention={sample:AX.find(r=>r.wk)?.wk,pass:!wF&&AX.some(r=>r.wk)};
 let f=0;for(const[k,v]of Object.entries(R)){const ok=v&&v.pass;if(!ok)f++;console.log((ok?'PASS ':'FAIL ')+k+' '+JSON.stringify(v).slice(0,400))}
 console.log('FAILS: '+f);await b.close();process.exit(f?1:0)})().catch(e=>{console.error(e);process.exit(2)});

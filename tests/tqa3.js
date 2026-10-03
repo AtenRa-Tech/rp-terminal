@@ -13,14 +13,14 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
  const run=(fn,w,h)=>{TX=[];window.AXLOG=[];const c=document.createElement('canvas');c.width=w;c.height=h;fn(c.getContext('2d'),w,h);const r={tx:TX.slice(),ax:window.AXLOG.slice()};window.AXLOG=null;return r};
  const dayLab=t=>axFull(t,false);
  const axOK=(ax,o={})=>{const bad=[];const A=ax.filter(a=>a.fn==='plot'&&a.date!==false||a.fn==='chart'||a.fn==='axis');
-   for(const a of A){const e1=new Date(a.lastT),short=a.intra?String(e1.getUTCHours()).padStart(2,'0')+':'+String(e1.getUTCMinutes()).padStart(2,'0'):e1.getUTCDate()+' '+AXMN[e1.getUTCMonth()];
-     // QA4 rule: end label = full date; shortened (no year) or hidden only when a month/year boundary label would otherwise collide with it
-     const endOK=a.last===axFull(a.lastT,a.intra)||(a.endMode==='short'&&a.last===short)||(a.endMode==='hidden'&&a.last==null);if(!endOK)bad.push('last label '+a.last+' != '+axFull(a.lastT,a.intra));
+   for(const a of A){// round-5 adaptive axis: no end label (the exact visible range is printed above the plot); two rows; nothing overlaps or leaves the plot
+     if(a.endMode!=='none'||a.last!=null)bad.push('end label present: '+a.last);
      if(Math.abs(a.lastT-a.dataLast)>1000)bad.push('axis end '+new Date(a.lastT).toISOString()+' != data end '+new Date(a.dataLast).toISOString());
-     for(let i=1;i<a.boxes.length;i++)if(a.boxes[i][0]<a.boxes[i-1][1])bad.push('overlap '+a.labels[i-1]+'|'+a.labels[i]);
-     if(a.boxes.length&&a.boxes.at(-1)[1]>a.xMax+1)bad.push('last label past right edge');
-     if(a.labels.length>1&&!a.intra&&!/^y$/i.test(a.k)&&!/\d{4}$/.test(a.labels[0])&&!a.labels.slice(1).some(l=>/\d{4}$/.test(l)))bad.push('no year on first label '+a.labels[0]);
-     for(let i=1;i<a.ticks.length-1;i++){const y0=new Date(a.ticks[i-1]).getUTCFullYear(),y1=new Date(a.ticks[i]).getUTCFullYear();if(y1!==y0&&!a.intra&&!/\d{4}$|’\d\d$/.test(a.labels[i]))bad.push('year change without year '+a.labels[i])}}
+     for(const [nm,B,Lb] of [['row1',a.boxes,a.labels],['row2',a.row2.boxes,a.row2.labels]]){for(let i=1;i<B.length;i++)if(B[i][0]<B[i-1][1])bad.push(nm+' overlap '+Lb[i-1]+'|'+Lb[i]);if(B.length&&(B.at(-1)[1]>a.xMax+1||B[0][0]<a.xMin-1))bad.push(nm+' label past plot edge')}
+     if(a.cls==='y'&&!a.labels.every(l=>/^\d{4}$/.test(l)))bad.push('years scale with non-year label '+a.labels.join('|'));
+     if((a.cls==='d'||a.cls==='m')&&a.labels.length){const yrs=[...new Set(a.ticks.map(t=>String(new Date(t).getUTCFullYear())))];if(yrs.some(y=>!a.row2.labels.includes(y)))bad.push('row 2 misses a year: '+yrs.join(',')+' vs '+a.row2.labels.join(','))}
+     if((a.cls==='h'||a.cls==='dh')&&!a.row2.labels.length)bad.push('intraday axis without dates on row 2');
+     if(a.labels.length>(a.cls==='dh'?Math.round(a.maxN*1.5):Math.min(10,a.maxN+1))||(a.cls==='dh'&&a.row2.labels.length>a.maxN))bad.push('too many labels for width: '+a.labels.length+' > '+a.maxN)}
    for(const a of ax.filter(a=>a.fn==='bars'&&a.lastT!=null)){const want=a.mon?calLab(a.lastT,'m',true):axFull(a.lastT);if(a.last!==want)bad.push('bars last '+a.last+' != '+want);for(let i=1;i<a.boxes.length;i++)if(a.boxes[i][0]<a.boxes[i-1][1])bad.push('bars overlap')}
    return{n:A.length,bad}};
  const textOK=(tx,asof=true)=>{const bad=[],j=tx.join(' | ');if(!tx.some(t=>t.includes(HDL())))bad.push('no handle');const dl=tx.find(t=>/^Data: /.test(t));if(!dl)bad.push('no Data line');
@@ -49,8 +49,8 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
  // real Chart tab data if loaded
  T('CH_live_1d',()=>{if(!CH.d)return{pass:true,skip:'no live candles'};const r=run((x,W,H)=>drawChart(x,W,H,{...CH,cross:null}),824,1120),a=axOK(r.ax),ax=r.ax.find(z=>z.fn==='chart');return{labels:ax.labels,bad:a.bad,pass:!a.bad.length&&ax.lastT===CH.d.t.at(-1)}});
  // month-boundary rule: 15 months of daily candles -> month starts, year on first + January
- T('AX_month_boundaries',()=>{const t1=Date.UTC(2026,9,2),t0=Date.UTC(2025,6,1);const c=document.createElement('canvas').getContext('2d');c.font='15px sans-serif';window.AXLOG=[];const L=timeAxis(c,{t0,t1,xOf:t=>(t-t0)/(t1-t0)*1000,xMin:0,xMax:1000,y:0,col:'#fff'});window.AXLOG=null;const labs=L.map(x=>x.lab);
-   const ok=labs[0]==='Jul 2025'&&labs.includes('Jan 2026')&&['2 Oct 2026','2 Oct'].includes(labs.at(-1))&&labs.slice(1,-1).every(l=>/^[A-Z][a-z]{2}$/.test(l)||l==='Jan 2026');return{labs,pass:ok}});
+ T('AX_month_boundaries',()=>{const t1=Date.UTC(2026,9,2),t0=Date.UTC(2025,6,1);const c=document.createElement('canvas').getContext('2d');c.font='15px sans-serif';window.AXLOG=[];const L=timeAxis(c,{t0,t1,xOf:t=>(t-t0)/(t1-t0)*1000,xMin:0,xMax:1000,y:0,col:'#fff'});window.AXL0=window.AXLOG[0];window.AXLOG=null;const labs=L.map(x=>x.lab);
+   const a=window.AXL0;const ok=labs[0]==='Jul'&&labs.includes('Jan')&&labs.every(l=>/^[A-Z][a-z]{2}$/.test(l))&&JSON.stringify(a.row2.labels)==='["2025","2026"]'&&a.cls==='m';return{labs,row2:a.row2.labels,pass:ok}});
  CanvasRenderingContext2D.prototype.fillText=orig;return out});
 // C14 needs both tabs rendered with the shared function
 const c14=await pg.evaluate(async()=>{await renderSignals();const a=document.querySelector('#sigTop [data-pnc]')?.textContent;tab('today');await new Promise(r=>setTimeout(r,3000));const b=document.querySelector('#postCnt [data-pnc]')?.textContent;const m=s=>(s||'').match(/^(\d+) of (\d+) charts/);return{a,b,pass:!!a&&a===b&&!!m(a)&&+m(a)[2]===todayItems().length}});R.C14_same_count=c14;
