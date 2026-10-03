@@ -13,7 +13,7 @@ if(T.dvStale.length)console.log('NOTE derivs.json stale in this run: '+T.dvStale
 console.log(JSON.stringify(T,null,1));
 ok(/B90/.test(T.alt||'')&&/B30/.test(T.alt||'')&&/ETH\/BTC/.test(T.alt||''),'Today altseason card shows B90, B30, ETH/BTC');
 ok(/confidence \d+%/.test(T.alt||''),'Today alt card shows confidence');
-ok(T.dvStale.includes('BTC oi')?T.clus.some(c=>/Open interest \(BTC\) \| data stale \(cache \d+[hd], /.test(c)):T.clus.some(c=>/Open interest rising/.test(c)&&!/derivs.json loading/.test(c)),'OI rising input filled in clusters (or data stale label when derivs.json is past its limit)');
+ok(T.dvStale.includes('BTC oi')?T.clus.some(c=>/Open interest \(BTC\) \| OI: stale, (\d+h\d+m|\d+d) old, past 3h limit /.test(c)):T.clus.some(c=>/Open interest rising/.test(c)&&!/derivs.json loading/.test(c)),'OI rising input filled in clusters (or data stale label when derivs.json is past its limit)');
 ok(T.dvStale.length?(!T.deriv.some(x=>/^fundBTC/.test(x))||!T.dvStale.includes('BTC funding'))&&(!T.deriv.some(x=>/^oicapBTC/.test(x))||!T.dvStale.includes('BTC oi')):T.deriv.some(x=>/^fundBTC/.test(x))&&T.deriv.some(x=>/^oicapBTC/.test(x)),'funding and OI/market-cap signals in the engine (absent when their data is stale)');
 const newsLive=T.news.length>=1||FEEDS.up;if(!newsLive)console.log('SKIP: feeds unreachable ('+FEEDS.why+') — news scores on Today / breakdown on tap; news scoring covered by tnewsfx');
 if(newsLive)ok(T.news.length>=1,'news scores shown on Today');
