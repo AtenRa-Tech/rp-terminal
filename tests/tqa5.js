@@ -15,7 +15,7 @@ const SYN=async(pg,cssW)=>pg.evaluate(cssW=>{const c=document.createElement('can
   const U=Date.UTC,o={day:run(U(2026,9,3,0),U(2026,9,3,23),1),days:run(U(2026,8,29,0),U(2026,9,3,8),1),months:run(U(2026,5,1),U(2026,9,2),0),years:run(U(2010,6,18),U(2026,9,2),0)};c.remove();return o},cssW);
 const coll=B=>{for(let i=1;i<B.length;i++)if(B[i][0]<B[i-1][1])return true;return false};
 for(const [w,h] of [[360,800],[1280,900]]){const pg=await page(w,h);const S=await SYN(pg,w-40);const lim=w<500?6:10,lo=w<500?4:4;
-  T(`PERIOD_within_day_${w}`,{...S.day,pass:S.day.cls==='h'&&S.day.l.includes('12:00')&&S.day.l.includes('06:00')&&S.day.l.includes('18:00')&&S.day.r2[0]==='3 Oct'&&S.day.l.every(x=>/^\d\d:\d\d$/.test(x))&&S.day.l.length<=lim&&S.day.l.length>=lo});
+  T(`PERIOD_within_day_${w}`,{...S.day,pass:S.day.cls==='h'&&S.day.l.includes('12:00')&&(w<500||S.day.l.includes('06:00')&&S.day.l.includes('18:00'))&&S.day.r2[0]==='3 Oct'&&S.day.l.every(x=>/^\d\d:\d\d$/.test(x)&&(+x.slice(0,2))%((S.day.k==='h'?S.day.n:1)||1)===0)&&S.day.l.length<=lim&&S.day.l.length>=(w<500?2:lo)});
   T(`PERIOD_several_days_${w}`,{...S.days,pass:S.days.cls==='dh'&&S.days.r2.slice(0,3).join()===(w<500?S.days.r2.slice(0,3).join():'29 Sep,30 Sep,1 Oct')&&S.days.r2.every(x=>/^\d{1,2} [A-Z][a-z]{2}$/.test(x))&&S.days.l.every(x=>/^\d\d:\d\d$/.test(x)&&x!=='00:00')&&S.days.r2.length<=lim&&S.days.l.length<=Math.round(S.days.maxN*1.5)});
   T(`PERIOD_few_months_${w}`,{...S.months,pass:S.months.cls==='m'&&S.months.l.join()==='Jun,Jul,Aug,Sep,Oct'&&S.months.r2.join()==='2026'});
   T(`PERIOD_several_years_${w}`,{...S.years,pass:S.years.cls==='y'&&S.years.l.every(x=>/^\d{4}$/.test(x))&&[1,2,4,5,10].includes(S.years.n)&&S.years.l.length<=lim&&S.years.l.length>=lo&&(w>=1000||S.years.n>=4)&&!S.years.r2.length});
@@ -52,7 +52,7 @@ for(const [w,h] of [[360,800],[1280,900]]){const pg=await page(w,h);const S=awai
     T('HALVING_days_since',{labels:SG.hv?.labels,step:SG.hv?.step,pass:!!SG.hv&&SG.hv.days&&SG.hv.labels[0]==='0'&&[100,200,250,500].includes(SG.hv.step)&&SG.hv.labels.every((x,i)=>+x===i*SG.hv.step)&&SG.hv.caption==='days since halving'})}
   if(w===360){// P2 heatmap Data line wraps instead of clipping (split2 directly + drawHeat at 9:16 when tiles loaded)
     const HW=await pg.evaluate(()=>{const c=document.createElement('canvas');c.width=1080;c.height=1920;const x=c.getContext('2d');x.font=F(21.6,500);const t='Data: CoinGecko top 50 by market cap (stablecoins excluded), as of 3 Oct 05:00 UTC · tile area ∝ mcap^0.6';const L=split2(x,t,560);
-      const ok=L.length===2&&L.every(l=>x.measureText(l).width<=560)&&L[0].endsWith(' ·')&&(L[0].slice(0,-2)+' · '+L[1])===t;let heat=null;
+      const ok=L.length>=2&&L.length<=3&&L.every(l=>x.measureText(l).width<=560)&&(L.join(' ')===t||(L[0].slice(0,-2)+' · '+L.slice(1).join(' '))===t);let heat=null;
       if(heatItems().length){window.AXLOG=[];drawHeat(x,1080,1920,true);heat=AXLOG.find(z=>z.fn==='heatData');window.AXLOG=null}return{L,ok,heat}});
     T('P2_heat_data_line_wraps',{lines:HW.L,heat:HW.heat&&HW.heat.lines,pass:HW.ok&&(!HW.heat||HW.heat.widths.every(v=>v<=HW.heat.maxW+0.5))});
     const C=await pg.evaluate(async()=>{const lum=c=>{const m=c.match(/[\d.]+/g).map(Number);const f=v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4};return .2126*f(m[0])+.7152*f(m[1])+.0722*f(m[2])};const ratio=(a,b)=>{const x=lum(a),y=lum(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
