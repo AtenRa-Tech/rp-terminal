@@ -1671,7 +1671,7 @@ function derivSignals(){const out=[];if(!DV?.assets)return out;
         draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(3)+'%',hl:[{v:0,c:TH.mu,l:'0'},{v:.01,c:hexA(TH.mu,.8),l:'0.01% base rate'}],series:[{t:f.raw.map(p=>p[0]),v:f.raw.map(p=>p[1]*100),c:hexA(TH.ac,.35),w:1.2,l:'per 8h print'},{v,c:TH.ac,w:3,l:'7-day average'}]})})}
     const oc=oiCapSeries(a);
     if(oc&&oc.t.length>=60){const t=oc.t,v=oc.a,n=v.length;SIGT['oicap'+a]=[`${a} open interest ÷ market cap`,`OI from one venue (${oc.src}) in coin terms ÷ today's circulating supply (${oc.supSrc}); measures leverage on that venue, not the whole market.`];
-      out.push({id:'oicap'+a,asset:a,title:`${a} open interest ÷ market cap`,read:`${v[n-1].toFixed(3)}% of market cap · ${oc.src} perp · since ${dU(t[0])}`,src:`${oc.src} open interest ÷ supply from ${String(oc.supSrc||'').replace(/^market\.json supply \((.*)\)$/,'$1').replace(/market\.json/,'saved market file')}, OI at ${hmU2(t[n-1]+DAY)} ÷ ${dU(t[n-1])} market cap`,
+      out.push({id:'oicap'+a,asset:a,title:`${a} open interest ÷ market cap`,read:`${v[n-1].toFixed(3)}% of market cap · ${oc.src} perp · since ${dU(t[0])}`,src:`${oc.src} open interest at the ${dU(t[n-1])} close (00:00 UTC) ÷ that day's market cap (saved market file), as of ${hmU2(t[n-1]+DAY)}`,
         msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(3)+'%'},confFix:[60,`Single venue (${oc.src}); latest day = OI at the 00:00 UTC close ÷ that day's market cap; ${oc.hist}`],
         draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(2)+'%',series:[{v,c:TH.ac,w:3,fill:1,l:'OI ÷ market cap'}],marks:[{t:t[n-1],v:v[n-1],c:TH.tx,l:v[n-1].toFixed(3)+'%'}]})})}}
   return out}
