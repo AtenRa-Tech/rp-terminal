@@ -1651,7 +1651,16 @@ function oiChg(a,days){const A=DV?.assets?.[a];if(!A)return null;const H=A.oi_ho
 function supplyOf(a){const id=a==='BTC'?'bitcoin':'ethereum',m=D.mk?.[id];if(m?.market_cap&&m?.current_price)return{s:m.market_cap/m.current_price,src:D.srcMk||'market data'};
   // fallback: market.json reconstructs caps as close x circulating supply, so supply = cap / close on the same day
   const tp=MK?.totals_proxy,C=SIGD?.CL?.[a];if(tp?.points?.length&&C?.t?.length){const ci=tp.columns.indexOf(a.toLowerCase()),cm=new Map(C.t.map((t,i)=>[new Date(t).toISOString().slice(0,10),C.v[i]]));for(let i=tp.points.length-1;i>=Math.max(0,tp.points.length-5);i--){const r=tp.points[i],c=cm.get(r[0]);if(c&&r[ci])return{s:r[ci]/c,src:`market.json supply (${MK.ranking_source||'ranking source'})`}}}return null}
-function oiCapSeries(a){const A=DV?.assets?.[a],sp=supplyOf(a);if(!A?.oi_daily?.points?.length||!sp)return null;const P=A.oi_daily.points;return{t:P.map(p=>p[0]),a:P.map(p=>p[2]/sp.s*100),src:A.oi_daily.source,supSrc:sp.src}}
+// OI ÷ market cap (supervisor ruling 7 Oct). Forming-candle rule: readings use the last CLOSED UTC day D only.
+// The reading for D pairs OKX OI at D's close (00:00 UTC next day, from oi_hourly) with D's market cap (market.json totals_proxy, same date).
+// If either side is missing there is no reading ('—'); OI from one day is never divided by another day's market cap.
+// Older history uses OKX daily buckets, which start 16:00 UTC (labelled in the source text).
+function oiCapLatest(a,now=Date.now()){const A=DV?.assets?.[a],H=A?.oi_hourly?.points,tp=MK?.totals_proxy;const D=Math.floor(now/DAY)*DAY-DAY,dS=new Date(D).toISOString().slice(0,10);
+  const h=H?.find(p=>p[0]===D+DAY),ci=tp?.columns?.indexOf(a.toLowerCase()),r=tp?.points?.find(x=>x[0]===dS),mc=r&&ci>0?r[ci]:null;
+  return{D,oi:h?h[1]:null,mc,v:h&&mc>0&&h[1]>0?h[1]/mc*100:null}}
+function oiCapSeries(a,now=Date.now()){const A=DV?.assets?.[a],sp=supplyOf(a);if(!A?.oi_daily?.points?.length||!sp)return null;const L=oiCapLatest(a,now);if(L.v==null)return null;
+  const P=A.oi_daily.points.filter(p=>p[0]<L.D);const t=P.map(p=>p[0]),v=P.map(p=>p[2]/sp.s*100);t.push(L.D);v.push(L.v);
+  return{t,a:v,src:A.oi_daily.source,supSrc:sp.src,latest:L,hist:'older days: OKX daily OI buckets (16:00 UTC start) ÷ supply'}}
 function oiCapNow(a){const s=oiCapSeries(a);if(!s||s.t.length<60)return null;const m=oppMeta(s,'abs',Infinity);return{v:m.cur,share:m.share,side:m.side,pTxt:m.pctTxt,m,src:s.src}}
 function fundSeries(a){const F=DV?.assets?.[a]?.funding;if(!F?.points?.length)return null;const P=F.points,t=[],v=[];for(let i=20;i<P.length;i++){let s=0;for(let k=i-20;k<=i;k++)s+=P[k][1];t.push(P[i][0]);v.push(s/21*100)}return{t,a:v,src:F.source,raw:P}}
 function derivSignals(){const out=[];if(!DV?.assets)return out;
@@ -1662,8 +1671,8 @@ function derivSignals(){const out=[];if(!DV?.assets)return out;
         draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(3)+'%',hl:[{v:0,c:TH.mu,l:'0'},{v:.01,c:hexA(TH.mu,.8),l:'0.01% base rate'}],series:[{t:f.raw.map(p=>p[0]),v:f.raw.map(p=>p[1]*100),c:hexA(TH.ac,.35),w:1.2,l:'per 8h print'},{v,c:TH.ac,w:3,l:'7-day average'}]})})}
     const oc=oiCapSeries(a);
     if(oc&&oc.t.length>=60){const t=oc.t,v=oc.a,n=v.length;SIGT['oicap'+a]=[`${a} open interest ÷ market cap`,`OI from one venue (${oc.src}) in coin terms ÷ today's circulating supply (${oc.supSrc}); measures leverage on that venue, not the whole market.`];
-      out.push({id:'oicap'+a,asset:a,title:`${a} open interest ÷ market cap`,read:`${v[n-1].toFixed(3)}% of market cap · ${oc.src} perp · since ${dU(t[0])}`,src:`${oc.src} open interest ÷ supply from ${String(oc.supSrc||'').replace(/^market\.json supply \((.*)\)$/,'$1').replace(/market\.json/,'saved market file')}, as of ${hmU2(t[n-1])}`,
-        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(3)+'%'},confFix:[60,`Single venue (${oc.src}); supply held at today's value`],
+      out.push({id:'oicap'+a,asset:a,title:`${a} open interest ÷ market cap`,read:`${v[n-1].toFixed(3)}% of market cap · ${oc.src} perp · since ${dU(t[0])}`,src:`${oc.src} open interest ÷ supply from ${String(oc.supSrc||'').replace(/^market\.json supply \((.*)\)$/,'$1').replace(/market\.json/,'saved market file')}, OI at ${hmU2(t[n-1]+DAY)} ÷ ${dU(t[n-1])} market cap`,
+        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(3)+'%'},confFix:[60,`Single venue (${oc.src}); latest day = OI at the 00:00 UTC close ÷ that day's market cap; ${oc.hist}`],
         draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(2)+'%',series:[{v,c:TH.ac,w:3,fill:1,l:'OI ÷ market cap'}],marks:[{t:t[n-1],v:v[n-1],c:TH.tx,l:v[n-1].toFixed(3)+'%'}]})})}}
   return out}
 
