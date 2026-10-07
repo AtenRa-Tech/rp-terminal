@@ -1655,9 +1655,12 @@ function supplyOf(a){const id=a==='BTC'?'bitcoin':'ethereum',m=D.mk?.[id];if(m?.
 // The reading for D pairs OKX OI at D's close (00:00 UTC next day, from oi_hourly) with D's market cap (market.json totals_proxy, same date).
 // If either side is missing there is no reading ('—'); OI from one day is never divided by another day's market cap.
 // Older history uses OKX daily buckets, which start 16:00 UTC (labelled in the source text).
-function oiCapLatest(a,now=Date.now()){const A=DV?.assets?.[a],H=A?.oi_hourly?.points,tp=MK?.totals_proxy;const D=Math.floor(now/DAY)*DAY-DAY,dS=new Date(D).toISOString().slice(0,10);
-  const h=H?.find(p=>p[0]===D+DAY),ci=tp?.columns?.indexOf(a.toLowerCase()),r=tp?.points?.find(x=>x[0]===dS),mc=r&&ci>0?r[ci]:null;
-  return{D,oi:h?h[1]:null,mc,v:h&&mc>0&&h[1]>0?h[1]/mc*100:null}}
+// D = the latest closed day that has BOTH inputs (market.json adds a day's market cap after that day closes; look back at most 3 days);
+// OI = the hourly snapshot nearest D's 00:00 UTC close, at most 30 min away. Missing either -> no reading.
+function oiCapLatest(a,now=Date.now()){const A=DV?.assets?.[a],H=A?.oi_hourly?.points||[],tp=MK?.totals_proxy,ci=tp?.columns?.indexOf(a.toLowerCase());const D0=Math.floor(now/DAY)*DAY-DAY;
+  for(let k=0;k<3;k++){const D=D0-k*DAY,c=D+DAY,dS=new Date(D).toISOString().slice(0,10);let h=null;for(const p of H)if(Math.abs(p[0]-c)<=30*60000&&(!h||Math.abs(p[0]-c)<Math.abs(h[0]-c)))h=p;
+    const r=tp?.points?.find(x=>x[0]===dS),mc=r&&ci>0?r[ci]:null;if(h&&h[1]>0&&mc>0)return{D,oi:h[1],oiT:h[0],mc,v:h[1]/mc*100}}
+  return{D:D0,oi:null,mc:null,v:null}}
 function oiCapSeries(a,now=Date.now()){const A=DV?.assets?.[a],sp=supplyOf(a);if(!A?.oi_daily?.points?.length||!sp)return null;const L=oiCapLatest(a,now);if(L.v==null)return null;
   const P=A.oi_daily.points.filter(p=>p[0]<L.D);const t=P.map(p=>p[0]),v=P.map(p=>p[2]/sp.s*100);t.push(L.D);v.push(L.v);
   return{t,a:v,src:A.oi_daily.source,supSrc:sp.src,latest:L,hist:'older days: OKX daily OI buckets (16:00 UTC start) ÷ supply'}}
