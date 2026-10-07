@@ -363,7 +363,8 @@ async function klines(c,iv,limit=500){
   const v=await first(
     async()=>conv(await J('https://data-api.binance.vision'+q),'Binance'),
     async()=>conv(await J('https://api.binance.com'+q),'Binance'),
-    async()=>{const r=await J(`${CG}/coins/${c.id}/ohlc?vs_currency=usd&days=${IVS[iv].cg}`);return{t:r.map(x=>x[0]),o:r.map(x=>x[1]),h:r.map(x=>x[2]),l:r.map(x=>x[3]),c:r.map(x=>x[4]),v:r.map(()=>0),src:'CoinGecko',pair:c.sym.toUpperCase()+'/USD'}});
+    async()=>{/* CoinGecko OHLC granularity is fixed by `days` (1-2: 30m, 3-30: 4h, 31+: 4d), so it is a valid fallback only for 4h; its timestamps are candle CLOSE times; it has no volume */
+      if(iv!=='4h')throw new Error(`CoinGecko OHLC has no ${iv} candles`);const r=await J(`${CG}/coins/${c.id}/ohlc?vs_currency=usd&days=30`),H4=4*36e5;return{t:r.map(x=>x[0]-H4),o:r.map(x=>x[1]),h:r.map(x=>x[2]),l:r.map(x=>x[3]),c:r.map(x=>x[4]),v:r.map(()=>null),noVol:true,src:'CoinGecko',pair:c.sym.toUpperCase()+'/USD'}});
   D.kl[key]={t:Date.now(),v};return v}
 // chart history: up to KLP pages of 1000 Binance candles (paged back with endTime) so range buttons show what they say;
 // 'complete' = the exchange returned fewer than asked, i.e. the pair's whole history is loaded (ALL is only offered then)
@@ -769,7 +770,7 @@ function buildSignals(d){const out=[],P=d.P,PB=d.CL?.BTC?.v?.length>800?d.CL.BTC
     return{id:'dd',m:cur,title:'Drawdown from all-time high',read:near&&cur===0?'At a new all-time high daily close':`${Math.abs(cur).toFixed(1)}% below the daily-close ATH of ${usd(v[athI],0)} (${days} days ago)${near?', within 3% of it':''}`,score:sc,
      cap:near?`$BTC closed ${cur===0?'at a new all-time high':`within 3% of its all-time high daily close (${Math.abs(cur).toFixed(1)}% below ${usd(v[athI],0)}, set ${dU(t[athI])})`} (completed daily closes through ${dU(t[N-1])}).`:`$BTC is ${Math.abs(cur).toFixed(1)}% below its all-time high daily close of ${usd(v[athI],0)}, set ${days} days ago.${pb.some(x=>x.dd!=null)?`\n\nPast bear-market lows on this data: ${pb.map(x=>x.l+' '+(x.dd==null?'—':x.dd.toFixed(0)+'%')).join(', ')}.`:''}`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:s.t,yf:v=>v.toFixed(0)+'%',ymax:0,series:[{v:s.dd,c:TH.dn,w:2.6,fill:1}],marks:[{t:s.t.at(-1),v:cur,c:TH.tx,l:cur.toFixed(1)+'%'}]})}});
-   add(()=>{const cyc=HALV.map((h,ci)=>{const i0=t.findIndex(x=>x>=h);if(i0<0)return null;const base=v[i0],dd=[],mm=[];for(let i=i0;i<N&&t[i]<h+1500*DAY;i++){dd.push(Math.round((t[i]-h)/DAY));mm.push(v[i]/base)}return{h,dd,mm,y:new Date(h).getUTCFullYear()}}).filter(Boolean);
+   add(()=>{const cyc=HALV.map((h,ci)=>{const i0=t.findIndex(x=>x>=h);if(i0<0||t[i0]-h>2*DAY)return null;const base=v[i0],dd=[],mm=[];for(let i=i0;i<N&&t[i]<h+1500*DAY;i++){dd.push(Math.round((t[i]-h)/DAY));mm.push(v[i]/base)}return{h,dd,mm,y:new Date(h).getUTCFullYear()}}).filter(Boolean);
     const curC=cyc.at(-1),day=curC.dd.at(-1),now=curC.mm.at(-1);const past=cyc.slice(0,-1).map(c=>{const j=c.dd.findIndex(x=>x>=day);return{y:c.y,m:c.mm[j],pk:c.dd[c.mm.indexOf(Math.max(...c.mm))]}});
     const cols=[TH.mu,TH.vi||TH.ac2,TH.ac2||TH.ac,TH.ac];const allD=[...new Set(cyc.flatMap(c=>c.dd))].sort((a,b)=>a-b);
     return{id:'halv',m:now,title:'Halving cycle overlay',read:`Day ${day} since the ${curC.y} halving · ${now.toFixed(2)}× the halving price`,score:78,
@@ -850,8 +851,8 @@ async function auditSignal(s){const R=[];const live=await liveBTC();
       if(s.id==='2y'){m2=v[N-1]/sma(v,730)[N-1];tol=3;lab='price ÷ 2-year MA';fmt=x=>x.toFixed(3)}
       if(s.id==='dd'){let a=0;v.forEach(x=>a=Math.max(a,x));m2=(v[N-1]/a-1)*100;tol=null;lab='drawdown from ATH';fmt=x=>x.toFixed(1)+'%'}
       if(s.id==='wrsi'){m2=rsi(wkCloses(B).v).at(-1);tol=null;lab='weekly RSI (completed Mon–Sun candles)';fmt=x=>x.toFixed(1)}
-      if(s.id==='halv'){const i0=t.findIndex(x=>x>=HALV[3]);m2=v[N-1]/v[i0];tol=3;lab='multiple since the 2024 halving';fmt=x=>x.toFixed(2)+'×'}
-      const a=s.m;let ok;if(s.id==='dd'||s.id==='wrsi'){const diff=Math.abs(m2-a);ok=diff<=(s.id==='dd'?3:5);R.push([ok?'ok':'bad',`Recomputed ${lab} from Binance's own price history: ${fmt(m2)} vs chart ${fmt(a)} (difference ${diff.toFixed(1)} pts).`])}
+      if(s.id==='halv'){const i0=t.findIndex(x=>x>=HALV[3]);m2=i0<0||t[i0]-HALV[3]>2*DAY?null:v[N-1]/v[i0];tol=3;lab='multiple since the 2024 halving';fmt=x=>x.toFixed(2)+'×'}
+      const a=s.m;let ok;if(m2==null||!isFinite(m2))R.push(['warn',`Comparison history is too short for the ${lab}; no recompute.`]);else if(s.id==='dd'||s.id==='wrsi'){const diff=Math.abs(m2-a);ok=diff<=(s.id==='dd'?3:5);R.push([ok?'ok':'bad',`Recomputed ${lab} from Binance's own price history: ${fmt(m2)} vs chart ${fmt(a)} (difference ${diff.toFixed(1)} pts).`])}
       else{const diff=Math.abs(m2/a-1)*100;ok=diff<=tol;R.push([ok?'ok':'bad',`Recomputed ${lab} from Binance's own price history: ${fmt(m2)} vs chart ${fmt(a)} (${diff.toFixed(1)}% apart).`])}}catch(e){R.push(['warn','Could not fetch Binance history for an independent recompute.'])}}
   if(s.id==='ethbtc'){try{const x=+(await J('https://api.coinbase.com/v2/prices/ETH-BTC/spot')).data.amount,d=Math.abs(x/s.m-1)*100;R.push([d<1.5?'ok':'bad',`ETH/BTC cross-checked on Coinbase: ${x.toFixed(5)} vs chart ${s.m.toFixed(5)} (${d.toFixed(2)}% apart).`])}catch(e){R.push(['warn','Coinbase ETH/BTC unavailable for cross-check.'])}}
   if(s.id==='gold'){try{const [b,g]=await Promise.all([J('https://api.coinbase.com/v2/prices/BTC-USD/spot'),J('https://api.coinbase.com/v2/prices/PAXG-USD/spot')]);const x=+b.data.amount/+g.data.amount,d=Math.abs(x/s.m-1)*100;R.push([d<2?'ok':'bad',`BTC-in-gold cross-checked with Coinbase prices: ${x.toFixed(2)} oz vs chart ${s.m.toFixed(2)} oz (${d.toFixed(2)}% apart).`])}catch(e){R.push(['warn','Coinbase gold price unavailable for cross-check.'])}}
@@ -934,7 +935,7 @@ function rngN(r,iv=CH.iv,N){const d=CH.d;if(rngWhy(r,iv,d))return null;return r=
 function renderRng(){const el=$('#rngs');if(!el)return;el.innerHTML=Object.keys(RNG).map(k=>{const n=rngN(k);return`<button class="pill ${CH.rng===k?'on':''}" data-rng="${k}" ${n==null?`disabled title="${esc(rngWhy(k)||'')}" data-why="${esc(rngWhy(k)||'')}"`:''}>${k}</button>`}).join('');const w=$('#rngWhy');if(w){const g={};Object.keys(RNG).forEach(k=>{const y=rngN(k)==null&&rngWhy(k);if(y&&y!=='loading')(g[y]=g[y]||[]).push(k)});w.textContent=Object.entries(g).map(([y,ks])=>ks.join(', ')+' off: '+y).join(' · ')}}
 function applyRng(){if(!CH.rng||!CH.d)return;const n=rngN(CH.rng);if(n==null){CH.rng=null;return}CH.n=n;const z=$('#zoom');if(z){z.max=Math.max(+z.max,n);z.value=n}}
 function drawChartScreen(){const cv=$('#chart');const ctx=fit(cv,Math.round(Math.min(innerHeight*.62,620)));CH.lay=drawChart(ctx,cv.width,cv.height,CH)}
-async function loadChart(){CH.d=null;drawChartScreen();try{CH.d=await klinesH(chartCoin(),CH.iv);$('#zoom').max=CH.d.c.length;applyRng();renderRng();$('#chSrc').textContent='Data: '+CH.d.src}catch(e){$('#chSrc').textContent='Could not load candles for this coin.'}drawChartScreen()}
+async function loadChart(){const my=CH.seq=(CH.seq||0)+1;CH.d=null;drawChartScreen();try{const d=await klinesH(chartCoin(),CH.iv);if(my!==CH.seq)return;CH.d=d;$('#zoom').max=CH.d.c.length;applyRng();renderRng();$('#chSrc').textContent='Data: '+CH.d.src}catch(e){if(my!==CH.seq)return;$('#chSrc').textContent='Could not load candles for this coin.'}drawChartScreen()}
 // ---------- RENDER: insights
 async function renderInsights(){const box=$('#ins');const res=await Promise.allSettled(S.watch.map(w=>analyze(w)));res.forEach(r=>{if(r.status==='fulfilled')D.ins[r.value.w.id]=r.value});
   box.innerHTML=S.watch.map(w=>{const a=D.ins[w.id];if(!a)return`<div class="card"><h3>${w.sym}</h3><div class="mu">No candle data on Binance for this coin.</div></div>`;
@@ -985,7 +986,7 @@ function usBizDays(lastYmd,now=Date.now()){// US business days after the observa
  while(x<e){x.setUTCDate(x.getUTCDate()+1);const w=x.getUTCDay(),y=x.getUTCFullYear();if(y!==hy){H=usHol(y);hy=y}if(w&&w<6&&!H.has(x.toISOString().slice(0,10)))d++}return d}
 const MAC={M:null,src:'',btc:null,lag:0,chg:'mom',inv:1,cards:[],etfA:'btc'};
 function ser(id,M=MAC.M){const s=M?.series?.[id];if(!s)return null;try{const f=fresh(id,M);if(f.over){STALEM['macro '+id]={age:f.age*24,src:String(s.source||s.src||'FRED').split(/[ (]/)[0],lim:f.bd!=null?null:f.lim*24,...(f.limT?{limT:f.limT}:{})};return null}delete STALEM['macro '+id]}catch(e){}return{t:s.points.map(p=>ymd(p[0])),v:s.points.map(p=>p[1]),s}}
-function fresh(id,M=MAC.M){const s=M?.series?.[id];if(!s)return{st:true,why:'missing from file',age:Infinity};const f=/^Monthly/.test(s.freq)?'Monthly':/^Weekly/.test(s.freq)?'Weekly':'Daily',age=(Date.now()-ymd(s.last_date))/DAY,failed=(M.failed||[]).some(x=>x.id===id),lim=f==='Daily'&&H10.test(id)?10:CAD[f];
+function fresh(id,M=MAC.M){const s=M?.series?.[id];if(!s)return{st:true,why:'missing from file',age:Infinity};if(!s.last_date||!isFinite(ymd(s.last_date))||!s.points?.length)return{st:true,over:true,why:'missing or invalid observation date',age:Infinity,lim:CAD.Daily,f:'Daily',failed:false,last:s.last_date};const f=/^Monthly/.test(s.freq)?'Monthly':/^Weekly/.test(s.freq)?'Weekly':'Daily',age=(Date.now()-ymd(s.last_date))/DAY,failed=(M.failed||[]).some(x=>x.id===id),lim=f==='Daily'&&H10.test(id)?10:CAD[f];
   if(FEDD.ids.includes(id)){const bd=usBizDays(s.last_date),over=bd>FEDD.lim;return{st:failed||over,over,age,lim:FEDD.lim,bd,limT:FEDD.lim+' US business days',f,failed,last:s.last_date,why:failed?'fetch failed on last run, showing previous value':over?`${bd} US business days old (expected ≤ ${FEDD.lim} for daily Fed data)`:''}}
   return{st:failed||age>lim,over:age>lim,age,lim,f,failed,last:s.last_date,why:failed?'fetch failed on last run, showing previous value':age>lim?`${Math.round(age)} days old (expected ≤ ${lim} for ${f.toLowerCase()} data${lim===10?'; Fed H.10 rates publish weekly':''})`:''}}
 const back=(S2,days)=>{const t=S2.t.at(-1)-days*DAY;let i=S2.t.length-1;while(i>0&&S2.t[i]>t)i--;return i};
@@ -1110,7 +1111,7 @@ function renderCal(){const C=NX.cal,el=$('#nxCal');if(!el)return;if(!C){el.inner
 const bizH=(a,b)=>{let h=0;for(let t=a;t<b;t+=36e5){const d=new Date(t).getUTCDay();if(d!==0&&d!==6)h++}return h};
 /* combined BTC+ETH daily total: only dates where BOTH funds have a published (non-pending, finite) total; a pending side is never counted as 0 */
 function etfComb(E){const mp=['btc','eth'].map(a=>new Map((etfStats(E,a)?.days||[]).filter(d=>Number.isFinite(d.total)).map(d=>[d.date,d.total]))),m=new Map();for(const [k,v] of mp[0])if(mp[1].has(k))m.set(k,v+mp[1].get(k));return m}
-function etfStats(E,a){const d=E.datasets[a];if(!d)return null;const days=d.days.filter(x=>!x.pending&&x.total!=null&&Number.isFinite(+x.total)),L=days.at(-1),sum=n=>days.slice(-n).reduce((s,x)=>s+x.total,0);return{d,days,L,s7:sum(7),s30:sum(30),last30:days.slice(-30)}}
+function etfStats(E,a){const d=E.datasets[a];if(!d)return null;const days=d.days.filter(x=>!x.pending&&x.total!=null&&Number.isFinite(+x.total)),L=days.at(-1),sum=n=>days.slice(-n).reduce((s,x)=>s+(+x.total),0);return{d,days,L,s7:sum(7),s30:sum(30),last30:days.slice(-30)}}
 function drawEtf(ctx,W,H,a){const E=NX.etf,st=etfStats(E,a),A=a.toUpperCase(),{u,m}=cardBase(ctx,W,H,`Data: Farside Investors, US$m net daily flows, through ${dU(ymd(st.L.date))} (last trading day)`);const top=m+90*u;
   ctx.fillStyle=TH.tx;ctx.font=FT(54*u);ctx.fillText(`US spot ${A} ETF flows`,m,top+40*u);ctx.fillStyle=TH.ac;ctx.font=F(26*u,600);ctx.fillText(`${fM(st.L.total)} on ${dShort(ymd(st.L.date))} · 7 days ${fM(st.s7)} · 30 days ${fM(st.s30)}`,m,top+84*u);
   const X=m,Y=top+150*u,Wd=W-2*m,Ht=H-Y-m-80*u;watermark(ctx,X,Y,Wd-86*u,Ht,u);const L=st.last30;bars(ctx,X,Y,Wd,Ht,u,{v:L.map(x=>x.total),lab:L.map(x=>dShort(ymd(x.date))),labT:L.map(x=>ymd(x.date)),every:5,yf:v=>(v<0?'-':'')+'$'+Math.abs(v).toFixed(0)+'M'})}
@@ -1192,8 +1193,8 @@ function prepSig(s){const d=SIGD;s.kind='sig';s.fbIn=d?.P?.src==='Coinbase'&&!/^
   s.single=/rainbow|hash|stable/.test(s.id);s.srcS=(s.src||'').split(',')[0].replace(/ daily closes.*/,'')||(/hash/.test(s.id)?'blockchain.com':s.id==='stable'?'DefiLlama':/ethbtc|gold/.test(s.id)?'Binance':(d.P?.src||'blockchain.com'));
   oppScore(s);s.why=s.om?`${cap1(sigSubj(s))} is ${s.fmt(s.om.cur)}, ${s.om.share>50||s.om.sinceDays<60?s.om.pctTxt:s.om.pctTxt+' and '+s.om.sinceTxt}.`:s.read+'.';
   try{s.cap=capFirst({kind:'sig',id:s.id},s)}catch(e){}}
-let SIGP=null;
-function ensureSig(force){if(SIG&&!force)return Promise.resolve(SIG);if(SIGP&&!force)return SIGP;
+let SIGP=null,SIGDAY=null;const utcDay=()=>Math.floor(Date.now()/DAY);
+function ensureSig(force){if(SIGDAY!==utcDay())force=true;if(SIG&&!force)return Promise.resolve(SIG);if(SIGP&&!force)return SIGP;SIGDAY=utcDay();
   SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=await loadSigData();if(nd.P||!SIGD)SIGD=nd}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
 
 // ---------- TODAY briefing
@@ -1207,7 +1208,7 @@ const RULE={
 // C7: one neutral band for funding everywhere (percent per 8h)
 function btcFund(){const DL=DV?.assets?.BTC?.latest;if(DL?.funding!=null)return{f:DL.funding,src:(DV.assets.BTC.funding?.source||'OKX')+' via derivs.json'};const dv=D.ins.bitcoin?.dv;return dv&&dv.f!=null?{f:dv.f,src:(dv.src||'Binance')+' live'+(STALEM['BTC funding']?' (derivs.json stale)':' (derivs.json unavailable)')}:null}
 const FUND_BAND=.01,fundSt=f=>f>FUND_BAND?'Funding positive':f<-FUND_BAND?'Funding negative':'Funding neutral';
-const st30=()=>{const s=SIGD?.ST;if(!s||s.v.length<31)return null;const n=s.v.length;return(s.v[n-1]/s.v[n-31]-1)*100};
+const st30=()=>{const s=SIGD?.ST;if(!s||s.v.length<2)return null;const n=s.v.length,k=Math.floor(s.t[n-1]/DAY)-30,j=s.t.findIndex(x=>Math.floor(x/DAY)===k);return j<0||!s.v[j]?null:(s.v[n-1]/s.v[j]-1)*100};// exact calendar date 30 days earlier, else null
 const etfStale=()=>{try{if(!NX.etf?.last_date)return false;const lt=ymd(NX.etf.last_date)+DAY,bh=bizH(lt,Date.now());if(bh>48){STALEM.etf={age:(Date.now()-lt)/36e5,src:'Farside',lim:48,limT:'48 business-hour'};return true}delete STALEM.etf;return false}catch(e){return false}};
 const etf7=()=>{if(!NX.etf||etfStale())return null;try{const m=etfComb(NX.etf),k=[...m.keys()].sort();return k.length<7?null:k.slice(-7).reduce((s,x)=>s+m.get(x),0)}catch(e){return null}};
 function macDeltas(){const M=MAC.M;if(!M)return null;const o={};try{const G=gm2(M);o.yoy=G?.yoyCC??G?.yoy;o.yoyUSD=G?.yoy;o.m2m=G?mU(G.t.at(-1)):'';const dx=ser('DTWEXBGS',M);if(dx){const j=back(dx,91);o.dxy=dx.v.at(-1);o.dxy3=(o.dxy/dx.v[j]-1)*100}
