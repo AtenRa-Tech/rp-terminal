@@ -15,7 +15,7 @@ const r=await pg.evaluate(()=>{const o={},DAYm=864e5,H=/historically/i;
  const base=(i,N)=>1000*Math.exp(5*i/N)*(1+.45*Math.sin(i/180));
  // B) Hash Ribbons: no-capitulation mood + recovery-cross caption
  {const t=[],v=[];const t0=Date.UTC(2025,8,1);for(let i=0;i<385;i++){t.push(t0+i*DAYm);v.push(i<320?1e9:i<370?.7e9:1.3e9)}
-  const s=sig({H:{t,v}},'hash'),flat=sig({H:{t:t.slice(0,300),v:v.slice(0,300)}},'hash');let mood=null;try{mood=sigFacts(flat).mood}catch(e){mood=String(e)}
+  const s=sig({H:{t,v}},'hash'),flat=sig({H:{t:t.slice(0,300),v:v.slice(0,300)}},'hash');let mood=null;try{const Fh=sigFacts(flat);mood=[Fh.chg,Fh.mood]}catch(e){mood=String(e)}
   o.hash={read:s?.read,cap:s?.cap,err:s?.err,mood}}
  // C) drawdown captions on loaded data: computed 'last N cycle lows (years) ran X% to Y% from the all-time-high daily close'
  {let X=null,caps=[],pc=null;try{X=ddFacts('BTC');pc=pastCycles();caps=X?[...CAPT.dd.simple,...CAPT.dd.analytical,...CAPT.dd.ct].map(f=>f(X)):[]}catch(e){caps=[String(e)]}
@@ -37,7 +37,7 @@ const r=await pg.evaluate(()=>{const o={},DAYm=864e5,H=/historically/i;
   o.alt={line,domOK:A.domOK,domDays:A.domDays,n:A.avail.filter(Boolean).length,dom30:A.L.dom30,x31,domMin:ALT.TH.domMin}}
  return o});
 const nH=x=>typeof x==='string'&&!/historically|looks? fine/i.test(x);
-ok(r.hash.mood==='Above 1.0, no capitulation.',"hash: no-capitulation mood reads 'Above 1.0, no capitulation.'",r.hash.mood);
+ok(Array.isArray(r.hash.mood)&&/above 1\.0, no capitulation/i.test(r.hash.mood.join(' '))&&(r.hash.mood.join(' ').match(/no capitulation/gi)||[]).length===1&&!/look/i.test(r.hash.mood.join(' ')),"hash: no-capitulation state reads 'above 1.0, no capitulation' (once; P1: it replaces the status text)",r.hash.mood);
 ok(/Hash Ribbons cross/.test(r.hash.read||'')&&nH(r.hash.cap)&&!/after miner stress eased/.test(r.hash.cap),"hash: recovery-cross caption drops the 'Historically… miner stress eased' line",r.hash);
 const pc=r.dd.pc||[],lo=pc.length?Math.min(...pc.map(x=>x[1])):null,hi=pc.length?Math.max(...pc.map(x=>x[1])):null;
 ok(pc.length>0&&new RegExp(`^the last \\w+ cycle lows? on loaded history \\(${pc.map(x=>x[0]).join(', ')}\\) ran −${lo}%( to −${hi}%)? from the all-time-high daily close$`).test(r.dd.pastS||''),"drawdown: 'the last N cycle lows (years) ran X% to Y% from the all-time-high daily close' computed from loaded history",r.dd);
