@@ -1338,32 +1338,32 @@ const tidy0=s=>s.replace(/[ \t]+/g,' ').replace(/ +([.,;:])/g,'$1').replace(/([^
 const CAPT={
 vol:{simple:[
  F=>!F.rare?'':`${F.A}'s daily closes on Binance are the ${F.lo?'quietest':'wildest'} ${F.recordAll?'on record':'since '+F.sinceY}. ${F.n}-day close-to-close volatility is ${F.val}. Historically, ${F.lo?"compression this tight hasn't lasted long, but it doesn't tell you which way it breaks":'spikes like this have tended to cluster before they fade'}.`,
- F=>`${F.n}-day volatility on ${F.A} (Binance closes) is ${F.val}, ${F.since}. ${F.lo?'Historically, quiet stretches like this have not stayed quiet for long.':'Historically, volatility this high has come in clusters.'}`,
+ F=>`${F.n}-day volatility on ${F.A} (Binance closes) is ${F.val}, ${F.since||F.pos}. ${F.lo?'Historically, quiet stretches like this have not stayed quiet for long.':'Historically, volatility this high has come in clusters.'}`,
  F=>`${F.val} is ${F.A}'s ${F.n}-day realized volatility on Binance closes, ${F.pos}. ${F.lo?'Low volatility says nothing about direction.':'High volatility says nothing about direction either.'}`,
- F=>`${F.A} ${F.n}-day volatility: ${F.val} (Binance closes through ${F.date}). That's ${F.since}.`],
+ F=>`${F.A} ${F.n}-day volatility: ${F.val} (Binance closes through ${F.date}). That's ${F.since||F.pos}.`],
 analytical:[
  F=>`${F.A} ${F.n}D realized volatility is ${F.val} (Binance close-to-close, annualized, through ${F.date}). That is ${PS(F.pos,F.since)}. ${F.note}`,
- F=>`${F.val} ${F.n}-day realized vol for ${F.A}, ${F.z}. ${cap1(F.since)}. ${F.lo?'Historically, regimes like this have ended with a larger move, direction unknown.':'Historically, high-volatility regimes have lasted weeks rather than days.'} Source: ${F.src}.`,
+ F=>`${F.val} ${F.n}-day realized vol for ${F.A}, ${F.z}. ${cap1(F.since||F.pos)}. ${F.lo?'Historically, regimes like this have ended with a larger move, direction unknown.':'Historically, high-volatility regimes have lasted weeks rather than days.'} Source: ${F.src}.`,
  F=>`${F.A} ${F.n}D vol on Binance closes: ${F.val}. Percentile: ${F.pos}. Last comparable reading: ${F.sinceD||'none in the data'}.`,
- F=>`${F.val} on ${F.A} ${F.n}-day realized volatility (Binance closes, ${F.date}), ${F.since}. ${F.lo?'Compression is a condition, not a signal.':'Expansion is a condition, not a signal.'} ${F.note}`],
+ F=>`${F.val} on ${F.A} ${F.n}-day realized volatility (Binance closes, ${F.date}), ${F.since||F.pos}. ${F.lo?'Compression is a condition, not a signal.':'Expansion is a condition, not a signal.'} ${F.note}`],
 ct:[
- F=>`${F.A} ${F.n}D vol ${F.val} on Binance closes. ${cap1(F.since)}. ${F.lo?'Coiled.':'Messy.'}`,
+ F=>`${F.A} ${F.n}D vol ${F.val} on Binance closes. ${cap1(F.since||F.pos)}. ${F.lo?'Coiled.':'Messy.'}`,
  F=>`${F.val} ${F.n}D realized on ${F.tk} (Binance). ${F.lo?'Range traders happy, breakout traders waiting.':'Both sides getting run.'}`,
- F=>`${F.A} vol ${F.lo?'asleep':'wide awake'}: ${F.val} over ${F.n} days on Binance closes, ${F.since}.`,
+ F=>`${F.A} vol ${F.lo?'asleep':'wide awake'}: ${F.val} over ${F.n} days on Binance closes, ${F.since||F.pos}.`,
  F=>`${F.n}D vol, ${F.A} (Binance): ${F.val}. ${cap1(F.pos)}. ${F.lo?'Tight.':'Loud.'}`]},
 level:{simple:[
- F=>`${cap1(F.subj)} is ${F.val}, ${F.since}. ${F.note}`,
+ F=>`${cap1(F.subj)} is ${F.val}, ${F.since||F.pos}. ${F.note}`,
  F=>`${F.val} on ${F.subj}, ${F.pos}.`,
- F=>`${cap1(F.subj)} is at ${F.val} (data through ${F.date}). That's ${F.since}.`,
+ F=>`${cap1(F.subj)} is at ${F.val} (data through ${F.date}). That's ${F.since||F.pos}.`,
  F=>`${cap1(F.subj)}: ${F.val}. ${cap1(F.pos)}. ${F.note}`],
 analytical:[
  F=>`${cap1(F.subj)}: ${F.val} (${F.date}), ${F.pos}, ${F.z}. ${F.note}`,
- F=>`${cap1(F.subj)} at ${F.val} is ${F.since}. ${F.note} Source: ${F.src}.`,
+ F=>`${cap1(F.subj)} at ${F.val} is ${F.since||F.pos}. ${F.note} Source: ${F.src}.`,
  F=>`${F.val} on ${F.subj}. ${cap1(F.z)}; ${F.pos}. ${F.note}`,
  F=>`Reading: ${F.subj} = ${F.val} through ${F.date} UTC. Context: ${PS(F.pos,F.since,'; ')}.`],
 ct:[
- F=>`${cap1(F.subj)} ${F.val}. ${cap1(F.since)}.`,
- F=>`${F.val} on ${F.subj}. ${cap1(F.since)}.`,
+ F=>`${cap1(F.subj)} ${F.val}. ${cap1(F.since||F.pos)}.`,
+ F=>`${F.val} on ${F.subj}. ${cap1(F.since||F.pos)}.`,
  F=>F.share>=40||!F.from?'':`${F.val}: ${F.subj}, ${F.share<=10?(F.lo?'deep in the low end':'up in the high end'):(F.lo?'in the lower part':'in the upper part')} of its range since ${F.from}.`,
  F=>`${cap1(F.subj)}: ${F.val}. ${cap1(F.pos)}. Noted.`]},
 flows:{simple:[
@@ -1382,7 +1382,7 @@ ct:[
  F=>`${F.subjS}: ${F.now}${F.chg2?', '+F.chg2:''}. ${F.mood}`,
  F=>`${F.now} on ${F.subjL}, ${F.chg}. ${F.mood}`]},
 macro:{simple:[
- F=>`${cap1(F.subj)} is ${F.now}${F.chg?', '+F.chg:''}.${F.pos?` That's ${PS(F.pos,F.since,', ')}.`:''}`,
+ F=>`${cap1(F.subj)} is ${F.now}${F.chg?', '+F.chg:''}.${F.pos?` That's ${F.pos}${F.since&&F.since!==F.pos?', '+F.since:''}.`:''}`,
  F=>`${F.now}: ${F.subjL}${F.chg?` (${F.chg})`:''}. ${F.mood}`,
  F=>`${cap1(F.subj)}: ${F.now}${F.chg?', '+F.chg:''}. Data through ${F.date}.`,
  F=>`${cap1(F.subjL)} at ${F.now}${F.chg?', '+F.chg:''}. ${F.caveat}`],
@@ -1473,7 +1473,7 @@ ct:[
  F=>`${F.b90} of the top 50 coins trading on Binance/OKX beating BTC on 90d. ${F.moodA}`]}};
 const FDEF={titleS:'',lead:'',run:'',view:'',recordAll:false,sinceY:'',dd:'',ath:'',athD:'',past:'',pastList:'',cmp:'',cmpS:'',cmpCT:'',px:'',closeD:'',days:'',per:'',ret:'',rank:'',rankA:'',mtdTxt:'',p0:'',p1:'',prevPer:'',prevRet:'',moodP:'',state:'',b90:'',b30:'',eb:'',eb30:'',dma:'',liqS:'',def:'',moodA:'',open:false,share:50,from:'',A:'',tk:'',subj:'',subjS:'',subjL:'',subjTk:'',val:'',now:'',chg:'',chg2:'',pos:'',since:'',sinceD:'',z:'',note:'',caveat:'',mood:'',src:'',date:'',ctx:'',ctx2:'',n:'',yrs:5,lo:false,title:'',link:'',outlets:'',allSrc:'',desc1:'',short:'',hit:'',age:'',nOut:0,usdt:'',btc:'',btcU:'',fx:''};
 function sigFacts(s){const m=s.om,A=s.asset==='USD'?'BTC':(s.asset||'BTC'),fam=/^rv/.test(s.id)?'vol':s.id==='stable'?'flows':/hash|halv/.test(s.id)?'macro':'level',note=/^rv/.test(s.id)?(m&&m.side==='lo'?'Low volatility says nothing about direction.':'High volatility tends to cluster.'):(SIGT[s.id]||['',''])[1];
-  const F={...FDEF,fam,label:s.title,A,tk:'$'+A,subj:sigSubj(s),note,val:m&&s.fmt?s.fmt(m.cur):s.read.split(' · ')[0],pos:m?m.pctTxt:'',since:m?(m.sinceDays>=60?m.sinceTxt:m.pctTxt):'',sinceD:m&&m.since&&m.sinceDays>=60?dU(m.since):'',yrs:m?.yrs||5,lo:m?.side==='lo',share:m?m.share:50,z:m?`${Math.abs(m.z).toFixed(1)}σ ${m.z>=0?'above':'below'} its median since ${m.from}`:'',from:m?.from||'',date:dShort(s.lastT||Date.now()),src:s.srcS||'Binance',n:s.n||''};
+  const F={...FDEF,fam,label:s.title,A,tk:'$'+A,subj:sigSubj(s),note,val:m&&s.fmt?s.fmt(m.cur):s.read.split(' · ')[0],pos:m?m.pctTxt:'',since:m?(m.sinceDays>=60?m.sinceTxt:''):'',sinceD:m&&m.since&&m.sinceDays>=60?dU(m.since):'',yrs:m?.yrs||5,lo:m?.side==='lo',share:m?m.share:50,z:m?`${Math.abs(m.z).toFixed(1)}σ ${m.z>=0?'above':'below'} its median since ${m.from}`:'',from:m?.from||'',date:dShort(s.lastT||Date.now()),src:s.srcS||'Binance',n:s.n||''};
   F.open=isOpenT(s.lastT)&&!/^rv/.test(s.id);F.rare=!!(m&&(m.sinceDays>=365||!m.since));F.recordAll=!!(m&&!m.since);F.sinceY=m&&m.since?(m.sinceDays>=730?String(new Date(m.since).getUTCFullYear()):mU(m.since)):'';
   if(s.id==='dd'){const X=ddFacts('BTC');if(X&&X.fam)return{...X,label:s.title}}
   if(s.id==='ethbtc'){const E=SIGD.EB,c=(E.v.at(-1)/E.v[back(E,30)]-1)*100;F.note=`${pct(c,1)} over 30 days.`}
