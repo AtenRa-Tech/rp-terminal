@@ -21,7 +21,9 @@ const out=await pg.evaluate(async()=>{const res=[];
       const hd=AXLOG.find(x=>x.fn==='chartHdr'),rs=AXLOG.find(x=>x.fn==='rsiHdr'),md=AXLOG.find(x=>x.fn==='macdHdr');window.AXLOG=null;const st=lay.st,ec=hd.emaIdx;
       const span=d.t[N-1]+ms-d.t[st],want=r==='ALL'?span:RNG[r]*864e5;
       const e=ends(hd.data,d.t[N-1]);const vis=d.t[ec]+(iv==='1w'?6*864e5:/m|h/.test(iv)?ms:0)-d.t[st];
-      const dataOK=!!e&&Math.abs(e.a-d.t[st])<=.05*vis&&Math.abs(e.b-(d.t[ec]+(iv==='1w'?6*864e5:/m|h/.test(iv)?ms:0)))<=.05*vis;
+      // forming-candle rule (approved 7 Oct): while the last candle is open the Data line reads 'through <date of the forming candle> (forming)'
+      const fm=/\(forming\)/.test(hd.data||''),endX=fm&&iv!=='1w'?Math.floor(d.t[N-1]/864e5)*864e5:d.t[ec]+(iv==='1w'?6*864e5:/m|h/.test(iv)?ms:0);
+      const dataOK=!!e&&Math.abs(e.a-d.t[st])<=.05*vis&&Math.abs(e.b-endX)<=.05*vis;
       // captions
       CAPCTX=null;NEWSPICK=null;document.querySelector('#stType').value='chart';const F=capFacts({kind:'studio',t:'chart'});const caps=[];for(const [stl] of STY){(CAPT[F.fam][stl]||[]).forEach(fn=>{try{caps.push(String(tidy(fn(F))))}catch(x){}});try{const pk=capPick(F,stl,-1,()=>.5);caps.push(typeof pk==='string'?pk:JSON.stringify(pk))}catch(x){}}
       const capBad=caps.filter(c=>{const q=ends(c,d.t[N-1]);if(!q)return true;const v2=F.range.t1-F.range.t0;return Math.abs(q.a-d.t[st])>.05*v2||Math.abs(q.b-F.range.t1)>.05*v2});
