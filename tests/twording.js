@@ -2,8 +2,8 @@
 // or the sweep's own ban list, so it fails on b479fff-era code and passes on the fix. URL=... node tests/twording.js
 const p=require('puppeteer-core'),fs=require('fs'),path=require('path');const URL=process.env.URL||'http://localhost:8765/index.html';
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,700):''));if(!c)F.push(n)};
-// A) the caption sweep's own ban list bans 'look(s) fine' and 'Historically' outright
-{const src=fs.readFileSync(process.env.SWEEP||path.join(__dirname,'..','qa','caption-sweep.js'),'utf8'),m=src.match(/const BANNED=(\[.*?\]);/);let B=[];try{B=eval(m[1])}catch(e){}
+// A) the caption sweep's ban list (built from shared/banned-words.json) bans 'look(s) fine' and 'Historically' outright
+{const SWP=process.env.SWEEP||path.join(__dirname,'..','qa','caption-sweep.js'),src=fs.readFileSync(SWP,'utf8');let B=[];try{const __dirname=path.dirname(SWP);eval(src.split('\n').filter(l=>/^const (BW|BANNED)=/.test(l)).join('\n')+'\nB=BANNED;')}catch(e){}
  const hit=t=>B.some(re=>re.test(t));ok(hit('Miners look fine.')&&hit('Miners looks fine')&&hit('Historically, readings this low.')&&hit('historically'),"sweep: bans 'look(s) fine' and 'Historically'",B.map(String).slice(0,4))}
 (async()=>{const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915});
 const errs=[];pg.on('pageerror',e=>errs.push(e.message));
