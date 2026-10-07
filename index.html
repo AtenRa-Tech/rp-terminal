@@ -356,16 +356,20 @@ function athOf(id){const c=D.cc[id],p=c?.last;if(!c||!p)return null;// C: last c
 async function loadFng(){try{const r=await J('https://api.alternative.me/fng/?limit=31',600000);D.fng=r.data.map(x=>({v:+x.value,c:x.value_classification,t:x.timestamp*1000})).reverse()}catch(e){}}
 async function loadTrend(){try{const r=await J(CG+'/search/trending',600000);D.trend=r.coins.slice(0,7).map(c=>c.item);D.trendAt=Date.now()}catch(e){D.trend=[];D.trendAt=null}}
 const IVS={'15m':{cg:1},'1h':{cg:7},'4h':{cg:30},'1d':{cg:365},'1w':{cg:'max'}};
+// #3 candle validation: drop rows with a non-finite or non-positive O/H/L/C, high below low, or a timestamp that is not after the previous one
+function kClean(k){if(!k?.t)return k;const keep=[];let last=-Infinity;for(let i=0;i<k.t.length;i++){const t=k.t[i],o=k.o[i],h=k.h[i],l=k.l[i],c=k.c[i];
+  if(!isFinite(t)||!(t>last)||![o,h,l,c].every(x=>isFinite(x)&&x>0)||h<l||h<Math.max(o,c)*0.999999||l>Math.min(o,c)*1.000001)continue;keep.push(i);last=t}
+  if(keep.length===k.t.length)return k;const o={...k,dropped:k.t.length-keep.length};for(const f of ['t','o','h','l','c','v'])if(Array.isArray(k[f]))o[f]=keep.map(i=>k[f][i]);return o}
 async function klines(c,iv,limit=500){
   const key=c.id+iv+limit;if(D.kl[key]&&Date.now()-D.kl[key].t<60000)return D.kl[key].v;
   const sym=c.sym.toUpperCase()+'USDT',q=`/api/v3/klines?symbol=${sym}&interval=${iv}&limit=${limit}`;
   const conv=(r,src)=>({t:r.map(x=>+x[0]),o:r.map(x=>+x[1]),h:r.map(x=>+x[2]),l:r.map(x=>+x[3]),c:r.map(x=>+x[4]),v:r.map(x=>+x[5]),src,pair:c.sym.toUpperCase()+'/USDT'});
-  const v=await first(
+  let v=await first(
     async()=>conv(await J('https://data-api.binance.vision'+q),'Binance'),
     async()=>conv(await J('https://api.binance.com'+q),'Binance'),
     async()=>{/* CoinGecko OHLC granularity is fixed by `days` (1-2: 30m, 3-30: 4h, 31+: 4d), so it is a valid fallback only for 4h; its timestamps are candle CLOSE times; it has no volume */
       if(iv!=='4h')throw new Error(`CoinGecko OHLC has no ${iv} candles`);const r=await J(`${CG}/coins/${c.id}/ohlc?vs_currency=usd&days=30`),H4=4*36e5;return{t:r.map(x=>x[0]-H4),o:r.map(x=>x[1]),h:r.map(x=>x[2]),l:r.map(x=>x[3]),c:r.map(x=>x[4]),v:r.map(()=>null),noVol:true,src:'CoinGecko',pair:c.sym.toUpperCase()+'/USD'}});
-  D.kl[key]={t:Date.now(),v};return v}
+  v=kClean(v);D.kl[key]={t:Date.now(),v};return v}
 // chart history: up to KLP pages of 1000 Binance candles (paged back with endTime) so range buttons show what they say;
 // 'complete' = the exchange returned fewer than asked, i.e. the pair's whole history is loaded (ALL is only offered then)
 const KLP=3;
@@ -376,7 +380,7 @@ async function klinesH(c,iv){const key=c.id+iv+'H';if(D.kl[key]&&Date.now()-D.kl
   let v;try{const a=await page(null);v={...a,src:'Binance',pair,complete:a.t.length<1000,pages:1};
     for(let pg=1;pg<KLP&&!v.complete;pg++){let b;try{b=await page(v.t[0]-1)}catch(e){break}if(!b.t.length){v.complete=true;break}for(const k of ['t','o','h','l','c','v'])v[k]=b[k].concat(v[k]);v.pages++;if(b.t.length<1000)v.complete=true}}
   catch(e){v=await klines(c,iv,1000);v={...v,complete:false,pages:1}}
-  D.kl[key]={t:Date.now(),v};return v}
+  v=kClean(v);D.kl[key]={t:Date.now(),v};return v}
 async function deriv(sym){sym=sym.toUpperCase();
   return first(async()=>{const [p,o]=await Promise.all([J(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`),J(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${sym}USDT`)]);if(sym==='BTC')D.fb.deriv=null;return{f:+p.lastFundingRate,oi:+o.openInterest*+p.markPrice,src:'Binance'}},
    async()=>{const [f,o]=await Promise.all([J(`https://www.okx.com/api/v5/public/funding-rate?instId=${sym}-USDT-SWAP`),J(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${sym}-USDT-SWAP`)]);if(!f.data?.length)throw 0;if(sym==='BTC')D.fb.deriv={fail:'Binance futures',use:'OKX',what:'live funding/OI'};return{f:+f.data[0].fundingRate,oi:+o.data[0].oiUsd,src:'OKX'}}).catch(()=>{if(sym==='BTC')D.fb.deriv={fail:'Binance futures and OKX',use:null,what:'live funding/OI'};return null})}
@@ -595,7 +599,7 @@ async function bnDaily(sym,pages=1){try{return await bnDaily0(sym,pages)}catch(e
 async function bnDaily0(sym,pages=1){let out=[],end=Date.now();for(let p=0;p<pages;p++){const r=await first(()=>J(`https://data-api.binance.vision/api/v3/klines?symbol=${sym}&interval=1d&limit=1000&endTime=${end}`,600000),()=>J(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=1000&endTime=${end}`,600000));if(!r.length)break;out=r.concat(out);end=r[0][0]-1;if(r.length<1000)break}if(!out.length)throw new Error('Binance empty '+sym);return{t:out.map(x=>+x[0]),v:out.map(x=>+x[4]),src:'Binance'}}
 async function loadSigData(){
   const [px,hr,eb,pg,bt,st,cb,ce,cl]=await Promise.allSettled([
-    first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>({...(await bnDaily('BTCUSDT',4)),src:'Binance'})),
+    first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>await bnDaily('BTCUSDT',4)),
     J('https://api.blockchain.info/charts/hash-rate?timespan=3years&format=json&cors=true&sampled=false',3600000),
     bnDaily('ETHBTC',2),bnDaily('PAXGUSDT',2),bnDaily('BTCUSDT',2),
     J('https://stablecoins.llama.fi/stablecoincharts/all',3600000),bnDaily('BTCUSDT',4),bnDaily('ETHUSDT',4),bnDaily('LINKUSDT',3)]);
@@ -603,6 +607,9 @@ async function loadSigData(){
   if(P0&&P0.src!=='blockchain.com')fs.push({fail:'blockchain.com',use:P0.src,what:'BTC price history'});if(!P0)fs.push({fail:'blockchain.com, Binance and Coinbase',use:null,what:'BTC price history'});if(!g(hr))fs.push({fail:'blockchain.com',use:null,what:'hashrate'});
   let stv=g(st)?{t:g(st).map(p=>+p.date*1000),v:g(st).map(p=>p.totalCirculatingUSD.peggedUSD),src:'DefiLlama'}:null;if(!stv){try{const mk=await ensureMK();if(mk?.stablecoins?.points?.length){stv={t:mk.stablecoins.points.map(p=>ymd(p[0])),v:mk.stablecoins.points.map(p=>p[1]),src:'market.json'};fs.push({fail:'DefiLlama',use:'market.json',what:'stablecoin supply'})}else fs.push({fail:'DefiLlama',use:null,what:'stablecoin supply'})}catch(e){}}// RULE 2: completed UTC days only; live prices appear only on tiles labelled "live HH:MM UTC"
   const H=g(hr);return{P,H:H?closed({t:H.values.map(p=>p.x*1000),v:H.values.map(p=>p.y)}):null,EB:(g(ce)&&g(cb))?closed(alignR(g(ce),g(cb))):closed(g(eb)),PG:closed(g(pg)),BT:closed(g(bt)),ST:stv?{...closed(stv),src:stv.src}:null,CL:{BTC:closed(g(cb)),ETH:closed(g(ce)),LINK:closed(g(cl))}}}
+// #24 partial source recovery: each dataset that came back fresh replaces the old one; only a failed dataset keeps its previous copy
+// (before: a failed long-term BTC source threw away every fresh coin history too)
+function mergeSig(nd,old){if(!old)return nd;const o={...nd};for(const k of ['P','H','EB','PG','BT','ST'])if(!o[k]&&old[k])o[k]={...old[k],kept:true};o.CL={...(old.CL||{})};for(const k in (nd.CL||{}))if(nd.CL[k])o.CL[k]=nd.CL[k];return o}
 function closed(s){if(!s||!s.t)return s||null;let n=s.t.length;while(n&&s.t[n-1]+DAY>Date.now())n--;return n===s.t.length?s:{...s,t:s.t.slice(0,n),v:s.v.slice(0,n)}}
 // forming-candle rule: readings, scores and POST NOW use the last CLOSED daily candle, whatever the caller passes in
 function closedSet(d){if(!d)return d;const o={...d};for(const k of ['P','H','EB','PG','BT','ST'])if(o[k]?.t)o[k]=closed(o[k]);if(d.CL){o.CL={};for(const k in d.CL)o.CL[k]=d.CL[k]?.t?closed(d.CL[k]):d.CL[k]}return o}
@@ -870,17 +877,32 @@ async function auditSignal(s){const R=[];const live=await liveBTC();
   else R.push(['warn','Could not reach enough exchanges to cross-check the live price.']);
   const P=SIGD?.P;if(P){const age=(Date.now()-P.t.at(-1)-DAY)/DAY;R.push([age<1.5?'ok':'warn',`Price history is fresh: last completed daily close ${dU(P.t.at(-1))}, ${age.toFixed(1)} days ago (${P.src}).`])}
   const ind={pi:1,mayer:1,'2y':1,dd:1,wrsi:1,halv:1};
-  if(ind[s.id]){try{const B=closed(await bnDaily('BTCUSDT',4));const v=B.v,t=B.t,N=v.length;let m2,tol,lab,fmt=x=>x.toFixed(3);
-      if(s.id==='pi'){m2=sma(v,111)[N-1]/(2*sma(v,350)[N-1]);tol=3;lab='111DMA ÷ 2×350DMA'}
-      if(s.id==='mayer'){m2=v[N-1]/sma(v,200)[N-1];tol=3;lab='Mayer Multiple';fmt=x=>x.toFixed(2)+'×'}
-      if(s.id==='2y'){m2=v[N-1]/sma(v,730)[N-1];tol=3;lab='price ÷ 2-year MA';fmt=x=>x.toFixed(3)}
-      if(s.id==='dd'){let a=0;v.forEach(x=>a=Math.max(a,x));m2=(v[N-1]/a-1)*100;tol=null;lab='drawdown from ATH';fmt=x=>x.toFixed(1)+'%'}
-      if(s.id==='wrsi'){m2=rsi(wkCloses(B).v).at(-1);tol=null;lab='weekly RSI (completed Mon–Sun candles)';fmt=x=>x.toFixed(1)}
-      if(s.id==='halv'){const i0=t.findIndex(x=>x>=HALV[3]);m2=i0<0||t[i0]-HALV[3]>2*DAY?null:v[N-1]/v[i0];tol=3;lab='multiple since the 2024 halving';fmt=x=>x.toFixed(2)+'×'}
-      const a=s.m;let ok;if(m2==null||!isFinite(m2))R.push(['warn',`Comparison history is too short for the ${lab}; no recompute.`]);else if(s.id==='dd'||s.id==='wrsi'){const diff=Math.abs(m2-a);ok=diff<=(s.id==='dd'?3:5);R.push([ok?'ok':'bad',`Recomputed ${lab} from Binance's own price history: ${fmt(m2)} vs chart ${fmt(a)} (difference ${diff.toFixed(1)} pts).`])}
-      else{const diff=Math.abs(m2/a-1)*100;ok=diff<=tol;R.push([ok?'ok':'bad',`Recomputed ${lab} from Binance's own price history: ${fmt(m2)} vs chart ${fmt(a)} (${diff.toFixed(1)}% apart).`])}}catch(e){R.push(['warn','Could not fetch Binance history for an independent recompute.'])}}
-  if(s.id==='ethbtc'){try{const x=+(await J('https://api.coinbase.com/v2/prices/ETH-BTC/spot')).data.amount,d=Math.abs(x/s.m-1)*100;R.push([d<1.5?'ok':'bad',`ETH/BTC cross-checked on Coinbase: ${x.toFixed(5)} vs chart ${s.m.toFixed(5)} (${d.toFixed(2)}% apart).`])}catch(e){R.push(['warn','Coinbase ETH/BTC unavailable for cross-check.'])}}
-  if(s.id==='gold'){try{const [b,g]=await Promise.all([J('https://api.coinbase.com/v2/prices/BTC-USD/spot'),J('https://api.coinbase.com/v2/prices/PAXG-USD/spot')]);const x=+b.data.amount/+g.data.amount,d=Math.abs(x/s.m-1)*100;R.push([d<2?'ok':'bad',`BTC-in-gold cross-checked with Coinbase prices: ${x.toFixed(2)} oz vs chart ${s.m.toFixed(2)} oz (${d.toFixed(2)}% apart).`])}catch(e){R.push(['warn','Coinbase gold price unavailable for cross-check.'])}}
+  // #25 independent: the recompute comes from a provider OTHER than the one behind the chart (Coinbase when the chart is on Binance, else Binance);
+  // a same-provider recompute is labelled as an arithmetic check only. #26: both sides end on the chart's last closed date.
+  // #27: each indicator states the history it needs; too little history gives a clear warning and no recompute.
+  if(ind[s.id]){const PS=(SIGD?.P?.src||'')+(s.id==='mayer'||s.id==='2y'||s.id==='dd'?'|'+(SIGD?.CL?.BTC?.src||'Binance'):''),CS=(s.id==='mayer'||s.id==='2y'||s.id==='dd')&&SIGD?.CL?.BTC?.v?.length>800?SIGD.CL.BTC:SIGD?.P,cd=CS?.t?.at(-1);
+    const aT=s.id==='dd'&&CS?CS.t[CS.v.indexOf(Math.max(...CS.v))]:null,days=Math.min(3000,{pi:400,mayer:260,'2y':800,wrsi:160,halv:Math.ceil((Date.now()-HALV[3])/DAY)+10,dd:aT?Math.ceil((Date.now()-aT)/DAY)+10:1500}[s.id]);
+    try{const useCB=/Binance/.test(PS),B0=closed(useCB?await cbDaily('BTCUSDT',days):await bnDaily('BTCUSDT',Math.max(1,Math.ceil(days/1000)))),src=B0.src||(useCB?'Coinbase':'Binance'),indep=!PS.includes(src);
+      const n0=cd?B0.t.findIndex(x=>x>cd):-1,B=n0<0?B0:{...B0,t:B0.t.slice(0,n0),v:B0.v.slice(0,n0)},v=B.v,t=B.t,N=v.length,endD=N?dU(t[N-1]):'—';
+      const need={pi:350,mayer:200,'2y':730,dd:0,wrsi:15*7+7,halv:0}[s.id];let m2=null,tol,lab,fmt=x=>x.toFixed(3),short=null;
+      if(s.id==='pi'){lab='111DMA ÷ 2×350DMA';tol=3}if(s.id==='mayer'){lab='Mayer Multiple';tol=3;fmt=x=>x.toFixed(2)+'×'}if(s.id==='2y'){lab='price ÷ 2-year MA';tol=3}
+      if(s.id==='dd'){lab='drawdown from ATH';fmt=x=>x.toFixed(1)+'%'}if(s.id==='wrsi'){lab='weekly RSI (completed Mon–Sun candles)';fmt=x=>x.toFixed(1)}if(s.id==='halv'){lab='multiple since the 2024 halving';tol=3;fmt=x=>x.toFixed(2)+'×'}
+      if(cd&&(!N||t[N-1]!==cd))short=`its last close is ${endD}, the chart's is ${dU(cd)}`;
+      else if(N<need)short=`${N} daily closes, the ${lab} needs ${need}`;
+      else if(s.id==='dd'){if(aT!=null&&t[0]>aT)short=`it starts ${dU(t[0])}, after the all-time-high close (${dU(aT)})`;else{let a=0;v.forEach(x=>a=Math.max(a,x));m2=(v[N-1]/a-1)*100}}
+      else if(s.id==='halv'){const i0=t.findIndex(x=>x>=HALV[3]);if(i0<0||t[i0]-HALV[3]>2*DAY)short=`it does not reach back to the 2024 halving`;else m2=v[N-1]/v[i0]}
+      else if(s.id==='wrsi'){const W=wkCloses(B);if(!W||W.v.length<15)short=`${W?W.v.length:0} completed weeks, weekly RSI needs 15`;else m2=rsi(W.v).at(-1)}
+      else{if(s.id==='pi')m2=sma(v,111)[N-1]/(2*sma(v,350)[N-1]);if(s.id==='mayer')m2=v[N-1]/sma(v,200)[N-1];if(s.id==='2y')m2=v[N-1]/sma(v,730)[N-1]}
+      const a=s.m,who=indep?`${src} (independent of the chart's ${PS.split('|')[0]||'source'})`:`${src}, the same provider as the chart (arithmetic check, not independent)`;
+      if(short)R.push(['warn',`Comparison history from ${src} is too short for an audit: ${short}. No recompute.`]);
+      else if(m2==null||!isFinite(m2))R.push(['warn',`Recompute from ${src} gave no valid ${lab}; no comparison.`]);
+      else{const pts=s.id==='dd'||s.id==='wrsi',diff=pts?Math.abs(m2-a):Math.abs(m2/a-1)*100,ok=diff<=(pts?(s.id==='dd'?3:5):tol);
+        R.push([ok?(indep?'ok':'info'):'bad',`Recomputed ${lab} from ${who}, closes through ${endD}: ${fmt(m2)} vs chart ${fmt(a)} (${pts?'difference '+diff.toFixed(1)+' pts':diff.toFixed(1)+'% apart'}).`])}}
+    catch(e){R.push(['warn','Could not fetch a second provider\'s history for an independent recompute.'])}}
+  // #26 audit date alignment: ETH/BTC and BTC-in-gold are checked against Coinbase DAILY CLOSES on the chart's last closed date, not live quotes
+  const cbAt=(S,d)=>{const i=S.t.indexOf(d);return i<0?null:S.v[i]};
+  if(s.id==='ethbtc'){try{const E=SIGD?.EB,d=E?.t?.at(-1),C=await cbDaily('ETHBTC',60),x=d!=null?cbAt(C,d):null;if(x==null)R.push(['warn',`Coinbase has no ETH/BTC daily close for ${d?dU(d):'the chart date'}; no comparison.`]);else{const dd=Math.abs(x/s.m-1)*100;R.push([dd<1.5?'ok':'bad',`ETH/BTC cross-checked on Coinbase's ${dU(d)} close: ${x.toFixed(5)} vs chart ${s.m.toFixed(5)} (${dd.toFixed(2)}% apart).`])}}catch(e){R.push(['warn','Coinbase ETH/BTC closes unavailable for cross-check.'])}}
+  if(s.id==='gold'){try{const G=SIGD?.PG,d=G?.t?.at(-1),[b,g]=await Promise.all([cbDaily('BTCUSDT',60),cbDaily('PAXGUSDT',60)]),xb=d!=null?cbAt(b,d):null,xg=d!=null?cbAt(g,d):null;if(xb==null||xg==null)R.push(['warn',`Coinbase has no BTC and PAXG daily closes for ${d?dU(d):'the chart date'}; no comparison.`]);else{const x=xb/xg,dd=Math.abs(x/s.m-1)*100;R.push([dd<2?'ok':'bad',`BTC-in-gold cross-checked with Coinbase's ${dU(d)} closes: ${x.toFixed(2)} oz vs chart ${s.m.toFixed(2)} oz (${dd.toFixed(2)}% apart).`])}}catch(e){R.push(['warn','Coinbase gold closes unavailable for cross-check.'])}}
   if(/^rv|^linkbtc/.test(s.id)){R.push(['ok',`Uses completed UTC days only (through ${dU(s.closed)}), so the number won't change after you post.`]);
     try{const cb=async p=>{const r=await J(`https://api.exchange.coinbase.com/products/${p}/candles?granularity=86400`,600000);const x=r.filter(k=>k[0]*1000<=s.closed).sort((a,b)=>a[0]-b[0]);return{t:x.map(k=>k[0]*1000),v:x.map(k=>k[4])}};
       if(s.id==='linkbtc'){const [l,b]=await Promise.all([cb('LINK-USD'),cb('BTC-USD')]);const r=alignR(l,b),m2=(r.v.at(-1)/r.v.at(-31)-1)*100,d=Math.abs(m2-s.m);R.push([d<=2?'ok':'bad',`Recomputed from Coinbase closes: ${m2.toFixed(1)}% vs chart ${s.m.toFixed(1)}% (difference ${d.toFixed(1)} pts).`])}
@@ -964,6 +986,9 @@ function rngN(r,iv=CH.iv,N){const d=CH.d;if(rngWhy(r,iv,d))return null;return r=
 function renderRng(){const el=$('#rngs');if(!el)return;el.innerHTML=Object.keys(RNG).map(k=>{const n=rngN(k);return`<button class="pill ${CH.rng===k?'on':''}" data-rng="${k}" ${n==null?`disabled title="${esc(rngWhy(k)||'')}" data-why="${esc(rngWhy(k)||'')}"`:''}>${k}</button>`}).join('');const w=$('#rngWhy');if(w){const g={};Object.keys(RNG).forEach(k=>{const y=rngN(k)==null&&rngWhy(k);if(y&&y!=='loading')(g[y]=g[y]||[]).push(k)});w.textContent=Object.entries(g).map(([y,ks])=>ks.join(', ')+' off: '+y).join(' · ')}}
 function applyRng(){if(!CH.rng||!CH.d)return;const n=rngN(CH.rng);if(n==null){CH.rng=null;return}CH.n=n;const z=$('#zoom');if(z){z.max=Math.max(+z.max,n);z.value=n}}
 function drawChartScreen(){const cv=$('#chart');if(CH.d?.t?.length){const e=$('#chSrc');if(e)e.textContent=chDataTxt(CH.d,CH.iv)}const ctx=fit(cv,Math.round(Math.min(innerHeight*.62,620)));CH.lay=drawChart(ctx,cv.width,cv.height,CH)}
+// #5 auto-refresh on the chart tab: fetch candles again (60 s cache) and swap them in when a newer candle or a new last price arrived
+async function refreshChart(){const my=CH.seq;try{const d=await klinesH(chartCoin(),CH.iv);if(my!==CH.seq||!CH.d||!d?.t?.length)return;const o=CH.d;
+  if(d.t.at(-1)!==o.t.at(-1)||d.c.at(-1)!==o.c.at(-1)||d.t.length!==o.t.length){CH.d=d;$('#zoom').max=d.c.length;applyRng()}}catch(e){}drawChartScreen()}
 async function loadChart(){const my=CH.seq=(CH.seq||0)+1;CH.d=null;drawChartScreen();try{const d=await klinesH(chartCoin(),CH.iv);if(my!==CH.seq)return;CH.d=d;$('#zoom').max=CH.d.c.length;applyRng();renderRng()}catch(e){if(my!==CH.seq)return;$('#chSrc').textContent='Could not load candles for this coin.'}drawChartScreen()}
 // ---------- RENDER: insights
 async function renderInsights(){const box=$('#ins');const res=await Promise.allSettled(S.watch.map(w=>analyze(w)));res.forEach(r=>{if(r.status==='fulfilled')D.ins[r.value.w.id]=r.value});
@@ -1022,7 +1047,7 @@ const back=(S2,days)=>{const t=S2.t.at(-1)-days*DAY;let i=S2.t.length-1;while(i>
 function gm2(M=MAC.M){const g=M?.global_m2;if(!g?.points?.length)return null;const P=g.points,t=P.map(p=>ymd(p[0])),L=P.length-1,byM=new Map(t.map((x,i)=>[mi(x),i]));
   const at=k=>byM.get(mi(t[L])-k);const iM=at(1),iY=at(12);return{g,P,t,L,tot:P[L][1],mom:iM!=null?(P[L][1]/P[iM][1]-1)*100:null,yoy:iY!=null?(P[L][1]/P[iY][1]-1)*100:null,totCC:P[L][6],yoyCC:iY!=null&&P[L][6]!=null?(P[L][6]/P[iY][6]-1)*100:null,last:t[L]}}
 async function macBTC(){if(MAC.btc&&Date.now()-MAC.btc.at<3600000)return MAC.btc;let P=SIGD?.P;
-  if(!P||P.t.length<2000)P=await first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>({...(await bnDaily('BTCUSDT',4)),src:'Binance'}));
+  if(!P||P.t.length<2000)P=await first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>await bnDaily('BTCUSDT',4));
   const now=new Date(),curM=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1),acc=new Map();
   P.t.forEach((t,i)=>{const d=new Date(t),k=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);if(k>=curM)return;const a=acc.get(k)||[0,0];a[0]+=P.v[i];a[1]++;acc.set(k,a)});
   const mt=[...acc.keys()].sort((a,b)=>a-b).filter(k=>acc.get(k)[1]>=20);return MAC.btc={d:P,m:{t:mt,v:mt.map(k=>acc.get(k)[0]/acc.get(k)[1])},src:P.src,at:Date.now()}}
@@ -1047,7 +1072,7 @@ function m2YoyTxt(G){const cc=G.P[0]?.[6]!=null;if(cc&&G.yoyCC!=null){const idx=
    if(ok.length>=13){const lo=pctl(ok,G.yoyCC)<50,R=rarity(yo,G.t,lo),w=lo?'lowest':'highest';return`growth at constant FX is ${pct(G.yoyCC,1)} a year, the ${w} ${R.since?'since '+mU(R.since):'in the data (since '+new Date(R.first).getUTCFullYear()+')'} (${pct(G.yoy,1)} in USD)`}}
   return m2YoyTxt0(G)}
 function m2YoyTxt0(G){const idx=new Map(G.t.map((x,i)=>[mi(x),i])),yo=G.t.map((x,i)=>{const j=idx.get(mi(x)-12);return j!=null?(G.P[i][1]/G.P[j][1]-1)*100:null}),ok=yo.filter(x=>x!=null);if(G.yoy==null||ok.length<13)return`YoY growth of ${pct(G.yoy,1)} (USD); ${pct(G.yoyCC,1)} at constant FX`;
-  const lo=pctl(ok,G.yoy)<50,R=rarity(yo,G.t,lo),w=lo?'lowest':'highest';return`YoY growth of ${pct(G.yoy,1)} (USD) is the ${w} ${R.since?'since '+mU(R.since):'in the data (since '+new Date(R.first).getUTCFullYear()+')'}; ${G.yoyCC!=null?pct(G.yoyCC,1):'n/a'} at constant FX`}
+  const lo=pctl(ok,G.yoy)<50,R=rarity(yo,G.t,lo),w=lo?'lowest':'highest';return`YoY growth of ${pct(G.yoy,1)} (USD) is the ${w} ${R.since?'since '+mU(R.since):'in the data (since '+new Date(R.first).getUTCFullYear()+')'}; ${G.yoyCC!=null?pct(G.yoyCC,1):'—'} at constant FX`}
 function buildMacro(M,B){const out=[],add=f=>{try{const s=f();if(s)out.push(s)}catch(e){console.warn('mac',e)}},G=gm2(M);if(!G)return out;const gL=mU(G.last),comps=['US','EA','JP','CN'];
   const m2s={t:G.t,v:G.P.map(p=>p[1])},SRC_M2='FRED, ECB, BOJ, PBoC';
   if(B)add(()=>{if(MAC.lag&&!MAC.ll){try{leadCard(G,B,SRC_M2,gL)}catch(e){}}const from=Date.UTC(2014,0,1),bm=slice(B.m.t,B.m.v,from),mm=slice(m2s.t,m2s.v,from),lag=MAC.lag,lt=m2LagTxt(lag),zb=zs(bm.v),zm=zs(mm.v),mt=mm.t.map(t=>t+lag*DAY),bL=mU(bm.t.at(-1));
@@ -1068,7 +1093,7 @@ function buildMacro(M,B){const out=[],add=f=>{try{const s=f();if(s)out.push(s)}c
      cap:`US dollar (Fed broad index) is ${last.toFixed(2)}, ${pct(ch3,1)} over 3 months. 90-day correlation of daily BTC and dollar changes: ${c90.toFixed(2)}.\n\nChart: z-scored log levels over 3 years${inv?', dollar inverted (up = weaker dollar)':''}.\n\nSources: FRED DTWEXBGS through ${ld}; BTC ${B.src}. Descriptive, not a forecast.`,
      src:`FRED DTWEXBGS through ${ld} · BTC ${B.src} daily`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:v=>v.toFixed(1)+'σ',series:[{v:rb,c:TH.ac,w:2.6,l:'BTC (log, z)'},{v:rx,c:TH.ac2||TH.up,w:3.2,l:inv?'Dollar index inverted (log, z)':'Dollar index (log, z)'}]})}});
-  add(()=>{const a=ser('DGS10',M),b=ser('DFII10',M);if(!a||!b)return null;const from=Date.now()-3*365*DAY,A=slice(a.t,a.v,from),Bm=new Map(b.t.map((t,i)=>[t,b.v[i]])),be=A.t.map((t,i)=>Bm.has(t)?A.v[i]-Bm.get(t):null),Bs=slice(b.t,b.v,from),la=a.v.at(-1),lb=b.v.at(-1),BE=beOf(a,b),ld=dU(Math.min(a.t.at(-1),b.t.at(-1))),ib=back(b,91),chb=(lb-b.v[ib])*100;
+  add(()=>{const a0=ser('DGS10',M),b0=ser('DFII10',M);if(!a0||!b0)return null;/* #19: both yields read on their last COMMON date (no mixing days) */const am=new Map(a0.t.map((t,i)=>[t,i])),cT=b0.t.filter(t=>am.has(t)).at(-1);if(cT==null)return null;const cut=S=>{const n=S.t.findIndex(t=>t>cT);return n<0?S:{...S,t:S.t.slice(0,n),v:S.v.slice(0,n)}},a=cut(a0),b=cut(b0),ld=dU(cT);const from=Date.now()-3*365*DAY,A=slice(a.t,a.v,from),Bm=new Map(b.t.map((t,i)=>[t,b.v[i]])),be=A.t.map((t,i)=>Bm.has(t)?A.v[i]-Bm.get(t):null),Bs=slice(b.t,b.v,from),la=a.v.at(-1),lb=b.v.at(-1),BE=beOf(a,b),ib=back(b,91),chb=(lb-b.v[ib])*100;
     return{id:'real',uses:['DGS10','DFII10'],title:'US 10Y nominal vs real yield',read:`10Y ${la.toFixed(2)}% · real ${lb.toFixed(2)}% (${chb>=0?'+':''}${chb.toFixed(0)}bp 3 mo) · breakeven ${BE.v!=null?BE.txt:`— (${BE.lag})`}`,
      cap:`US 10-year yield ${la.toFixed(2)}%, 10-year real (TIPS) yield ${lb.toFixed(2)}%, ${chb>=0?'+':''}${chb.toFixed(0)}bp over 3 months. Implied breakeven inflation ${BE.v!=null?BE.txt:`— (${BE.lag})`}.\n\nSource: FRED DGS10, DFII10 through ${ld}.`,
      src:`FRED DGS10 + DFII10 through ${ld}`,
@@ -1224,7 +1249,7 @@ function prepSig(s){const d=closedSet(SIGD);s.kind='sig';s.fbIn=d?.P?.src==='Coi
   try{s.cap=capFirst({kind:'sig',id:s.id},s)}catch(e){}}
 let SIGP=null,SIGDAY=null;const utcDay=()=>Math.floor(Date.now()/DAY);
 function ensureSig(force){if(SIGDAY!==utcDay())force=true;if(SIG&&!force)return Promise.resolve(SIG);if(SIGP&&!force)return SIGP;SIGDAY=utcDay();
-  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=closedSet(await loadSigData());if(nd.P||!SIGD)SIGD=nd}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
+  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=closedSet(await loadSigData());SIGD=mergeSig(nd,SIGD)}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
 
 // ---------- TODAY briefing
 // Market state chips: each names the metric, its direction and the figure (no lean words). Rules are shown on tap.
@@ -1300,7 +1325,8 @@ function macItems(){const M=MAC.M,out=[];if(!M||!MAC.cards.length)return out;
   const W=wkSer();if(W){const a=W.v.map((v,i)=>i>=13?(v/W.v[i-13]-1)*100:null);mk('netliq',{t:W.t,a},'the 13-week change in US net liquidity',pct(a.at(-1),1),['WALCL','WTREGEN','RRPONTSYD'])}
   const C=curveInfo(M);if(C)mk('curve',{t:C.s.t,a:C.s.v},'the 2s10s Treasury spread',(C.cur>=0?'+':'')+C.cur.toFixed(2)+' pts',['T10Y2Y']);
   return out}
-async function ensureMac(){if(!MAC.M){try{const r=await dataFile('macro');MAC.M=r.v;MAC.src=r.src;MAC.fail=0}catch(e){MAC.fail=1;return null}}
+const DATA_TTL=15*60000;// #10/#11: macro.json and derivs.json are re-read after 15 min (the data job runs hourly), not kept for the life of the page
+async function ensureMac(){if(!MAC.M||Date.now()-(MAC.at||0)>DATA_TTL){try{const r=await dataFile('macro');if(r.v!==MAC.M){MAC.M=r.v;MAC.cards=[];MAC.items=null}MAC.src=r.src;MAC.fail=0;MAC.at=Date.now()}catch(e){MAC.fail=1;if(!MAC.M)return null}}
   if(!MAC.btc){try{await macBTC()}catch(e){}}if(!MAC.cards.length){try{MAC.cards=buildMacro(MAC.M,MAC.btc);macCaps()}catch(e){}}if(!MAC.items)MAC.items=macItems();return MAC.M}
 function macCaps(){MAC.cards.forEach(s=>{try{s.cap=capFirst({kind:'mac',id:s.id})}catch(e){}})}
 function todayItems(){if(!MAC.items&&MAC.M&&MAC.cards.length)MAC.items=macItems();return[...(SIG||[]),...(MAC.items||[])].filter(x=>x.score!=null).sort((a,b)=>b.score-a.score)}
@@ -1618,7 +1644,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-thc]
 
 // ================= PHASE 11: derivatives, altseason engine, macro forces, news ranking, new caption families
 let DV=null,MK=null,CAPF=null;
-let DVRAW=null;async function ensureDV(){if(!DVRAW){try{DVRAW=(await dataFile('derivs')).v}catch(e){}}if(DVRAW)DV=gateDV(DVRAW);return DV}
+let DVRAW=null,DVAT=0;async function ensureDV(){if(!DVRAW||Date.now()-DVAT>DATA_TTL){try{DVRAW=(await dataFile('derivs')).v;DVAT=Date.now()}catch(e){}}if(DVRAW)DV=gateDV(DVRAW);return DV}
 // STALE GATE (hotfix): a metric past its freshness limit is removed from everything (readings, states, clusters, scores, captions, drafts, exports).
 // Limits per metric from the newest point: open interest and basis are hourly (3h, like the job cadence), funding settles every 8h (12h).
 // Live feeds (deriv()) are fresh by definition; the cached file only counts while inside the limit. STALEM keeps age + source for the 'data stale' labels.
@@ -1672,7 +1698,7 @@ const ALT={TH:{btcB90:25,erB30:50,erB90:50,erEB:5,erDom:-1,brLo:50,brHi:74,brB30
   ORDER:['Weakening','Altseason','Broadening','Early rotation','BTC-led','Mixed'],PRI:{Weakening:5,Altseason:4,Broadening:3,'Early rotation':2,'BTC-led':1,Mixed:0},
   DEF:{'BTC-led':'B90 below 25% and ETH/BTC below its 200-day average.','Early rotation':'B30 at least 50%, B90 below 50%, and ETH/BTC up 5%+ in 30 days or BTC dominance down 1+ point.',Broadening:'B90 between 50% and 74% with B30 at least 50%.',Altseason:'B90 at or above 75% on at least 5 of the last 7 days.',Weakening:'Was Broadening or Altseason within 30 days, and now B30 is below 40% or has dropped 25+ points in 14 days.',Mixed:'None of the five states is met: no clear regime.'}};
 function altCalc(){const K=MK;if(!K?.breadth?.points?.length)return null;const T=ALT.TH,m=T.hyst;
-  const B=K.breadth.points.filter(r=>r[2]!=null&&r[3]!=null),dates=B.map(r=>r[0]);
+  const B=K.breadth.points.filter(r=>r[2]!=null&&r[3]!=null&&isFinite(r[2])&&isFinite(r[3])),dates=B.map(r=>r[0]);if(!B.length)return null;// #23 no usable breadth rows: no reading, no crash
   const EBp=K.ethbtc?.points||[],ebM=new Map(EBp.map(r=>[r[0],r[1]])),ebI=new Map(EBp.map((r,i)=>[r[0],i]));
   const STp=K.stablecoins?.points||[],stM=new Map(STp.map(r=>[r[0],r[1]]));
   const GD=K.global_daily?.points||[],src0=GD.at(-1)?.[7],GDs=GD.filter(r=>r[7]===src0),domM=new Map(GDs.map(r=>[r[0],r[2]])),domOK=GDs.length>=T.domMin;
@@ -1986,14 +2012,16 @@ $('#handle').value=S.handle;$('#handle').oninput=e=>{S.handle=e.target.value;sav
 
 $('#sigRef').onclick=()=>renderSignals(true);
 $('#macRef').onclick=()=>{MAC.btc=null;renderMacro(true)};
-$('#refBtn').onclick=()=>{SIG=null;MAC.items=null;Object.keys(cache).forEach(k=>delete cache[k]);D.kl={};D.ins={};refresh(true)};
+$('#refBtn').onclick=()=>{invalidateAll();refresh(true)};
+// #12 manual refresh: every cached dataset is dropped, so the next read fetches it again
+function invalidateAll(){SIG=null;SIGP=null;SIGDAY=null;MAC.M=null;MAC.at=0;MAC.cards=[];MAC.items=null;MAC.btc=null;DVRAW=null;DVAT=0;Object.keys(DF).forEach(k=>delete DF[k]);Object.keys(cache).forEach(k=>delete cache[k]);D.kl={};D.ins={}}
 let _rw=innerWidth;addEventListener('resize',()=>{if(Math.abs(innerWidth-_rw)<2)return;_rw=innerWidth;clearTimeout(window._rz);window._rz=setTimeout(()=>tab(TAB,1),200)});
 // ---------- boot
 function offBanner(){const el=$('#offBan');if(!el)return;const off=!navigator.onLine||(NET.ok===0&&NET.fail>0),dead=!!D.cachedAt||!S.watch.some(w=>D.mk[w.id]?.current_price!=null);const at=D.cachedAt||D.liveAt||null;
   if(off||dead){el.style.display='block';el.textContent=`${off?'Offline':'Live sources unreachable'} · data as of ${at?hmU(at):'unknown (no saved copy yet)'}`}else el.style.display='none'}
 addEventListener('online',()=>{offBanner();refresh()});addEventListener('offline',offBanner);
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol)&&(!navigator.webdriver||/[?&]sw=1/.test(location.search)))navigator.serviceWorker.register('sw.js').catch(()=>{});
-async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);offBanner();ensureCC().then(()=>{if(TAB==='studio')renderStudio()}).catch(()=>{});const _y=scrollY;requestAnimationFrame(()=>{if(_y>0&&scrollY<_y-2)scrollTo(0,_y)});renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else drawChartScreen()}if(TAB==='markets'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio();if(TAB==='today')renderToday()}
+async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);offBanner();ensureCC().then(()=>{if(TAB==='studio')renderStudio()}).catch(()=>{});const _y=scrollY;requestAnimationFrame(()=>{if(_y>0&&scrollY<_y-2)scrollTo(0,_y)});renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else refreshChart()}if(TAB==='markets'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio();if(TAB==='today')renderToday()}
 applyTheme(THEME);document.fonts.ready.then(()=>setTimeout(()=>tab(TAB),300));refresh();setInterval(()=>{if(!document.hidden)refresh()},90000);
 // E12: background work for tabs that are not visible runs when the main thread is idle
 const idle=(f,to=6000)=>('requestIdleCallback'in window)?requestIdleCallback(f,{timeout:to}):setTimeout(f,200);
