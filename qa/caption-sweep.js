@@ -34,8 +34,8 @@ const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
     let lint=[];try{lint=t?lintBanned(t,F.title,F.open):[]}catch(e){}
     out.push({c:id,st,i,t,len:t?(()=>{try{return xLen(t)}catch(e){return t.length}})():0,lint,ref,warn,open:!!F.open,fv:F.formV||''})});
    let pk;try{pk=capPick(F,st,-1,()=>.5);if(pk&&typeof pk!=='string')pk=pk.t||pk.text||pk.cap||JSON.stringify(pk)}catch(e){pk='ERR '+e}out.push({c:id,st,i:'picked',t:pk,len:pk?(()=>{try{return xLen(pk)}catch(e){return pk.length}})():0,lint:[],ref,picked:1,warn,open:!!F.open,fv:F.formV||''})}
-  // forming-candle rule: the same card with a value from today's unfinished candle (open=true) -> the app's own pick must never say 'close'
-  if(!tag&&!c._v&&c.kind==='sig')for(const [st] of STY){let pk;try{pk=capPick({...F,open:true},st,-1,()=>.5).t}catch(e){pk='ERR '+e}out.push({c:'sig~forming:'+(c.id||''),st,i:'picked',t:pk,len:pk?pk.length:0,lint:[],ref,picked:1,warn,open:true})}};
+  // forming-candle rule: sig readings come from the last CLOSED daily candle -> facts never flagged open and never dated today (UTC)
+  if(!tag&&!c._v&&c.kind==='sig'){const td=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});out.push({c:'sig~closed:'+(c.id||''),closedChk:1,settled:!!(o&&o.settled),isOpen:!!F.open,today:F.date&&new RegExp('(^|\\D)'+td+'(\\D|$)').test(String(F.date))?String(F.date):'',warn})}};
  for(const [c,o] of ctxs)gen(c,o);
  // news from frozen replay snapshots (blocking)
  const realNow=Date.now,realNews=D.news;for(const S0 of SNAPS){Date.now=()=>S0.now;D.news=S0.news;try{newsClusters().slice(0,6).forEach(c=>gen({kind:'news',n:c.lead},null,'news@'+S0.f.slice(0,16)))}catch(e){out.push({c:'news@'+S0.f,err:String(e)})}finally{Date.now=realNow;D.news=realNews}}
@@ -48,7 +48,7 @@ await b.close();
 if(!W){console.error('caption sweep: app does not expose RPT_WORDS (shared word list)');process.exit(1)}
 BANNED.push(new RegExp(...W.region));const RULE1=W.rule1.map(x=>new RegExp(...x));// rule 1 on news captions runs through the app lint (headline text exempt), on every other card directly
 let fails=[];
-const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try{if(r.err){fails.push([r.c,'-','-',r.err]);continue}const t=r.t||'';const loc=[r.c,r.st,r.i];
+const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try{if(r.err){fails.push([r.c,'-','-',r.err]);continue}if(r.closedChk){if(r.isOpen)fails.push([r.c,'-','-','sig reading taken from the forming candle']);if(r.today&&!r.settled)fails.push([r.c,'-','-','sig reading dated today (forming candle): '+r.today]);continue}const t=r.t||'';const loc=[r.c,r.st,r.i];
  if(!t){fails.push([...loc,'blank caption']);continue}// a blank template or blank pick means Studio offers an empty caption
  if(/^ERR /.test(t))fails.push([...loc,'template threw: '+t]);
  if(r.len>280)fails.push([...loc,'over 280 ('+r.len+')']);
