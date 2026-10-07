@@ -184,6 +184,37 @@ def shift(d, n):
     return (dt.date.fromisoformat(d) - dt.timedelta(days=n)).isoformat()
 
 
+def ret(data, sym, d, n):
+    a, b = data[sym].get(shift(d, n)), data[sym].get(d)
+    return (b[0] / a[0] - 1) * 100 if a and b else None
+
+
+def hist_len(data, sym, d):
+    f = next(iter(data[sym]))
+    return (dt.date.fromisoformat(d) - dt.date.fromisoformat(f)).days + 1
+
+
+def build_breadth(dates, data, uni_syms):
+    """Breadth for EVERY date, rebuilt from scratch on every run with the CURRENT universe (uni_syms) only.
+    Nothing from a previous market.json is reused, so a coin that left the top 50 never lingers in old rows.
+    Returns (rows, members): members[i] = the coins counted in rows[i] (30-day column), always a subset of uni_syms.
+    tests/tbreadth.py asserts both."""
+    rows, members = [], []
+    for d in dates:
+        rb, mem = {}, []
+        for n in (7, 30, 90):
+            rB = ret(data, "BTC", d, n)
+            pairs = [(s, ret(data, s, d, n)) for s in uni_syms if hist_len(data, s, d) >= MIN_HIST]
+            pairs = [(s, x) for s, x in pairs if x is not None]
+            xs = [x for _, x in pairs]
+            rb[n] = (round(sum(1 for x in xs if x > rB) / len(xs) * 100, 1) if rB is not None and len(xs) >= 30 else None, len(xs))
+            if n == 30:
+                mem = [s for s, _ in pairs]
+        rows.append([d, rb[7][0], rb[30][0], rb[90][0], rb[30][1], rb[90][1]])
+        members.append(mem)
+    return rows, members
+
+
 def main():
     prev = {}
     if os.path.exists(OUT):
@@ -234,12 +265,7 @@ def main():
     tiers = {"large": alts[0:9], "mid": alts[9:49], "small": alts[49:99]}
 
     def r(sym, d, n):
-        a, b = data[sym].get(shift(d, n)), data[sym].get(d)
-        return (b[0] / a[0] - 1) * 100 if a and b else None
-
-    def hist_len(sym, d):
-        f = next(iter(data[sym]))
-        return (dt.date.fromisoformat(d) - dt.date.fromisoformat(f)).days + 1
+        return ret(data, sym, d, n)
 
     # stablecoin supply (DefiLlama)
     stab = {}
@@ -249,15 +275,10 @@ def main():
     except Exception as e:  # noqa
         print("DefiLlama failed", e, file=sys.stderr)
     circ = {c["sym"]: c["mcap"] / c["price"] for c in used if c["price"]}
-    br, rot, tot, ethbtc = [], [], [], []
+    uni_syms = [c["sym"] for c in uni]
+    br, _members = build_breadth(dates, data, uni_syms)  # whole history, current universe, every run
+    rot, tot, ethbtc = [], [], []
     for d in dates:
-        rb = {}
-        for n in (7, 30, 90):
-            rB = r("BTC", d, n)
-            xs = [r(c["sym"], d, n) for c in uni if hist_len(c["sym"], d) >= MIN_HIST]
-            xs = [x for x in xs if x is not None]
-            rb[n] = (round(sum(1 for x in xs if x > rB) / len(xs) * 100, 1) if rB is not None and len(xs) >= 30 else None, len(xs))
-        br.append([d, rb[7][0], rb[30][0], rb[90][0], rb[30][1], rb[90][1]])
         rB = r("BTC", d, 30)
         row = [d, round(rB, 2) if rB is not None else None]
         for k in ("large", "mid", "small"):
@@ -287,7 +308,8 @@ def main():
            "stablecoins": {"source": "DefiLlama stablecoincharts/all (USD-pegged)", "columns": ["date", "usd"], "points": [[d, round(stab[d])] for d in dates if d in stab]},
            "ethbtc": {"source": "Binance spot daily closes ETHUSDT / BTCUSDT", "columns": ["date", "ethbtc"], "points": ethbtc},
            "breadth": {"universe": f"top {UNIVERSE_N} by market cap excl. BTC, stablecoins, gold tokens, wrapped/staked/bridged tokens and < {MIN_HIST} days of closes",
-                       "note": "Backfilled with today's constituents (survivorship bias); each day only counts coins with >= 120 days of history at that date.",
+                       "note": "Rebuilt in full on every run with today's constituents (survivorship bias); each day only counts coins with >= 120 days of history at that date.",
+                       "universe_syms": uni_syms,
                        "columns": ["date", "b7", "b30", "b90", "n30", "n90"], "points": br[i0:]},
            "rotation": {"tiers": "coin ranks 2-10 (large), 11-50 (mid), 51-100 (small) after exclusions; median 30d return minus BTC 30d return, % points",
                         "columns": ["date", "btc_30d_pct", "large_minus_btc", "mid_minus_btc", "small_minus_btc"], "points": rot[i0:]},
