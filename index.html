@@ -1716,7 +1716,7 @@ function oiCapSeries(a,now=Date.now()){const A=DV?.assets?.[a];if(!A?.oi_daily?.
   const P=A.oi_daily.points.filter(p=>p[0]<L.D&&p[2]>0);const t=P.map(p=>p[0]),v=P.map(p=>p[2]/L.sup*100),coin=P.map(p=>p[2]);t.push(L.D);v.push(L.v);coin.push(L.oiC);
   return{t,a:v,coin,sup:L.sup,src:A.oi_daily.source||'OKX',supSrc:L.sp.src,supAt:L.sp.at,supDated:!!L.sp.dated,latest:L,hist:'older days: OKX daily OI buckets (16:00 UTC start), open interest (coins) ÷ circulating supply'}}
 // the one label (ruling 8 Oct, P1): timestamp date, then the close it belongs to; '(supply as of <fetch date>)' while supply is undated
-const oiCapLbl=(oc,D)=>`${oc.src} open interest (coins) at 00:00 UTC ${dU(D+DAY)} (${dShort(D)} close) ÷ circulating supply${oc.supDated?'':` (supply as of ${oc.supAt?dShort(oc.supAt):'an unknown date'})`}`;
+const oiCapLbl=(oc,D)=>`${oc.src} open interest (coins) at 00:00 UTC ${dU(D+DAY)} (${dShort(D)} close) ÷ circulating supply${oc.supDated?'':` (supply as of ${oc.supAt?dShort(oc.supAt)+' '+hmU(oc.supAt):'an unknown date'})`}`;
 function oiCapNow(a){const s=oiCapSeries(a);if(!s||s.t.length<60||s.latest.stale)return null;const m=oppMeta(s,'abs',Infinity);return{v:m.cur,share:m.share,side:m.side,pTxt:m.pctTxt,m,src:s.src}}
 function fundSeries(a){const F=DV?.assets?.[a]?.funding;if(!F?.points?.length)return null;const P=F.points,t=[],v=[];for(let i=20;i<P.length;i++){let s=0;for(let k=i-20;k<=i;k++)s+=P[k][1];t.push(P[i][0]);v.push(s/21*100)}return{t,a:v,src:F.source,raw:P}}
 let SIGSTALE=[];
