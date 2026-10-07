@@ -23,6 +23,9 @@ const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
  const gen=(c,o,tag,warn)=>{const id=(tag||c.kind)+':'+(c.id||c.a||c.t||(c.n&&c.n.title)||'');let F;
   try{F=capFacts(c,o)}catch(e){out.push({c:id,err:'capFacts '+e,warn});return}if(!F){out.push({c:id,err:'null facts',warn});return}
   const ref=JSON.stringify(F)+' '+(document.querySelector('[data-id="'+(c.id||'')+'"]')?.innerText||'');
+  // data-dependent states, rendered every run: last comparable reading <60 days old (since='') and the legacy since=percentile fallback
+  if(!tag&&!c._v&&F.pos){if(F.since!==F.pos)gen({...c,_v:'pos'},o,c.kind+'~since=pos',warn);if(F.since)gen({...c,_v:'lt60'},o,c.kind+'~since<60d',warn)}
+  if(c._v==='pos')F={...F,since:F.pos};if(c._v==='lt60')F={...F,since:'',sinceD:''};
   for(const [st] of STY){CAPT[F.fam][st].forEach((fn,i)=>{let t;try{t=tidy(fn(F));if(t&&typeof t!=='string')t=String(t)}catch(e){t='ERR '+e}
     let lint=[];try{lint=t?lintBanned(t,F.title,F.open):[]}catch(e){}
     out.push({c:id,st,i,t,len:t?(()=>{try{return xLen(t)}catch(e){return t.length}})():0,lint,ref,warn})});
@@ -48,6 +51,7 @@ const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try
  for(const re of BANNED)if(re.test(t))fails.push([...loc,'banned "'+t.match(re)[0]+'"']);
  if(!/^news/.test(r.c))for(const re of RULE1)if(re.test(t))fails.push([...loc,'rule 1 "'+t.match(re)[0]+'"']);
  if(r.lint&&r.lint.length)fails.push([...loc,'app lint: '+r.lint.join(',')]);
+ if(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/.test(t))fails.push([...loc,'empty slot "'+t.match(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/)[0]+'"']);
  const rp=repeated(t);if(rp)fails.push([...loc,'repeated phrase "'+rp+'"']);
  if(/\blive\b/i.test(t)&&/\b(\d{1,2} \w{3}|close)\b/i.test(t)&&!/\blive[^.]{0,25}\d\d:\d\d ?UTC/i.test(t))fails.push([...loc,'live and close values without labels']);
  const ref=r.ref.replace(/[,\s+−-]/g,'');for(const n of nums(t.replace(/https?:\/\/\S+/g,' '))){if(trivial(n))continue;const core=n.replace(/[%kMBT×σ]|bp|EH\/s/g,'');if(core&&!ref.includes(core))fails.push([...loc,'number '+n+' not on card'])}}finally{fails=fails0}}
