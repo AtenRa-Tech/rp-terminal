@@ -13,7 +13,7 @@ const DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>{let d=0,x=new Date(t);x.setUT
  if(J.derivs)ok(h(J.derivs.updated)<=36,'derivs.json under 36h',J.derivs.updated);if(J.market)ok(h(J.market.updated)<=36,'market.json under 36h',J.market.updated);
  if(J.etf)ok(bizDays(Date.parse(J.etf.last_date+'T00:00:00Z'))<=2,'etf.json last day within 2 US business days',J.etf.last_date);
  if(J.macro){const S=J.macro.series,age=id=>S[id]?(now-Date.parse(S[id].last_date+'T00:00:00Z'))/DAY:Infinity,lim={daily:['DGS10','DGS2','DFII10','T10Y2Y'],fx:['DEXUSEU','DEXJPUS','DEXCHUS','DTWEXBGS'],weekly:['WALCL','WDTGAL','WTREGEN'],monthly:['M2SL']};
-  lim.daily.forEach(id=>ok(S[id]&&bizDays(Date.parse(S[id].last_date+'T00:00:00Z'))<=2,`macro ${id} within 2 business days`,S[id]?.last_date));
+  /* daily Fed series are checked in-page below with the app's FEDD limit and usBizDays (one shared limit) */
   /* H.10 FX: daily values published weekly (Monday ~21:15 UTC, through the prior Friday; Tuesday after a Monday holiday), so a Friday value is legitimately up to ~11 days old just before the next release */lim.fx.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days (H.10 weekly release)`,S[id]?.last_date));lim.weekly.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days`,S[id]?.last_date));
   lim.monthly.forEach(id=>ok(age(id)<=75,`macro ${id} within 75 days of month start`,S[id]?.last_date))}
  const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915});
@@ -21,5 +21,10 @@ const DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>{let d=0,x=new Date(t);x.setUT
  await pg.goto(URL+'?v='+now,{waitUntil:'domcontentloaded',timeout:60000});await new Promise(r=>setTimeout(r,8000));
  for(const t of ['today','markets','chart','signals','macro','news','studio']){await pg.evaluate(t=>tab(t),t);await new Promise(r=>setTimeout(r,t==='signals'||t==='macro'?12000:5000));
   const r=await pg.evaluate(t=>{const s=document.getElementById('s-'+t);return s?{vis:s.classList.contains('on'),len:s.innerText.trim().length}:null},t);ok(r&&r.vis&&r.len>40,`tab ${t} renders`,r)}
+ const fed=await pg.evaluate(()=>{const T=x=>Date.parse(x);if(typeof usBizDays!=='function'||!window.FEDD&&typeof FEDD==='undefined')return{err:'app lacks FEDD/usBizDays'};
+  const cases=[['2026-10-05','2026-10-07T10:30:00Z',2],['2026-10-05','2026-10-07T23:59:00Z',2],['2026-10-05','2026-10-08T00:01:00Z',3],['2026-10-02','2026-10-05T12:00:00Z',1],['2026-10-09','2026-10-13T12:00:00Z',1],['2026-10-09','2026-10-14T12:00:00Z',2],['2026-11-10','2026-11-12T12:00:00Z',1],['2026-12-24','2026-12-28T12:00:00Z',1]].map(([a,b,w])=>[a,b,usBizDays(a,T(b)),w]);
+  const S=MAC.M?.series||{};return{lim:FEDD.lim,cases,rows:FEDD.ids.map(id=>({id,last:S[id]?.last_date,bd:S[id]?usBizDays(S[id].last_date):null,st:fresh(id).st}))}});
+ if(fed.err)ok(false,fed.err);else{ok(fed.cases.every(c=>c[2]===c[3]),'usBizDays: Mon 5 Oct->Wed 7 Oct = 2; Columbus Day 12 Oct and Veterans Day 11 Nov skipped',fed.cases);
+  fed.rows.forEach(r=>ok(r.last&&r.bd<=fed.lim&&!r.st,`macro ${r.id} within ${fed.lim} US business days (app limit, card not stale)`,r))}
  ok(!errs.length,'no page errors or app console errors',errs);await b.close();
  console.log('\nSMOKE FAILS:',F.length,JSON.stringify(F));process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});

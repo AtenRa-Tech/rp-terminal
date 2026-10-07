@@ -37,4 +37,9 @@ ok(r.inv[0]===V.t10y2y_last_inversion.expected.start&&r.inv[1]===V.t10y2y_last_i
 ok(near(r.m2[0],'global_m2_yoy_usd_pct')&&near(r.m2[1],'global_m2_yoy_cc_pct'),'global M2 YoY 8.6% USD / 6.0% constant FX',r.m2);
 ok(/\$5,?747(\.\d)?B/.test(r.nl),'net liquidity $5,747B',r.nl.slice(0,200));ok(/42\.6/.test(r.perf),'Q3 return +42.6%',r.perf.slice(0,200));
 ok(!r.clDD||/32\.9%/.test(r.clDD),'clusters drawdown matches −32.9%',r.clDD);
+{const fc=await pg.evaluate(()=>{const T=x=>Date.parse(x);return{lim:FEDD.lim,ids:FEDD.ids,c:[['2026-10-05','2026-10-07T10:30:00Z',2],['2026-10-05','2026-10-08T00:01:00Z',3],['2026-10-09','2026-10-13T12:00:00Z',1],['2026-10-09','2026-10-14T12:00:00Z',2],['2026-11-10','2026-11-12T12:00:00Z',1],['2026-07-02','2026-07-06T12:00:00Z',1]].map(([a,b,w])=>[a,b,usBizDays(a,T(b)),w]),
+  st:(()=>{const M=JSON.parse(JSON.stringify(MAC.M));const R=[];for(const [d,now,w] of [['2026-10-05','2026-10-08T12:00:00Z',false],['2026-10-05','2026-10-09T12:00:00Z',true],['2026-10-09','2026-10-14T12:00:00Z',false]]){M.series.DGS10.last_date=d;M.failed=[];const _n=Date.now;Date.now=()=>T(now);try{R.push([d,now,fresh('DGS10',M).st,w])}finally{Date.now=_n}}return R})()}});
+ ok(fc.lim===3&&['DGS10','DGS2','DFII10'].every(x=>fc.ids.includes(x)),'daily Fed series limit is 3 US business days',fc);
+ ok(fc.c.every(x=>x[2]===x[3]),'usBizDays: 5->7 Oct = 2, Columbus Day 12 Oct, Veterans Day 11 Nov, 3 Jul observed skipped',fc.c);
+ ok(fc.st.every(x=>x[2]===x[3]),'DGS10 card stale only past 3 US business days (5 Oct ok Thu 8, stale Fri 9; 9 Oct ok Wed 14 over Columbus Day)',fc.st)}
 console.log('\nGOLDEN FAILS:',F.length,JSON.stringify(F));await b.close();process.exit(F.length?1:0)})();

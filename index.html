@@ -966,10 +966,20 @@ const mi=t=>{const d=new Date(t);return d.getUTCFullYear()*12+d.getUTCMonth()};
 const usdT=b=>'$'+(b/1000).toFixed(2)+'T';
 const fM=(v,sign=1)=>v==null||!isFinite(v)?'–':(v<0?'-':sign?'+':'')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';
 const CAD={Monthly:75,Daily:5,Weekly:14},H10=/^(DEX|DTWEX)/;
+// Daily Fed H.15 series: stale after 3 US business days (Fed holidays skipped). ONE limit, read by the cards and by tests/tsmoke.js.
+const FEDD={ids:['DGS10','DGS2','DFII10','T10Y2Y'],lim:3};
+function usHol(y){const f=(m,d)=>{const t=new Date(Date.UTC(y,m,d));const w=t.getUTCDay();if(w===0)t.setUTCDate(d+1);if(w===6)t.setUTCDate(d-1);return t.toISOString().slice(0,10)},// US bond-market calendar (H.15 Treasury yields): Sunday -> Monday, Saturday -> Friday
+ nth=(m,wd,n)=>{const t=new Date(Date.UTC(y,m,1));t.setUTCDate(1+(wd-t.getUTCDay()+7)%7+7*(n-1));return t.toISOString().slice(0,10)},
+ last=(m,wd)=>{const t=new Date(Date.UTC(y,m+1,0));t.setUTCDate(t.getUTCDate()-(t.getUTCDay()-wd+7)%7);return t.toISOString().slice(0,10)};
+ return new Set([f(0,1),nth(0,1,3),nth(1,1,3),last(4,1),f(5,19),f(6,4),nth(8,1,1),nth(9,1,2),f(10,11),nth(10,4,4),f(11,25)])}
+function usBizDays(lastYmd,now=Date.now()){// US business days after the observation date, up to and including today (UTC)
+ const x=new Date(String(lastYmd).slice(0,10)+'T00:00:00Z'),e=new Date(now);e.setUTCHours(0,0,0,0);let d=0,H=null,hy=0;
+ while(x<e){x.setUTCDate(x.getUTCDate()+1);const w=x.getUTCDay(),y=x.getUTCFullYear();if(y!==hy){H=usHol(y);hy=y}if(w&&w<6&&!H.has(x.toISOString().slice(0,10)))d++}return d}
 const MAC={M:null,src:'',btc:null,lag:0,chg:'mom',inv:1,cards:[],etfA:'btc'};
-function ser(id,M=MAC.M){const s=M?.series?.[id];if(!s)return null;try{const f=fresh(id,M);if(f.age>f.lim){STALEM['macro '+id]={age:f.age*24,src:String(s.source||s.src||'FRED').split(/[ (]/)[0],lim:f.lim*24};return null}delete STALEM['macro '+id]}catch(e){}return{t:s.points.map(p=>ymd(p[0])),v:s.points.map(p=>p[1]),s}}
+function ser(id,M=MAC.M){const s=M?.series?.[id];if(!s)return null;try{const f=fresh(id,M);if(f.over){STALEM['macro '+id]={age:f.age*24,src:String(s.source||s.src||'FRED').split(/[ (]/)[0],lim:f.bd!=null?null:f.lim*24,...(f.limT?{limT:f.limT}:{})};return null}delete STALEM['macro '+id]}catch(e){}return{t:s.points.map(p=>ymd(p[0])),v:s.points.map(p=>p[1]),s}}
 function fresh(id,M=MAC.M){const s=M?.series?.[id];if(!s)return{st:true,why:'missing from file',age:Infinity};const f=/^Monthly/.test(s.freq)?'Monthly':/^Weekly/.test(s.freq)?'Weekly':'Daily',age=(Date.now()-ymd(s.last_date))/DAY,failed=(M.failed||[]).some(x=>x.id===id),lim=f==='Daily'&&H10.test(id)?10:CAD[f];
-  return{st:failed||age>lim,age,lim,f,failed,last:s.last_date,why:failed?'fetch failed on last run, showing previous value':age>lim?`${Math.round(age)} days old (expected ≤ ${lim} for ${f.toLowerCase()} data${lim===10?'; Fed H.10 rates publish weekly':''})`:''}}
+  if(FEDD.ids.includes(id)){const bd=usBizDays(s.last_date),over=bd>FEDD.lim;return{st:failed||over,over,age,lim:FEDD.lim,bd,limT:FEDD.lim+' US business days',f,failed,last:s.last_date,why:failed?'fetch failed on last run, showing previous value':over?`${bd} US business days old (expected ≤ ${FEDD.lim} for daily Fed data)`:''}}
+  return{st:failed||age>lim,over:age>lim,age,lim,f,failed,last:s.last_date,why:failed?'fetch failed on last run, showing previous value':age>lim?`${Math.round(age)} days old (expected ≤ ${lim} for ${f.toLowerCase()} data${lim===10?'; Fed H.10 rates publish weekly':''})`:''}}
 const back=(S2,days)=>{const t=S2.t.at(-1)-days*DAY;let i=S2.t.length-1;while(i>0&&S2.t[i]>t)i--;return i};
 function gm2(M=MAC.M){const g=M?.global_m2;if(!g?.points?.length)return null;const P=g.points,t=P.map(p=>ymd(p[0])),L=P.length-1,byM=new Map(t.map((x,i)=>[mi(x),i]));
   const at=k=>byM.get(mi(t[L])-k);const iM=at(1),iY=at(12);return{g,P,t,L,tot:P[L][1],mom:iM!=null?(P[L][1]/P[iM][1]-1)*100:null,yoy:iY!=null?(P[L][1]/P[iY][1]-1)*100:null,totCC:P[L][6],yoyCC:iY!=null&&P[L][6]!=null?(P[L][6]/P[iY][6]-1)*100:null,last:t[L]}}
@@ -1056,7 +1066,7 @@ async function renderMacro(force){const box=$('#macList'),y0=scrollY;
   requestAnimationFrame(()=>{if(y0>0&&Math.abs(scrollY-y0)>2)scrollTo(0,y0)})}
 async function auditMacro(s){const M=MAC.M,R=[];R.single=1;
   for(const id of s.uses||[]){const f=fresh(id,M),x=M.series[id];if(!x){R.push(['bad',`${id} is missing from macro.json.`]);continue}
-    R.push([f.failed?'warn':f.st?'warn':'ok',`${x.title}: last data ${x.last_date} (${Math.round(f.age)} days old; ${f.f.toLowerCase()} cadence allows ${f.lim}${f.lim===10?', H.10 weekly release':''})${f.failed?' · last fetch FAILED, previous value kept':''} · ${x.source}.`])}
+    R.push([f.failed?'warn':f.st?'warn':'ok',`${x.title}: last data ${x.last_date} (${f.bd!=null?`${f.bd} US business days old; daily Fed data allows ${f.limT}`:`${Math.round(f.age)} days old; ${f.f.toLowerCase()} cadence allows ${f.lim}${f.lim===10?', H.10 weekly release':''}`})${f.failed?' · last fetch FAILED, previous value kept':''} · ${x.source}.`])}
   if((s.uses||[]).some(id=>/M2/.test(id))){const g=M.global_m2,sc=g.sum_check?.latest,G=gm2(M),L=G.P[G.L],sum=L.slice(2,6).reduce((a,b)=>a+b,0),d=Math.abs(sum-L[1]);
     R.push([sc?.ok&&g.sum_check.all_months_ok?'ok':'bad',`File's sum check: US + EA + JP + CN = ${usdT(sc?.sum_of_components)} vs total ${usdT(sc?.total)} for ${sc?.month} (all months ${g.sum_check.all_months_ok?'pass':'FAIL'}).`]);
     R.push([d<0.01?'ok':'bad',`Re-added in the app: components ${usdT(sum)} vs total ${usdT(L[1])} (diff ${d.toFixed(3)}bn).`]);
