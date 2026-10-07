@@ -356,33 +356,46 @@ function athOf(id){const c=D.cc[id],p=c?.last;if(!c||!p)return null;// C: last c
 async function loadFng(){try{const r=await J('https://api.alternative.me/fng/?limit=31',600000);D.fng=r.data.map(x=>({v:+x.value,c:x.value_classification,t:x.timestamp*1000})).reverse()}catch(e){}}
 async function loadTrend(){try{const r=await J(CG+'/search/trending',600000);D.trend=r.coins.slice(0,7).map(c=>c.item);D.trendAt=Date.now()}catch(e){D.trend=[];D.trendAt=null}}
 const IVS={'15m':{cg:1},'1h':{cg:7},'4h':{cg:30},'1d':{cg:365},'1w':{cg:'max'}};
+// #3 candle validation: an empty or malformed response is rejected (the next provider is tried); rows with a non-finite or non-positive O/H/L/C,
+// high below low, a timestamp not after the previous one, or a timestamp off the interval's UTC grid (weeks open Monday 00:00 UTC) are dropped;
+// missing candles between kept rows are counted (gaps) and named on the Data line, never filled.
+const KGRID=iv=>{const ms=IVMS[iv];return ms?(iv==='1w'?t=>(t-4*864e5)%ms===0:t=>t%ms===0):null};
+const kRows=r=>{if(!Array.isArray(r)||!r.length)throw new Error('empty or malformed candle response');const x=r.filter(Array.isArray);if(!x.length)throw new Error('malformed candle response');return x};
+function kClean(k,iv){if(!k?.t)return k;if(!k.t.length)throw new Error('empty candle response');const keep=[],on=KGRID(iv);let last=-Infinity;for(let i=0;i<k.t.length;i++){const t=k.t[i],o=k.o[i],h=k.h[i],l=k.l[i],c=k.c[i];
+  if(!isFinite(t)||!(t>last)||(on&&!on(t))||![o,h,l,c].every(x=>isFinite(x)&&x>0)||h<l||h<Math.max(o,c)*0.999999||l>Math.min(o,c)*1.000001)continue;keep.push(i);last=t}
+  if(!keep.length)throw new Error('no valid candles in response');const ms=IVMS[iv];let gaps=0;if(ms)for(let j=1;j<keep.length;j++){const g=Math.round((k.t[keep[j]]-k.t[keep[j-1]])/ms)-1;if(g>0)gaps+=g}
+  if(keep.length===k.t.length&&!gaps)return k;const o={...k,dropped:k.t.length-keep.length,gaps};for(const f of ['t','o','h','l','c','v'])if(Array.isArray(k[f]))o[f]=keep.map(i=>k[f][i]);return o}
+const kNote=d=>{const a=[];if(d?.gaps)a.push(`${d.gaps} missing candle${d.gaps>1?'s':''} (exchange gap, not filled)`);if(d?.dropped)a.push(`${d.dropped} invalid candle${d.dropped>1?'s':''} dropped`);return a.length?' · '+a.join(' · '):''};
 async function klines(c,iv,limit=500){
   const key=c.id+iv+limit;if(D.kl[key]&&Date.now()-D.kl[key].t<60000)return D.kl[key].v;
   const sym=c.sym.toUpperCase()+'USDT',q=`/api/v3/klines?symbol=${sym}&interval=${iv}&limit=${limit}`;
-  const conv=(r,src)=>({t:r.map(x=>+x[0]),o:r.map(x=>+x[1]),h:r.map(x=>+x[2]),l:r.map(x=>+x[3]),c:r.map(x=>+x[4]),v:r.map(x=>+x[5]),src,pair:c.sym.toUpperCase()+'/USDT'});
-  const v=await first(
+  const conv=(r,src)=>(r=kRows(r),{t:r.map(x=>+x[0]),o:r.map(x=>+x[1]),h:r.map(x=>+x[2]),l:r.map(x=>+x[3]),c:r.map(x=>+x[4]),v:r.map(x=>+x[5]),src,pair:c.sym.toUpperCase()+'/USDT'});
+  let v=await first(
     async()=>conv(await J('https://data-api.binance.vision'+q),'Binance'),
     async()=>conv(await J('https://api.binance.com'+q),'Binance'),
     async()=>{/* CoinGecko OHLC granularity is fixed by `days` (1-2: 30m, 3-30: 4h, 31+: 4d), so it is a valid fallback only for 4h; its timestamps are candle CLOSE times; it has no volume */
-      if(iv!=='4h')throw new Error(`CoinGecko OHLC has no ${iv} candles`);const r=await J(`${CG}/coins/${c.id}/ohlc?vs_currency=usd&days=30`),H4=4*36e5;return{t:r.map(x=>x[0]-H4),o:r.map(x=>x[1]),h:r.map(x=>x[2]),l:r.map(x=>x[3]),c:r.map(x=>x[4]),v:r.map(()=>null),noVol:true,src:'CoinGecko',pair:c.sym.toUpperCase()+'/USD'}});
-  D.kl[key]={t:Date.now(),v};return v}
+      if(iv!=='4h')throw new Error(`CoinGecko OHLC has no ${iv} candles`);const r=kRows(await J(`${CG}/coins/${c.id}/ohlc?vs_currency=usd&days=30`)),H4=4*36e5;return{t:r.map(x=>x[0]-H4),o:r.map(x=>x[1]),h:r.map(x=>x[2]),l:r.map(x=>x[3]),c:r.map(x=>x[4]),v:r.map(()=>null),noVol:true,src:'CoinGecko',pair:c.sym.toUpperCase()+'/USD'}});
+  v=kClean(v,iv);D.kl[key]={t:Date.now(),v};return v}
 // chart history: up to KLP pages of 1000 Binance candles (paged back with endTime) so range buttons show what they say;
 // 'complete' = the exchange returned fewer than asked, i.e. the pair's whole history is loaded (ALL is only offered then)
 const KLP=3;
 async function klinesH(c,iv){const key=c.id+iv+'H';if(D.kl[key]&&Date.now()-D.kl[key].t<60000)return D.kl[key].v;
   const sym=c.sym.toUpperCase()+'USDT',q=e=>`/api/v3/klines?symbol=${sym}&interval=${iv}&limit=1000${e?'&endTime='+e:''}`,pair=c.sym.toUpperCase()+'/USDT';
-  const conv=r=>({t:r.map(x=>+x[0]),o:r.map(x=>+x[1]),h:r.map(x=>+x[2]),l:r.map(x=>+x[3]),c:r.map(x=>+x[4]),v:r.map(x=>+x[5])});
+  const conv=r=>(r=Array.isArray(r)?r.filter(Array.isArray):[],{t:r.map(x=>+x[0]),o:r.map(x=>+x[1]),h:r.map(x=>+x[2]),l:r.map(x=>+x[3]),c:r.map(x=>+x[4]),v:r.map(x=>+x[5])});
   const page=e=>first(async()=>conv(await J('https://data-api.binance.vision'+q(e))),async()=>conv(await J('https://api.binance.com'+q(e))));
-  let v;try{const a=await page(null);v={...a,src:'Binance',pair,complete:a.t.length<1000,pages:1};
+  let v;try{const a=await page(null);if(!a.t.length)throw new Error('empty candle response');v={...a,src:'Binance',pair,complete:a.t.length<1000,pages:1};
     for(let pg=1;pg<KLP&&!v.complete;pg++){let b;try{b=await page(v.t[0]-1)}catch(e){break}if(!b.t.length){v.complete=true;break}for(const k of ['t','o','h','l','c','v'])v[k]=b[k].concat(v[k]);v.pages++;if(b.t.length<1000)v.complete=true}}
   catch(e){v=await klines(c,iv,1000);v={...v,complete:false,pages:1}}
-  D.kl[key]={t:Date.now(),v};return v}
+  v=kClean(v,iv);D.kl[key]={t:Date.now(),v};return v}
 async function deriv(sym){sym=sym.toUpperCase();
-  return first(async()=>{const [p,o]=await Promise.all([J(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`),J(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${sym}USDT`)]);if(sym==='BTC')D.fb.deriv=null;return{f:+p.lastFundingRate,oi:+o.openInterest*+p.markPrice,src:'Binance'}},
-   async()=>{const [f,o]=await Promise.all([J(`https://www.okx.com/api/v5/public/funding-rate?instId=${sym}-USDT-SWAP`),J(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${sym}-USDT-SWAP`)]);if(!f.data?.length)throw 0;if(sym==='BTC')D.fb.deriv={fail:'Binance futures',use:'OKX',what:'live funding/OI'};return{f:+f.data[0].fundingRate,oi:+o.data[0].oiUsd,src:'OKX'}}).catch(()=>{if(sym==='BTC')D.fb.deriv={fail:'Binance futures and OKX',use:null,what:'live funding/OI'};return null})}
+  return first(async()=>{const [p,o]=await Promise.all([J(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}USDT`),J(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${sym}USDT`)]);if(sym==='BTC')D.fb.deriv=null;return{f:+p.lastFundingRate,oi:+o.openInterest*+p.markPrice,src:'Binance',at:Date.now()}},
+   async()=>{const [f,o]=await Promise.all([J(`https://www.okx.com/api/v5/public/funding-rate?instId=${sym}-USDT-SWAP`),J(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${sym}-USDT-SWAP`)]);if(!f.data?.length)throw 0;if(sym==='BTC')D.fb.deriv={fail:'Binance futures',use:'OKX',what:'live funding/OI'};return{f:+f.data[0].fundingRate,oi:+o.data[0].oiUsd,src:'OKX',at:Date.now()}}).catch(()=>{if(sym==='BTC')D.fb.deriv={fail:'Binance futures and OKX',use:null,what:'live funding/OI'};return null})}
 const FEEDS=[['CoinDesk','https://www.coindesk.com/arc/outboundfeeds/rss/'],['Cointelegraph','https://cointelegraph.com/rss'],['Decrypt','https://decrypt.co/feed'],['The Block','https://www.theblock.co/rss.xml'],['Bitcoin Magazine','https://bitcoinmagazine.com/.rss/full/']];
 // ONE shared word list (news filter, draft audit lintText/lintBanned and qa/caption-sweep.js all read RPT_WORDS): regional terms, whole words only (so 'indicator' never matches)
-const REGION_RE=/\b(india|indian|inr|rupees?|lakhs?|crores?|wazirx|coindcx|sebi|rbi)\b|\u20B9/i;const NEWSDROP=REGION_RE;
+// ONE banned-word source: shared/banned-words.json, inlined below (tests/tbanned.js asserts it equals the file and that no other list exists)
+const BANNED_WORDS={"note":"ONE banned-word source (supervisor ruling 7-8 Oct). Read by the app (index.html inlines this file as the constant BANNED_WORDS (same JSON): lintBanned, lintText, news filter) and by qa/caption-sweep.js (reads this file). tests/tbanned.js fails if either keeps a separate list or the inline copy differs. Each rule: [regex source, flags, label].","region":["\\b(india|indian|inr|rupees?|lakhs?|crores?|wazirx|coindcx|sebi|rbi)\\b|\\u20B9","i","regional content (posts stay USD and global)"],"banned":[["what are you buying","i","\"What are you buying\""],["what'?s your move","i","\"What's your move\""],["everyone'?s watching","i","\"Everyone's watching\""],["are you ready","i","\"Are you ready\""],["don'?t miss","i","\"Don't miss\""],["\\bLFG\\b","i","\"LFG\""],["to the moon","i","\"to the moon\""],["\\b(starts|begins|is starting) (here|now)\\b","i","a call (\"starts here\")"],["\\balt ?season (is )?(coming|here|loading|imminent|upon us)\\b","i","an altseason call"],["\\balt ?season has (begun|started|arrived)\\b","i","an altseason call"],["\\babout to (go |turn )?(explode|pump|rip|moon|break ?out|send|parabolic)\\b","i","a call (\"about to\u2026\")"],["\\bparabolic\\b","i","\"parabolic\""],["\\bnext leg (up|down)\\b","i","a call (\"next leg\")"],["\\b(load up|loading up|accumulate now|time to buy|buy(ing)? the dip|last chance)\\b","i","a buy call"],["\\bwill (hit|reach|touch|break|see)\\b","i","a price call (\"will hit\")"],["\\bprice target\\b","i","\"price target\""],["\\bthe (bottom|top) is in\\b","i","\"the bottom/top is in\""],["\\bthis is the (bottom|top)\\b","i","\"this is the bottom/top\""],["\\bsend it\\b","i","\"send it\""],["\\bwagmi\\b","i","\"WAGMI\""],["\\bgenerational\\b","i","\"generational\""]],"rule1":[["\\b(golden|death)[- ]cross regime\\b|\\boverbought\\b|\\boversold\\b|\\b(long|short)[- ]term trend is (up|down)\\b","i","regime/overbought wording (state the measurement)"],["\\b(bullish|bearish|supportive|headwinds?|tailwinds?|risk[- ]on|risk[- ]off|favou?rable|unfavou?rable)\\b","i","lean word (bullish/bearish/supportive/headwind/risk-on\u2026)"],["\\bbuy(ing)?[- ]zones?\\b","i","\"buy zone\""],["\\bvalue zones?\\b|\\bdeep(est)?[- ]value\\b|\\bgood value\\b","i","\"value zone\""],["\\bbuy(ing)?[- ]signals?\\b","i","\"buy signal\""],["\\baccumulat(e|es|ing|ion)\\b","i","\"accumulate\""],["\\bfire[- ]sale\\b","i","\"fire sale\""],["\\bsell(ing|s)?\\b","i","\"sell\""],["\\bevery cycle\\b","i","\"every cycle\""],["\\balways\\b","i","\"always\""],["\\bnever\\b","i","\"never\""],["\\bin history\\b","i","\"in history\""],["\\bbest buy\\b","i","\"best buy\""],["\\bbuy(ing)? the dip\\b","i","\"buy the dip\""]],"risky":[["\\bguarantee[ds]?\\b","i","\"guaranteed\""],["\\b100\\s?%\\s?(sure|certain|confirmed)\\b","i","\"100% sure\""],["\\bwill (hit|reach|go to|pump|moon|explode)\\b","i","a price prediction stated as fact (\"will hit\u2026\")"],["\\bcan(?:'|no)t lose\\b","i","\"can't lose\""],["\\bbuy now\\b","i","\"buy now\" (reads as financial advice)"],["\\b(easy|free) money\\b","i","\"easy money\""],["\\bnot? financial advice\\b","i",null],["\\bconfirmed\\b","i","\"confirmed\" (is it, from a primary source?)"],["\\bbreaking\\b","i","\"BREAKING\" (only if it is minutes old)"]],"captions":[["\\b(in|for) a (long|good|while) while\\b|\\bin ages\\b","i",null],["\\bnoted\\.?$|\\bNoted\\.","",null],["\\bhistorically\\b","i",null],["\\blooks? fine\\b","i",null],["\\bbuy(ing)? (zone|signal|the dip)\\b","i",null],["\\bsell(ing)? (zone|signal)\\b","i",null],["\\bvalue zone\\b","i",null],["\\bdeepest-value\\b","i",null],["\\baccumulat(e|ion)\\b","i",null],["\\bfire sale\\b","i",null],["\\bsell,? seriously\\b","i",null],["\\bevery (cycle|top|bottom)\\b","i",null],["\\balways\\b","i",null],["\\bnever\\b","i",null],["\\bin history\\b","i",null],["\\bbest (buy|entry|time)\\b","i",null],["\\bguarantee","i",null],["\\bBREAKING\\b","",null],["\\bconfirmed\\b","i",null]],"sell_off_noun":{"note":"Narrow exception (supervisor ruling 7 Oct 23:52 IST): 'sell-off'/'selloff' is allowed ONLY as a noun naming a market move ('bond sell-off', 'a sell-off', 'the sell-off') or inside a quoted headline with its source. 'sell', 'sell now', 'time to sell', 'selling opportunity', 'Sell off your alts', 'Sell-off incoming, sell now' and every buy call stay banned. Matched phrases are removed before the rule1 check; nothing else is exempted.","noun":["\\b(?:a|an|the|this|that|its|their|bond|bonds|equity|equities|stock|stocks|market|crypto|tech|treasury|treasuries|global|broad|broader|sharp|recent|latest|overnight|weekend|risk-asset|dollar|yen)\\s+sell-?offs?\\b(?!\\s+(?:your|now|it|them|everything)\\b)","i"],"headline":["\"[^\"]{8,}\"\\s*\\((?:[A-Z][\\w.&' -]{1,40})\\)",""]}};
+const bwRe=x=>new RegExp(x[0],x[1]),bwList=a=>a.map(x=>[bwRe(x),x[2]]);
+const REGION_RE=bwRe(BANNED_WORDS.region);const NEWSDROP=REGION_RE;
 const newsKeep=n=>!NEWSDROP.test((n.title||'')+' '+(n.desc||''));
 async function loadNews(){
   const res=await Promise.allSettled(FEEDS.map(async([name,url])=>first(
@@ -562,7 +575,7 @@ function drawCard(ctx,W,H,type,coin){
     const sw=wide?(W-2*m)/st.length:(W-2*m)/3;st.forEach(([k,v],i)=>{const col=wide?i:i%3,row=wide?0:Math.floor(i/3);const x=m+col*sw,y=H-m-(wide?70:(Math.ceil(st.length/3)-row)*95)*u;ctx.fillStyle=TH.mu;ctx.font=F(20*u,600);ctx.fillText(k,x,y-34*u);ctx.fillStyle=/^\+/.test(v)?TH.up:/^-/.test(v)?TH.dn:TH.tx;ctx.font=F(34*u,800);ctx.fillText(v,x,y)});
     const sp=mk.sparkline_in_7d?.price;if(sp?.length){const x0=wide?W*.5:m,x1=W-m,y0=wide?m+90*u:m+370*u,y1=wide?H-m-170*u:H-m-(Math.ceil(st.length/3)*95+90)*u;const mn=Math.min(...sp),mx=Math.max(...sp),up=sp.at(-1)>=sp[0],col=up?TH.up:TH.dn;const pts=sp.map((v,i)=>[x0+i/(sp.length-1)*(x1-x0),y1-(v-mn)/(mx-mn||1)*(y1-y0)]);const g=ctx.createLinearGradient(0,y0,0,y1);g.addColorStop(0,up?hexA(TH.up,.35):hexA(TH.dn,.35));g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(x0,y1);pts.forEach(p=>ctx.lineTo(...p));ctx.lineTo(x1,y1);ctx.fill();line(ctx,pts,col,5*u);ctx.fillStyle=TH.mu;ctx.font=F(18*u,600);ctx.textAlign='right';ctx.fillText('7 days',x1,y0-10*u);ctx.textAlign='left'}
     return}
-  if(type==='insight'){const {u,m}=cardBase(ctx,W,H,ins?`Data: ${ins.src} ${(ins.pair||coin.sym.toUpperCase()+'/USDT').replace('/','')} daily closes through ${axFull(ins.asof)}${ins.dv?` · funding/OI ${ins.dv.src} ${liveLbl()}`:''}`:`Data: not computed yet · ${liveLbl()}`);ctx.fillStyle=TH.tx;ctx.font=FT(64*u);ctx.fillText('$'+coin.sym.toUpperCase()+' snapshot',m,m+130*u);
+  if(type==='insight'){const {u,m}=cardBase(ctx,W,H,ins?`Data: ${ins.src} ${(ins.pair||coin.sym.toUpperCase()+'/USDT').replace('/','')} daily closes through ${axFull(ins.asof)}${ins.dv?` · funding/OI ${ins.dv.src} ${dvLbl(ins.dv)==='live'?liveLbl():dvLbl(ins.dv)}`:''}`:`Data: not computed yet · ${liveLbl()}`);ctx.fillStyle=TH.tx;ctx.font=FT(64*u);ctx.fillText('$'+coin.sym.toUpperCase()+' snapshot',m,m+130*u);
     if(!ins){ctx.fillStyle=TH.mu;ctx.font=F(30*u,600);ctx.fillText('Open the Insights tab once to compute signals.',m,m+220*u);return}
     const b=ins.bias;ctx.font=FT(40*u);const bw=ctx.measureText(b).width+50*u;ctx.fillStyle=biasCol(b)+'33';rr(ctx,m,m+165*u,bw,64*u,4*u);ctx.fill();ctx.fillStyle=biasCol(b);ctx.fillText(b,m+25*u,m+211*u);
     ctx.fillStyle=TH.tx;ctx.font=F(40*u,700);ctx.fillText(money(ins.last*R()),m+bw+30*u,m+211*u);
@@ -595,7 +608,7 @@ async function bnDaily(sym,pages=1){try{return await bnDaily0(sym,pages)}catch(e
 async function bnDaily0(sym,pages=1){let out=[],end=Date.now();for(let p=0;p<pages;p++){const r=await first(()=>J(`https://data-api.binance.vision/api/v3/klines?symbol=${sym}&interval=1d&limit=1000&endTime=${end}`,600000),()=>J(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=1000&endTime=${end}`,600000));if(!r.length)break;out=r.concat(out);end=r[0][0]-1;if(r.length<1000)break}if(!out.length)throw new Error('Binance empty '+sym);return{t:out.map(x=>+x[0]),v:out.map(x=>+x[4]),src:'Binance'}}
 async function loadSigData(){
   const [px,hr,eb,pg,bt,st,cb,ce,cl]=await Promise.allSettled([
-    first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>({...(await bnDaily('BTCUSDT',4)),src:'Binance'})),
+    first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>await bnDaily('BTCUSDT',4)),
     J('https://api.blockchain.info/charts/hash-rate?timespan=3years&format=json&cors=true&sampled=false',3600000),
     bnDaily('ETHBTC',2),bnDaily('PAXGUSDT',2),bnDaily('BTCUSDT',2),
     J('https://stablecoins.llama.fi/stablecoincharts/all',3600000),bnDaily('BTCUSDT',4),bnDaily('ETHUSDT',4),bnDaily('LINKUSDT',3)]);
@@ -603,6 +616,9 @@ async function loadSigData(){
   if(P0&&P0.src!=='blockchain.com')fs.push({fail:'blockchain.com',use:P0.src,what:'BTC price history'});if(!P0)fs.push({fail:'blockchain.com, Binance and Coinbase',use:null,what:'BTC price history'});if(!g(hr))fs.push({fail:'blockchain.com',use:null,what:'hashrate'});
   let stv=g(st)?{t:g(st).map(p=>+p.date*1000),v:g(st).map(p=>p.totalCirculatingUSD.peggedUSD),src:'DefiLlama'}:null;if(!stv){try{const mk=await ensureMK();if(mk?.stablecoins?.points?.length){stv={t:mk.stablecoins.points.map(p=>ymd(p[0])),v:mk.stablecoins.points.map(p=>p[1]),src:'market.json'};fs.push({fail:'DefiLlama',use:'market.json',what:'stablecoin supply'})}else fs.push({fail:'DefiLlama',use:null,what:'stablecoin supply'})}catch(e){}}// RULE 2: completed UTC days only; live prices appear only on tiles labelled "live HH:MM UTC"
   const H=g(hr);return{P,H:H?closed({t:H.values.map(p=>p.x*1000),v:H.values.map(p=>p.y)}):null,EB:(g(ce)&&g(cb))?closed(alignR(g(ce),g(cb))):closed(g(eb)),PG:closed(g(pg)),BT:closed(g(bt)),ST:stv?{...closed(stv),src:stv.src}:null,CL:{BTC:closed(g(cb)),ETH:closed(g(ce)),LINK:closed(g(cl))}}}
+// #24 partial source recovery: each dataset that came back fresh replaces the old one; only a failed dataset keeps its previous copy
+// (before: a failed long-term BTC source threw away every fresh coin history too)
+function mergeSig(nd,old){if(!old)return nd;const o={...nd};for(const k of ['P','H','EB','PG','BT','ST'])if(!o[k]&&old[k])o[k]={...old[k],kept:true};o.CL={...(old.CL||{})};for(const k in (nd.CL||{}))if(nd.CL[k])o.CL[k]=nd.CL[k];return o}
 function closed(s){if(!s||!s.t)return s||null;let n=s.t.length;while(n&&s.t[n-1]+DAY>Date.now())n--;return n===s.t.length?s:{...s,t:s.t.slice(0,n),v:s.v.slice(0,n)}}
 // forming-candle rule: readings, scores and POST NOW use the last CLOSED daily candle, whatever the caller passes in
 function closedSet(d){if(!d)return d;const o={...d};for(const k of ['P','H','EB','PG','BT','ST'])if(o[k]?.t)o[k]=closed(o[k]);if(d.CL){o.CL={};for(const k in d.CL)o.CL[k]=d.CL[k]?.t?closed(d.CL[k]):d.CL[k]}return o}
@@ -617,7 +633,10 @@ function postNow(it){const m=it&&it.om;if(!it||!m||m.cur==null||!isFinite(m.cur)
 function rvol(v,n){const r=new Array(v.length).fill(null);for(let i=n;i<v.length;i++){let s=0,s2=0;for(let k=i-n+1;k<=i;k++){const x=Math.log(v[k]/v[k-1]);s+=x;s2+=x*x}const m=s/n;r[i]=Math.sqrt(Math.max(0,(s2-n*m*m)/(n-1)))*Math.sqrt(365)*100}return r}
 function rarity(a,t,low){const N=a.length,cur=a[N-1],eq=x=>Math.abs(x-cur)<=1e-9*Math.max(1,Math.abs(cur));let j=-1,jt=-1,cnt=0,tot=0;for(let i=0;i<N-1;i++){const x=a[i];if(x==null||!isFinite(x))continue;tot++;const e=eq(x),st=!e&&(low?x<cur:x>cur);if(st||e)cnt++;if(st)j=i;else if(e)jt=i}return{cur,since:j<0?null:t[j],tie:jt>j?t[jt]:null,first:t[a.findIndex(x=>x!=null)],tot,rank:tot?cnt/tot*100:0,oneIn:cnt?Math.round(tot/cnt):null}}
 const dU=t=>new Date(t).toLocaleDateString('en-GB',{timeZone:'UTC',day:'numeric',month:'short',year:'numeric'}).replace('Sept','Sep');
-function alignR(a,b){const m=new Map(b.t.map((t,i)=>[Math.floor(t/DAY),b.v[i]]));const t=[],v=[];a.t.forEach((x,i)=>{const y=m.get(Math.floor(x/DAY));if(y)v.push(a.v[i]/y),t.push(x)});return{t,v}}
+// #16: a ratio keeps its providers (src, and pair = [numerator provider, denominator provider]) so labels never assume Binance
+function alignR(a,b){const m=new Map(b.t.map((t,i)=>[Math.floor(t/DAY),b.v[i]]));const t=[],v=[];a.t.forEach((x,i)=>{const y=m.get(Math.floor(x/DAY));if(y)v.push(a.v[i]/y),t.push(x)});const sa=a.src||null,sb=b.src||null;return{t,v,src:sa&&sa===sb?sa:[sa,sb].filter(Boolean).join(' / ')||undefined,pair:[sa,sb]}}
+const exN=s=>s?.src||'exchange',exP=(s,a)=>s?.src==='Coinbase'?a+'-USD':s?.src==='Binance'?a+'USDT':a,
+  exR=(r,A,B)=>{const[sa,sb]=r?.pair||[r?.src,r?.src];return sa&&sa===sb?`${sa} ${exP({src:sa},A)} ÷ ${exP({src:sb},B)}`:`${sa||'exchange'} ${exP({src:sa},A)} ÷ ${sb||'exchange'} ${exP({src:sb},B)}`};
 function slice(t,v,from){const i=t.findIndex(x=>x>=from);return i<0?{t:[],v:[]}:{t:t.slice(i),v:v.slice(i)}}
 const sliceS=(s,from)=>{const i=s.t.findIndex(x=>x>=from);const o={...s};for(const k in s)if(Array.isArray(s[k]))o[k]=s[k].slice(Math.max(0,i));return o};
 // generic resolution-independent plot
@@ -753,15 +772,15 @@ function buildSignals(d){d=closedSet(d);const out=[],P=d.P,PB=d.CL?.BTC?.v?.leng
   for(const A of ['BTC','ETH','LINK']){const C=d.CL&&d.CL[A];if(!C||C.v.length<400)continue;const ct=C.t,cv=C.v,last=dU(ct.at(-1));
    for(const n of [7,30])add(()=>{const a=rvol(cv,n),lo=pctl(a.filter(x=>x!=null),a.at(-1))<50,R=rarity(a,ct,lo);const days=R.since?(ct.at(-1)-R.since)/DAY:Infinity;if(days<30)return null;
     const sc=days===Infinity?97:days>=365?90:days>=180?82:days>=90?70:45,word=lo?'lowest':'highest',when=sinceStr(R,word);const s=sliceS({t:ct,a},Date.now()-3*365*DAY);
-    return{id:'rv'+n+A,asset:A,n,m:R.cur,closed:ct.at(-1),title:`${A} ${n}-day volatility (Binance closes)`,read:`${R.cur.toFixed(1)}% annualized · ${when}`,score:sc,
-     cap:`$${A} ${n}-day realized volatility is ${R.cur.toFixed(1)}% (close-to-close, annualized), ${when}.\n\n${R.tot.toLocaleString('en-US')} daily closes, Binance, through ${last} UTC.${lo?'\n\nDescriptive, not a forecast: low volatility says nothing about direction.':''}`,
-     src:`Binance ${A}USDT daily closes, completed UTC days through ${last}`,
+    return{id:'rv'+n+A,asset:A,n,m:R.cur,closed:ct.at(-1),ex:exN(C),title:`${A} ${n}-day volatility (${exN(C)} closes)`,read:`${R.cur.toFixed(1)}% annualized · ${when}`,score:sc,
+     cap:`$${A} ${n}-day realized volatility is ${R.cur.toFixed(1)}% (close-to-close, annualized), ${when}.\n\n${R.tot.toLocaleString('en-US')} daily closes, ${exN(C)}, through ${last} UTC.${lo?'\n\nDescriptive, not a forecast: low volatility says nothing about direction.':''}`,
+     src:`${exN(C)} ${exP(C,A)} daily closes, completed UTC days through ${last}`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:s.t,floor0:1,yf:x=>x.toFixed(0)+'%',series:[{v:s.a,c:TH.ac,w:3,l:`${n}D realized vol`,fill:1}],hl:[{v:R.cur,c:TH.ac2||TH.up,l:`now ${R.cur.toFixed(1)}%`}],marks:[{t:s.t.at(-1),v:R.cur,c:TH.ac2||TH.up,l:lo?'LOW':'HIGH'}]})}})}
   if(d.CL?.LINK&&d.CL?.BTC)add(()=>{const r=alignR(d.CL.LINK,d.CL.BTC),ch=r.v.map((x,i)=>i>=30?(x/r.v[i-30]-1)*100:null),hi=ch.at(-1)>=0,R=rarity(ch,r.t,!hi);const days=R.since?(r.t.at(-1)-R.since)/DAY:Infinity;if(days<30)return null;
     const sc=days===Infinity?95:days>=365?88:days>=180?78:days>=90?65:42,when=sinceStr(R,hi?'strongest':'weakest'),last=dU(r.t.at(-1));const s=sliceS({t:r.t,ch},Date.now()-2*365*DAY);
     return{id:'linkbtc',m:R.cur,closed:r.t.at(-1),title:'LINK vs BTC · 30-day',read:`${R.cur>=0?'+':''}${R.cur.toFixed(1)}% vs BTC in 30 days · ${when}`,score:sc,
-     cap:`$LINK is ${R.cur>=0?'up':'down'} ${Math.abs(R.cur).toFixed(1)}% against $BTC over the last 30 days, ${when}.\n\nLINK/BTC ratio, Binance completed daily closes through ${last} UTC.`,
-     src:`Binance LINKUSDT ÷ BTCUSDT, completed UTC days through ${last}`,
+     cap:`$LINK is ${R.cur>=0?'up':'down'} ${Math.abs(R.cur).toFixed(1)}% against $BTC over the last 30 days, ${when}.\n\nLINK/BTC ratio, ${exN(r)} completed daily closes through ${last} UTC.`,
+     src:`${exR(r,'LINK','BTC')}, completed UTC days through ${last}`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:s.t,yf:x=>x.toFixed(0)+'%',series:[{v:s.ch,c:TH.ac,w:3,l:'LINK vs BTC, 30D change',fill:1}],hl:[{v:0,c:TH.mu,l:'0%'}],marks:[{t:s.t.at(-1),v:R.cur,c:hi?TH.up:TH.dn,l:(R.cur>=0?'+':'')+R.cur.toFixed(0)+'%'}]})}});
 
   if(P){const t=P.t,v=P.v,N=v.length,last=v[N-1];
@@ -800,7 +819,7 @@ function buildSignals(d){d=closedSet(d);const out=[],P=d.P,PB=d.CL?.BTC?.v?.leng
     return{id:'halv',m:now,title:'Halving cycle overlay',read:`Day ${day} since the ${curC.y} halving · ${now.toFixed(2)}× the halving price`,score:78,
      cap:`$BTC is on day ${day} after the ${curC.y} halving, up ${now.toFixed(2)}× from the halving price.\n\n${past.map(p=>`${p.y} cycle on day ${day}: ${p.m?p.m.toFixed(2)+'×':'–'} (peaked on day ${p.pk})`).join('\n')}`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:[0,1500],days:1,xf:x=>'Day '+Math.round(x),log:1,yf:v=>v.toFixed(v<10?1:0)+'×',series:cyc.map((cc,i)=>({t:cc.dd,v:cc.mm,c:cols[i+4-cyc.length]||TH.ac,w:i===cyc.length-1?4:2.2,l:cc.y+' halving'})),marks:[{t:day,v:now,c:TH.tx,l:'Latest close'}]}),xDays:1}});
-   add(()=>{const WK=wkCloses(d.CL?.BTC)||wkCloses(P),W=WK.v,Wt=WK.t,wsrc=wkCloses(d.CL?.BTC)?'Binance BTCUSDT':(P.src||'BTC');const r=rsi(W,14),cur=r.at(-1),sc=cur<35||cur>80?93:clamp(Math.abs(cur-55)*2+20,20,80);const s=sliceS({t:Wt,r},Date.now()-8*365*DAY);const wI=(f,k)=>r.map((x,i)=>x!=null&&i<r.length-1&&f(x)?i:-1).filter(i=>i>=0),wD=L=>L.length?` (latest ${dU(Wt[L.at(-1)])})`:'',wL35=wI(x=>x<35),wL30=wI(x=>x<30),wH80=wI(x=>x>80);
+   add(()=>{const WK=wkCloses(d.CL?.BTC)||wkCloses(P),W=WK.v,Wt=WK.t,wsrc=wkCloses(d.CL?.BTC)?exN(d.CL.BTC)+' '+exP(d.CL.BTC,'BTC'):(P.src||'BTC');const r=rsi(W,14),cur=r.at(-1),sc=cur<35||cur>80?93:clamp(Math.abs(cur-55)*2+20,20,80);const s=sliceS({t:Wt,r},Date.now()-8*365*DAY);const wI=(f,k)=>r.map((x,i)=>x!=null&&i<r.length-1&&f(x)?i:-1).filter(i=>i>=0),wD=L=>L.length?` (latest ${dU(Wt[L.at(-1)])})`:'',wL35=wI(x=>x<35),wL30=wI(x=>x<30),wH80=wI(x=>x>80);
     const wTxt=`On loaded weekly closes from ${dU(Wt[r.findIndex(x=>x!=null)])}: ${wL30.length} earlier week${wL30.length===1?'':'s'} below 30${wD(wL30)} and ${wH80.length} above 80${wD(wH80)}.`;
     return{id:'wrsi',pastTxt:wTxt,m:cur,closed:Wt.at(-1),title:'Weekly RSI',read:`Weekly RSI ${cur.toFixed(1)} · week ending ${dU(Wt.at(-1))}`,readF:om=>`Weekly RSI ${cur.toFixed(1)} (week ending ${dU(Wt.at(-1))}) · ${om.pctTxt}`,score:sc,src:`${wsrc} weekly candles (Mon–Sun, completed) through ${dU(Wt.at(-1))}`,
      cap:`$BTC weekly RSI is ${cur.toFixed(1)} on completed Mon–Sun candles (week ending ${dU(Wt.at(-1))}).\n\n${cur<35?`Weekly RSI closed below 35 in ${wL35.length} earlier week${wL35.length===1?'':'s'} of loaded history${wD(wL35)}.`:cur>80?`Weekly RSI closed above 80 in ${wH80.length} earlier week${wH80.length===1?'':'s'} of loaded history${wD(wH80)}.`:'Mid-range: no extreme in either direction.'}`,
@@ -812,8 +831,8 @@ function buildSignals(d){d=closedSet(d);const out=[],P=d.P,PB=d.CL?.BTC?.v?.leng
      cap:buy?`Hash Ribbons on $BTC: the 30-day hashrate average crossed back above the 60-day ${ago} days ago, ending a miner capitulation.`:cap?`Bitcoin miners are under stress: the 30-day hashrate average is below the 60-day (Hash Ribbons capitulation). Hashrate ${(h7/1e6).toFixed(0)} EH/s (7-day avg).`:`Bitcoin hashrate is about ${(h7/1e6).toFixed(0)} EH/s (7-day avg); no capitulation on the Hash Ribbons.`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:v=>(v/1e6).toFixed(0)+' EH',series:[{v:a,c:TH.up,w:3,l:'30D MA'},{v:b,c:TH.dn,w:3,l:'60D MA'}],marks:caps.slice(-3).map(i=>({t:t[i],v:a[i],c:TH.up,l:'cross up'}))})}})}
   if(d.EB){add(()=>{const{t,v}=d.EB,N=v.length,cur=v[N-1],p=pctl(v,cur),lo=Math.min(...v.slice(-365)),hi=Math.max(...v.slice(-365)),sc=cur<=lo*1.02||cur>=hi*.98?90:clamp(Math.abs(p-50)*1.6+15,15,85);
-    return{id:'ethbtc',m:cur,closed:t[N-1],title:'ETH/BTC ratio',read:`${cur.toFixed(5)}`,readF:om=>`${cur.toFixed(5)} · ${om.pctTxt}`,score:sc,src:`Binance ETHUSDT ÷ BTCUSDT daily closes since ${new Date(t[0]).getUTCFullYear()}, completed UTC days through ${dU(t[N-1])}`,
-     cap:`ETH/BTC is at ${cur.toFixed(4)} (Binance, completed daily close ${dU(t[N-1])}).${cur<=lo*1.02?'\n\nThat is near its lowest close of the past year.':cur>=hi*.98?'\n\nThat is near its highest close of the past year.':''}`,
+    return{id:'ethbtc',m:cur,closed:t[N-1],title:'ETH/BTC ratio',read:`${cur.toFixed(5)}`,readF:om=>`${cur.toFixed(5)} · ${om.pctTxt}`,score:sc,src:`${d.EB.pair?exR(d.EB,'ETH','BTC'):exN(d.EB)+(d.EB.src==='Coinbase'?' ETH-BTC':' ETHBTC')} daily closes since ${new Date(t[0]).getUTCFullYear()}, completed UTC days through ${dU(t[N-1])}`,
+     cap:`ETH/BTC is at ${cur.toFixed(4)} (${exN(d.EB)}, completed daily close ${dU(t[N-1])}).${cur<=lo*1.02?'\n\nThat is near its lowest close of the past year.':cur>=hi*.98?'\n\nThat is near its highest close of the past year.':''}`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:v=>v.toFixed(3),series:[{v,c:TH.vi||TH.ac,w:3,fill:1}],marks:[{t:t[N-1],v:cur,c:TH.tx,l:cur.toFixed(4)}]})}})}
   if(d.PG&&d.BT){add(()=>{const r=alignR(d.BT,d.PG),N=r.v.length,cur=r.v[N-1],y1=r.v[Math.max(0,N-366)],mx=Math.max(...r.v),ch=(cur/y1-1)*100,sc=cur>=mx*.97?93:clamp(Math.abs(ch)*.9+30,25,85);
     return{id:'gold',m:cur,title:'Bitcoin priced in gold',read:`1 BTC = ${cur.toFixed(1)} oz of gold · ${pct(ch,0)} in 1 year`,score:sc,
@@ -825,9 +844,9 @@ function buildSignals(d){d=closedSet(d);const out=[],P=d.P,PB=d.CL?.BTC?.v?.leng
      cap:`Total stablecoin supply is ${usdB(cur)}, ${pct(ch,2)} in 30 days${cur>=ath*.995?', a record high':''} (DefiLlama, completed day ${dU(s.t[N-1])}).`,
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:s.t,yf:usdB,series:[{v:s.v,c:TH.up,w:3.2,fill:1,l:'Stablecoin supply'},{t:bs.t,v:bs.v.map(x=>x*k),c:TH.ac,w:2.2,l:'BTC (scaled)'}]})}})}
   // E-exports: each card names only its own source plus the as-of date of its data
-  try{const thru=x=>x&&x.t?.length?', completed UTC days through '+dU(x.t.at(-1)):'',cbF=(D.fb.sig||[]).some(f=>/BTCUSDT/.test(f.what||'')&&f.use==='Coinbase'),bS=(cbF?'Coinbase BTC-USD':'Binance BTCUSDT')+' daily closes';
+  try{const thru=x=>x&&x.t?.length?', completed UTC days through '+dU(x.t.at(-1)):'',cbF=(D.fb.sig||[]).some(f=>/BTCUSDT/.test(f.what||'')&&f.use==='Coinbase'),bS=(PB?.src?exN(PB)+' '+exP(PB,'BTC'):cbF?'Coinbase BTC-USD':'Binance BTCUSDT')+' daily closes';
    const pS=P?(P.src==='blockchain.com'?'blockchain.com BTC daily price':(P.src||'Binance')+' BTC daily closes')+thru(P):'',bb=PB?(PB===P?pS:bS+thru(PB)):'';
-   const M={pi:pS,rainbow:pS,halv:pS,mayer:bb,'2y':bb,dd:bb,gold:d.PG&&d.BT?'Binance PAXGUSDT ÷ BTCUSDT daily closes'+thru(alignR(d.BT,d.PG)):''};
+   const M={pi:pS,rainbow:pS,halv:pS,mayer:bb,'2y':bb,dd:bb,gold:d.PG&&d.BT?exR({pair:[d.PG.src,d.BT.src]},'PAXG','BTC')+' daily closes'+thru(alignR(d.BT,d.PG)):''};
    out.forEach(s=>{if(!s.src&&M[s.id])s.dsrc=M[s.id]})}catch(e){console.warn('dsrc',e)}
   return out.sort((a,b)=>b.score-a.score)}
 function drawSig(ctx,W,H,s){if(!s||typeof s.draw!=='function'){/* signal gone (rebuilt list, source missed): blank frame with '—', never a crash or a fake card */ctx.fillStyle=TH.bg||'#000';ctx.fillRect(0,0,W,H);ctx.fillStyle=TH.mu;ctx.font=F(Math.min(W,H)/1000*64,700);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('—',W/2,H/2);ctx.textAlign='left';return null}
@@ -842,7 +861,7 @@ async function renderSignals(force){const box=$('#sigList'),y0=scrollY;if(!SIG||
   box.innerHTML=ORD.map(s=>{const i=SIG.indexOf(s),k='sig|'+s.id;return`<div class="card sig" data-sid="${s.id}"><h3>${postNow(s)?'<span class="bias b-up">POST NOW</span>':''}<span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px;min-width:0">${esc(s.title)}</span><span class="sp"></span><button class="btn sm num" data-sb="${k}" title="Opportunity score: tap for the breakdown">${s.score} ⓘ</button></h3>
    <div class="sbx ${OPEN.has(k)?'on':''}" data-sbx="${k}">${OPEN.has(k)?sbHTML(s):''}</div>
    <canvas class="cv" data-sg="${i}"></canvas><div class="mu" style="margin:8px 0 3px;font-size:13px">${esc(s.read)}</div><div style="margin:0 0 8px;font-size:12px;color:var(--tx2)">${esc(s.why||'')}</div>
-   <div class="flex"><button class="btn pri" data-sx="${i}|share">Share to X (4K)</button><button class="btn" data-sx="${i}|4k">4K ⬇</button><button class="btn" data-sx="${i}|8k">8K ⬇</button><button class="btn" data-sx="${i}|cap">Captions</button><button class="btn" data-sx="${i}|audit">🛡 Audit</button></div></div>`}).join('');
+   <div class="flex"><button class="btn pri" data-sx="${i}|share">Share to X (4K)</button><button class="btn" data-sx="${i}|4k">4K ⬇</button><button class="btn" data-sx="${i}|8k">8K ⬇</button><button class="btn" data-sx="${i}|cap">Captions</button><button class="btn" data-sx="${i}|audit">🛡 Audit</button></div></div>`}).join('')+(SIGSTALE||[]).map(s=>`<div class="card sig" data-sid="${s.id}" data-stale="1"><h3><span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px;min-width:0">${esc(s.title)}</span><span class="sp"></span><span class="bias b-dn">STALE</span></h3><div class="mu" style="margin:4px 0;font-size:13px">${esc(s.staleWhy)}</div><div style="font-size:12px;color:var(--tx2)">${esc(s.src)}</div></div>`).join('');
   $$('[data-sg]').forEach(cv=>{const ctx=fit(cv,Math.round(cv.parentElement.clientWidth*9/16));drawSig(ctx,cv.width,cv.height,SIG[+cv.dataset.sg])});
   try{await ensureMac()}catch(e){}$('#sigTop').innerHTML=`<span data-pnc></span> Highest Opportunity score first.`;paintPostCnt();
   requestAnimationFrame(()=>{if(y0>0&&Math.abs(scrollY-y0)>2)scrollTo(0,y0)})}
@@ -854,7 +873,7 @@ function sigAct(i,a){const s=SIG[i];if(!s)return;const fn=(x,W,H)=>drawSig(x,W,H
 // ---------- AUDIT (second-source verification before posting)
 async function liveBTC(){const src=[['Coinbase',async()=>+(await J('https://api.coinbase.com/v2/prices/BTC-USD/spot')).data.amount],['Kraken',async()=>{const r=await J('https://api.kraken.com/0/public/Ticker?pair=XBTUSD');return+Object.values(r.result)[0].c[0]}],['Binance',async()=>+(await J('https://data-api.binance.vision/api/v3/ticker/price?symbol=BTCUSDT')).price],['CoinGecko',async()=>+(await J(CG+'/simple/price?ids=bitcoin&vs_currencies=usd')).bitcoin.usd]];
   const r=await Promise.allSettled(src.map(([n,f])=>f().then(v=>({n,v}))));return r.filter(x=>x.status==='fulfilled'&&x.value.v>0).map(x=>x.value)}
-const RISKY=[[/\bguarantee[ds]?\b/i,'"guaranteed"'],[/\b100\s?%\s?(sure|certain|confirmed)\b/i,'"100% sure"'],[/\bwill (hit|reach|go to|pump|moon|explode)\b/i,'a price prediction stated as fact ("will hit…")'],[/\bcan(?:'|no)t lose\b/i,'"can\'t lose"'],[/\bbuy now\b/i,'"buy now" (reads as financial advice)'],[/\b(easy|free) money\b/i,'"easy money"'],[/\bnot? financial advice\b/i,null],[/\bconfirmed\b/i,'"confirmed" (is it, from a primary source?)'],[/\bbreaking\b/i,'"BREAKING" (only if it is minutes old)']];
+const RISKY=bwList(BANNED_WORDS.risky);
 function lintText(txt,live){const out=[];const posts=txt.split(/\n\n(?=\d+\/)/);
   posts.forEach((p,i)=>{const n=xLen(p);if(n>280)out.push(['warn',`${posts.length>1?'Post '+(i+1):'Post'} is ${n}/280 characters; X will cut it off (unless you have Premium).`])});
   const NC=lintText.news;for(const [re,l] of RISKY){if(!l||!re.test(txt))continue;if(NC&&/breaking|confirmed/.test(re.source)){const okB=NC.conf&&(!/breaking/.test(re.source)||NC.age<1);out.push(okB?['ok',`${l.split(' (')[0]} is fair here: the story is confirmed${/breaking/.test(re.source)?' and under an hour old':''}.`]:['warn',`${l.split(' (')[0]} needs ${/breaking/.test(re.source)?'a confirmed story under an hour old':'a second outlet or primary source'}; this one ${NC.conf?'is '+NC.age.toFixed(1)+' hours old':'is unconfirmed'}.`]);continue}out.push(['warn',`Strong wording: ${l}. Soften it or state the past count and dates.`]);}
@@ -870,17 +889,32 @@ async function auditSignal(s){const R=[];const live=await liveBTC();
   else R.push(['warn','Could not reach enough exchanges to cross-check the live price.']);
   const P=SIGD?.P;if(P){const age=(Date.now()-P.t.at(-1)-DAY)/DAY;R.push([age<1.5?'ok':'warn',`Price history is fresh: last completed daily close ${dU(P.t.at(-1))}, ${age.toFixed(1)} days ago (${P.src}).`])}
   const ind={pi:1,mayer:1,'2y':1,dd:1,wrsi:1,halv:1};
-  if(ind[s.id]){try{const B=closed(await bnDaily('BTCUSDT',4));const v=B.v,t=B.t,N=v.length;let m2,tol,lab,fmt=x=>x.toFixed(3);
-      if(s.id==='pi'){m2=sma(v,111)[N-1]/(2*sma(v,350)[N-1]);tol=3;lab='111DMA ÷ 2×350DMA'}
-      if(s.id==='mayer'){m2=v[N-1]/sma(v,200)[N-1];tol=3;lab='Mayer Multiple';fmt=x=>x.toFixed(2)+'×'}
-      if(s.id==='2y'){m2=v[N-1]/sma(v,730)[N-1];tol=3;lab='price ÷ 2-year MA';fmt=x=>x.toFixed(3)}
-      if(s.id==='dd'){let a=0;v.forEach(x=>a=Math.max(a,x));m2=(v[N-1]/a-1)*100;tol=null;lab='drawdown from ATH';fmt=x=>x.toFixed(1)+'%'}
-      if(s.id==='wrsi'){m2=rsi(wkCloses(B).v).at(-1);tol=null;lab='weekly RSI (completed Mon–Sun candles)';fmt=x=>x.toFixed(1)}
-      if(s.id==='halv'){const i0=t.findIndex(x=>x>=HALV[3]);m2=i0<0||t[i0]-HALV[3]>2*DAY?null:v[N-1]/v[i0];tol=3;lab='multiple since the 2024 halving';fmt=x=>x.toFixed(2)+'×'}
-      const a=s.m;let ok;if(m2==null||!isFinite(m2))R.push(['warn',`Comparison history is too short for the ${lab}; no recompute.`]);else if(s.id==='dd'||s.id==='wrsi'){const diff=Math.abs(m2-a);ok=diff<=(s.id==='dd'?3:5);R.push([ok?'ok':'bad',`Recomputed ${lab} from Binance's own price history: ${fmt(m2)} vs chart ${fmt(a)} (difference ${diff.toFixed(1)} pts).`])}
-      else{const diff=Math.abs(m2/a-1)*100;ok=diff<=tol;R.push([ok?'ok':'bad',`Recomputed ${lab} from Binance's own price history: ${fmt(m2)} vs chart ${fmt(a)} (${diff.toFixed(1)}% apart).`])}}catch(e){R.push(['warn','Could not fetch Binance history for an independent recompute.'])}}
-  if(s.id==='ethbtc'){try{const x=+(await J('https://api.coinbase.com/v2/prices/ETH-BTC/spot')).data.amount,d=Math.abs(x/s.m-1)*100;R.push([d<1.5?'ok':'bad',`ETH/BTC cross-checked on Coinbase: ${x.toFixed(5)} vs chart ${s.m.toFixed(5)} (${d.toFixed(2)}% apart).`])}catch(e){R.push(['warn','Coinbase ETH/BTC unavailable for cross-check.'])}}
-  if(s.id==='gold'){try{const [b,g]=await Promise.all([J('https://api.coinbase.com/v2/prices/BTC-USD/spot'),J('https://api.coinbase.com/v2/prices/PAXG-USD/spot')]);const x=+b.data.amount/+g.data.amount,d=Math.abs(x/s.m-1)*100;R.push([d<2?'ok':'bad',`BTC-in-gold cross-checked with Coinbase prices: ${x.toFixed(2)} oz vs chart ${s.m.toFixed(2)} oz (${d.toFixed(2)}% apart).`])}catch(e){R.push(['warn','Coinbase gold price unavailable for cross-check.'])}}
+  // #25 independent: the recompute comes from a provider OTHER than the one behind the chart (Coinbase when the chart is on Binance, else Binance);
+  // a same-provider recompute is labelled as an arithmetic check only. #26: both sides end on the chart's last closed date.
+  // #27: each indicator states the history it needs; too little history gives a clear warning and no recompute.
+  if(ind[s.id]){const PS=(SIGD?.P?.src||'')+(s.id==='mayer'||s.id==='2y'||s.id==='dd'?'|'+(SIGD?.CL?.BTC?.src||'Binance'):''),CS=(s.id==='mayer'||s.id==='2y'||s.id==='dd')&&SIGD?.CL?.BTC?.v?.length>800?SIGD.CL.BTC:SIGD?.P,cd=CS?.t?.at(-1);
+    const aT=s.id==='dd'&&CS?CS.t[CS.v.indexOf(Math.max(...CS.v))]:null,days=Math.min(3000,{pi:400,mayer:260,'2y':800,wrsi:160,halv:Math.ceil((Date.now()-HALV[3])/DAY)+10,dd:aT?Math.ceil((Date.now()-aT)/DAY)+10:1500}[s.id]);
+    try{const useCB=/Binance/.test(PS),B0=closed(useCB?await cbDaily('BTCUSDT',days):await bnDaily('BTCUSDT',Math.max(1,Math.ceil(days/1000)))),src=B0.src||(useCB?'Coinbase':'Binance'),indep=!PS.includes(src);
+      const n0=cd?B0.t.findIndex(x=>x>cd):-1,B=n0<0?B0:{...B0,t:B0.t.slice(0,n0),v:B0.v.slice(0,n0)},v=B.v,t=B.t,N=v.length,endD=N?dU(t[N-1]):'—';
+      const need={pi:350,mayer:200,'2y':730,dd:0,wrsi:15*7+7,halv:0}[s.id];let m2=null,tol,lab,fmt=x=>x.toFixed(3),short=null;
+      if(s.id==='pi'){lab='111DMA ÷ 2×350DMA';tol=3}if(s.id==='mayer'){lab='Mayer Multiple';tol=3;fmt=x=>x.toFixed(2)+'×'}if(s.id==='2y'){lab='price ÷ 2-year MA';tol=3}
+      if(s.id==='dd'){lab='drawdown from ATH';fmt=x=>x.toFixed(1)+'%'}if(s.id==='wrsi'){lab='weekly RSI (completed Mon–Sun candles)';fmt=x=>x.toFixed(1)}if(s.id==='halv'){lab='multiple since the 2024 halving';tol=3;fmt=x=>x.toFixed(2)+'×'}
+      if(cd&&(!N||t[N-1]!==cd))short=`its last close is ${endD}, the chart's is ${dU(cd)}`;
+      else if(N<need)short=`${N} daily closes, the ${lab} needs ${need}`;
+      else if(s.id==='dd'){if(aT!=null&&t[0]>aT)short=`it starts ${dU(t[0])}, after the all-time-high close (${dU(aT)})`;else{let a=0;v.forEach(x=>a=Math.max(a,x));m2=(v[N-1]/a-1)*100}}
+      else if(s.id==='halv'){const i0=t.findIndex(x=>x>=HALV[3]);if(i0<0||t[i0]-HALV[3]>2*DAY)short=`it does not reach back to the 2024 halving`;else m2=v[N-1]/v[i0]}
+      else if(s.id==='wrsi'){const W=wkCloses(B);if(!W||W.v.length<15)short=`${W?W.v.length:0} completed weeks, weekly RSI needs 15`;else m2=rsi(W.v).at(-1)}
+      else{if(s.id==='pi')m2=sma(v,111)[N-1]/(2*sma(v,350)[N-1]);if(s.id==='mayer')m2=v[N-1]/sma(v,200)[N-1];if(s.id==='2y')m2=v[N-1]/sma(v,730)[N-1]}
+      const a=s.m,who=indep?`${src} (independent of the chart's ${PS.split('|')[0]||'source'})`:`${src}, the same provider as the chart (arithmetic check, not independent)`;
+      if(short)R.push(['warn',`Comparison history from ${src} is too short for an audit: ${short}. No recompute.`]);
+      else if(m2==null||!isFinite(m2))R.push(['warn',`Recompute from ${src} gave no valid ${lab}; no comparison.`]);
+      else{const pts=s.id==='dd'||s.id==='wrsi',diff=pts?Math.abs(m2-a):Math.abs(m2/a-1)*100,ok=diff<=(pts?(s.id==='dd'?3:5):tol);
+        R.push([ok?(indep?'ok':'info'):'bad',`Recomputed ${lab} from ${who}, closes through ${endD}: ${fmt(m2)} vs chart ${fmt(a)} (${pts?'difference '+diff.toFixed(1)+' pts':diff.toFixed(1)+'% apart'}).`])}}
+    catch(e){R.push(['warn','Could not fetch a second provider\'s history for an independent recompute.'])}}
+  // #26 audit date alignment: ETH/BTC and BTC-in-gold are checked against Coinbase DAILY CLOSES on the chart's last closed date, not live quotes
+  const cbAt=(S,d)=>{const i=S.t.indexOf(d);return i<0?null:S.v[i]};
+  if(s.id==='ethbtc'){try{const E=SIGD?.EB,d=E?.t?.at(-1),C=await cbDaily('ETHBTC',60),x=d!=null?cbAt(C,d):null;if(x==null)R.push(['warn',`Coinbase has no ETH/BTC daily close for ${d?dU(d):'the chart date'}; no comparison.`]);else{const dd=Math.abs(x/s.m-1)*100;R.push([dd<1.5?'ok':'bad',`ETH/BTC cross-checked on Coinbase's ${dU(d)} close: ${x.toFixed(5)} vs chart ${s.m.toFixed(5)} (${dd.toFixed(2)}% apart).`])}}catch(e){R.push(['warn','Coinbase ETH/BTC closes unavailable for cross-check.'])}}
+  if(s.id==='gold'){try{const G=SIGD?.PG,d=G?.t?.at(-1),[b,g]=await Promise.all([cbDaily('BTCUSDT',60),cbDaily('PAXGUSDT',60)]),xb=d!=null?cbAt(b,d):null,xg=d!=null?cbAt(g,d):null;if(xb==null||xg==null)R.push(['warn',`Coinbase has no BTC and PAXG daily closes for ${d?dU(d):'the chart date'}; no comparison.`]);else{const x=xb/xg,dd=Math.abs(x/s.m-1)*100;R.push([dd<2?'ok':'bad',`BTC-in-gold cross-checked with Coinbase's ${dU(d)} closes: ${x.toFixed(2)} oz vs chart ${s.m.toFixed(2)} oz (${dd.toFixed(2)}% apart).`])}}catch(e){R.push(['warn','Coinbase gold closes unavailable for cross-check.'])}}
   if(/^rv|^linkbtc/.test(s.id)){R.push(['ok',`Uses completed UTC days only (through ${dU(s.closed)}), so the number won't change after you post.`]);
     try{const cb=async p=>{const r=await J(`https://api.exchange.coinbase.com/products/${p}/candles?granularity=86400`,600000);const x=r.filter(k=>k[0]*1000<=s.closed).sort((a,b)=>a[0]-b[0]);return{t:x.map(k=>k[0]*1000),v:x.map(k=>k[4])}};
       if(s.id==='linkbtc'){const [l,b]=await Promise.all([cb('LINK-USD'),cb('BTC-USD')]);const r=alignR(l,b),m2=(r.v.at(-1)/r.v.at(-31)-1)*100,d=Math.abs(m2-s.m);R.push([d<=2?'ok':'bad',`Recomputed from Coinbase closes: ${m2.toFixed(1)}% vs chart ${s.m.toFixed(1)}% (difference ${d.toFixed(1)} pts).`])}
@@ -946,7 +980,7 @@ function renderTrend(){const tu=$('#trendUpd');if(tu)tu.textContent=D.trendAt?'C
 function chForm(d,iv){const N=d?.t?.length||0,ms=IVMS[iv]||864e5,open=N>1&&d.t[N-1]+ms>Date.now(),ec=open?N-2:N-1,f=N?d.t[N-1]:0;return{open,ec,lbl:open?`${iv==='1w'?'week of '+axDay(f):/m|h/.test(iv)?axHM(f)+' UTC':axDay(f)} candle forming`:''}}
 // forming-candle rule (approved): the Data line reads 'through <date> (forming)' + rendered UTC time; readings stay on the last closed candle
 function chThruForm(d,iv,ec){const f=d.t[d.t.length-1];ec=ec??d.t.length-2;return iv==='1w'?`through the week ending ${axFull(d.t[ec]+6*864e5)} · through ${axFull(f)} (forming)`:`through ${axFull(f)} (forming)${/m|h/.test(iv)?` · ${axHM(f)} UTC candle`:''}`}
-function chDataTxt(d,iv){const F=chForm(d,iv),t=d.t[F.ec],fT=d.t[d.t.length-1];if(F.open)return`Data: ${d.src||'exchange'} ${(d.pair||'').replace('/','')} · ${chThruForm(d,iv)} · rendered ${hmU2(Date.now())}`;const ms=IVMS[iv]||864e5,thr=iv==='1w'?'the week ending '+axFull(t+6*864e5):/m|h/.test(iv)?axFull(t+ms)+' '+axHM(t+ms)+' UTC':axFull(t);return`Data: ${d.src||'exchange'} ${(d.pair||'').replace('/','')} · through ${thr}${F.open?` (${F.lbl})`:''} · rendered ${hmU2(Date.now())}`}
+function chDataTxt(d,iv){const F=chForm(d,iv),t=d.t[F.ec],fT=d.t[d.t.length-1];if(F.open)return`Data: ${d.src||'exchange'} ${(d.pair||'').replace('/','')} · ${chThruForm(d,iv)}${kNote(d)} · rendered ${hmU2(Date.now())}`;const ms=IVMS[iv]||864e5,thr=iv==='1w'?'the week ending '+axFull(t+6*864e5):/m|h/.test(iv)?axFull(t+ms)+' '+axHM(t+ms)+' UTC':axFull(t);return`Data: ${d.src||'exchange'} ${(d.pair||'').replace('/','')} · through ${thr}${F.open?` (${F.lbl})`:''}${kNote(d)} · rendered ${hmU2(Date.now())}`}
 function chRangeTxt(d,st,ec,iv){const intra=/m|h/.test(iv),ms=IVMS[iv]||864e5;if(iv==='1w')return`from the week of ${axFull(d.t[st])} through the week ending ${axFull(d.t[ec]+6*864e5)}`;
   const a=d.t[st],b=d.t[ec]+ms,sy=new Date(a).getUTCFullYear()!==new Date(b).getUTCFullYear();return intra?`${sy?axFull(a):axDay(a)} ${axHM(a)} through ${axFull(b)} ${axHM(b)} UTC`:`${axFull(d.t[st])} through ${axFull(d.t[ec])}`}
 function chartCoin(){return S.watch[CH.i]||S.watch[0]}
@@ -964,6 +998,9 @@ function rngN(r,iv=CH.iv,N){const d=CH.d;if(rngWhy(r,iv,d))return null;return r=
 function renderRng(){const el=$('#rngs');if(!el)return;el.innerHTML=Object.keys(RNG).map(k=>{const n=rngN(k);return`<button class="pill ${CH.rng===k?'on':''}" data-rng="${k}" ${n==null?`disabled title="${esc(rngWhy(k)||'')}" data-why="${esc(rngWhy(k)||'')}"`:''}>${k}</button>`}).join('');const w=$('#rngWhy');if(w){const g={};Object.keys(RNG).forEach(k=>{const y=rngN(k)==null&&rngWhy(k);if(y&&y!=='loading')(g[y]=g[y]||[]).push(k)});w.textContent=Object.entries(g).map(([y,ks])=>ks.join(', ')+' off: '+y).join(' · ')}}
 function applyRng(){if(!CH.rng||!CH.d)return;const n=rngN(CH.rng);if(n==null){CH.rng=null;return}CH.n=n;const z=$('#zoom');if(z){z.max=Math.max(+z.max,n);z.value=n}}
 function drawChartScreen(){const cv=$('#chart');if(CH.d?.t?.length){const e=$('#chSrc');if(e)e.textContent=chDataTxt(CH.d,CH.iv)}const ctx=fit(cv,Math.round(Math.min(innerHeight*.62,620)));CH.lay=drawChart(ctx,cv.width,cv.height,CH)}
+// #5 auto-refresh on the chart tab: fetch candles again (60 s cache) and swap them in when a newer candle or a new last price arrived
+async function refreshChart(){const my=CH.seq;try{const d=await klinesH(chartCoin(),CH.iv);if(my!==CH.seq||!CH.d||!d?.t?.length)return;const o=CH.d;
+  if(d.t.at(-1)!==o.t.at(-1)||d.c.at(-1)!==o.c.at(-1)||d.t.length!==o.t.length){CH.d=d;$('#zoom').max=d.c.length;applyRng()}}catch(e){}drawChartScreen()}
 async function loadChart(){const my=CH.seq=(CH.seq||0)+1;CH.d=null;drawChartScreen();try{const d=await klinesH(chartCoin(),CH.iv);if(my!==CH.seq)return;CH.d=d;$('#zoom').max=CH.d.c.length;applyRng();renderRng()}catch(e){if(my!==CH.seq)return;$('#chSrc').textContent='Could not load candles for this coin.'}drawChartScreen()}
 // ---------- RENDER: insights
 async function renderInsights(){const box=$('#ins');const res=await Promise.allSettled(S.watch.map(w=>analyze(w)));res.forEach(r=>{if(r.status==='fulfilled')D.ins[r.value.w.id]=r.value});
@@ -994,7 +1031,8 @@ const DBASE=()=>window.RP_DATA_BASE||(location.protocol.startsWith('http')?'./da
 const DF={};
 async function dataFile(n,force){if(DF[n]&&!force&&Date.now()-DF[n].at<300000)return DF[n];const k='rpd_'+n,q='?v='+Math.floor(Date.now()/300000);
   for(const base of [...new Set([DBASE(),DRAW])]){try{const r=await fetch(base+n+'.json'+q,{cache:'no-store'});if(!r.ok)throw 0;const v=await r.json();try{localStorage[k]=JSON.stringify(v)}catch(e){}return DF[n]={v,src:base===DRAW&&DBASE()!==DRAW?'GitHub raw (fallback)':'live',at:Date.now()}}catch(e){}}
-  if(DF[n])return DF[n];const c=localStorage[k];if(c)return DF[n]={v:JSON.parse(c),src:'cached copy (offline)',at:Date.now()};throw new Error('no data: '+n)}
+  /* #13: every fetch failed, so the copy in memory is no longer live: relabel it (keeping its original time so the next call retries) */
+  if(DF[n])return DF[n]={...DF[n],src:'cached copy (offline)'};const c=localStorage[k];if(c)return DF[n]={v:JSON.parse(c),src:'cached copy (offline)',at:Date.now()};throw new Error('no data: '+n)}
 const ymd=s=>Date.parse(s.slice(0,10)+'T00:00:00Z');
 const mU=t=>new Date(t).toLocaleDateString('en-GB',{timeZone:'UTC',month:'short',year:'numeric'}).replace('Sept','Sep');
 const dtU=t=>new Date(t).toLocaleString('en-GB',{timeZone:'UTC',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).replace('Sept','Sep').replace(',','')+' UTC';
@@ -1022,7 +1060,7 @@ const back=(S2,days)=>{const t=S2.t.at(-1)-days*DAY;let i=S2.t.length-1;while(i>
 function gm2(M=MAC.M){const g=M?.global_m2;if(!g?.points?.length)return null;const P=g.points,t=P.map(p=>ymd(p[0])),L=P.length-1,byM=new Map(t.map((x,i)=>[mi(x),i]));
   const at=k=>byM.get(mi(t[L])-k);const iM=at(1),iY=at(12);return{g,P,t,L,tot:P[L][1],mom:iM!=null?(P[L][1]/P[iM][1]-1)*100:null,yoy:iY!=null?(P[L][1]/P[iY][1]-1)*100:null,totCC:P[L][6],yoyCC:iY!=null&&P[L][6]!=null?(P[L][6]/P[iY][6]-1)*100:null,last:t[L]}}
 async function macBTC(){if(MAC.btc&&Date.now()-MAC.btc.at<3600000)return MAC.btc;let P=SIGD?.P;
-  if(!P||P.t.length<2000)P=await first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>({...(await bnDaily('BTCUSDT',4)),src:'Binance'}));
+  if(!P||P.t.length<2000)P=await first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>await bnDaily('BTCUSDT',4));
   const now=new Date(),curM=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1),acc=new Map();
   P.t.forEach((t,i)=>{const d=new Date(t),k=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);if(k>=curM)return;const a=acc.get(k)||[0,0];a[0]+=P.v[i];a[1]++;acc.set(k,a)});
   const mt=[...acc.keys()].sort((a,b)=>a-b).filter(k=>acc.get(k)[1]>=20);return MAC.btc={d:P,m:{t:mt,v:mt.map(k=>acc.get(k)[0]/acc.get(k)[1])},src:P.src,at:Date.now()}}
@@ -1047,7 +1085,7 @@ function m2YoyTxt(G){const cc=G.P[0]?.[6]!=null;if(cc&&G.yoyCC!=null){const idx=
    if(ok.length>=13){const lo=pctl(ok,G.yoyCC)<50,R=rarity(yo,G.t,lo),w=lo?'lowest':'highest';return`growth at constant FX is ${pct(G.yoyCC,1)} a year, the ${w} ${R.since?'since '+mU(R.since):'in the data (since '+new Date(R.first).getUTCFullYear()+')'} (${pct(G.yoy,1)} in USD)`}}
   return m2YoyTxt0(G)}
 function m2YoyTxt0(G){const idx=new Map(G.t.map((x,i)=>[mi(x),i])),yo=G.t.map((x,i)=>{const j=idx.get(mi(x)-12);return j!=null?(G.P[i][1]/G.P[j][1]-1)*100:null}),ok=yo.filter(x=>x!=null);if(G.yoy==null||ok.length<13)return`YoY growth of ${pct(G.yoy,1)} (USD); ${pct(G.yoyCC,1)} at constant FX`;
-  const lo=pctl(ok,G.yoy)<50,R=rarity(yo,G.t,lo),w=lo?'lowest':'highest';return`YoY growth of ${pct(G.yoy,1)} (USD) is the ${w} ${R.since?'since '+mU(R.since):'in the data (since '+new Date(R.first).getUTCFullYear()+')'}; ${G.yoyCC!=null?pct(G.yoyCC,1):'n/a'} at constant FX`}
+  const lo=pctl(ok,G.yoy)<50,R=rarity(yo,G.t,lo),w=lo?'lowest':'highest';return`YoY growth of ${pct(G.yoy,1)} (USD) is the ${w} ${R.since?'since '+mU(R.since):'in the data (since '+new Date(R.first).getUTCFullYear()+')'}; ${G.yoyCC!=null?pct(G.yoyCC,1):'—'} at constant FX`}
 function buildMacro(M,B){const out=[],add=f=>{try{const s=f();if(s)out.push(s)}catch(e){console.warn('mac',e)}},G=gm2(M);if(!G)return out;const gL=mU(G.last),comps=['US','EA','JP','CN'];
   const m2s={t:G.t,v:G.P.map(p=>p[1])},SRC_M2='FRED, ECB, BOJ, PBoC';
   if(B)add(()=>{if(MAC.lag&&!MAC.ll){try{leadCard(G,B,SRC_M2,gL)}catch(e){}}const from=Date.UTC(2014,0,1),bm=slice(B.m.t,B.m.v,from),mm=slice(m2s.t,m2s.v,from),lag=MAC.lag,lt=m2LagTxt(lag),zb=zs(bm.v),zm=zs(mm.v),mt=mm.t.map(t=>t+lag*DAY),bL=mU(bm.t.at(-1));
@@ -1139,7 +1177,7 @@ function renderCal(){const C=NX.cal,el=$('#nxCal');if(!el)return;if(!C){el.inner
   <small class="note">Sources: federalreserve.gov, bls.gov. Valid through ${dU(vt)} · file updated ${dtU(Date.parse(C.updated))}.</small></div>`}
 const bizH=(a,b)=>{let h=0;for(let t=a;t<b;t+=36e5){const d=new Date(t).getUTCDay();if(d!==0&&d!==6)h++}return h};
 /* combined BTC+ETH daily total: only dates where BOTH funds have a published (non-pending, finite) total; a pending side is never counted as 0 */
-function etfComb(E){const mp=['btc','eth'].map(a=>new Map((etfStats(E,a)?.days||[]).filter(d=>Number.isFinite(d.total)).map(d=>[d.date,d.total]))),m=new Map();for(const [k,v] of mp[0])if(mp[1].has(k))m.set(k,v+mp[1].get(k));return m}
+function etfComb(E){const mp=['btc','eth'].map(a=>new Map((etfStats(E,a)?.days||[]).filter(d=>Number.isFinite(+d.total)).map(d=>[d.date,+d.total]))),m=new Map();for(const [k,v] of mp[0])if(mp[1].has(k))m.set(k,v+mp[1].get(k));return m}
 function etfStats(E,a){const d=E.datasets[a];if(!d)return null;const days=d.days.filter(x=>!x.pending&&x.total!=null&&Number.isFinite(+x.total)),L=days.at(-1),sum=n=>days.slice(-n).reduce((s,x)=>s+(+x.total),0);return{d,days,L,s7:sum(7),s30:sum(30),last30:days.slice(-30)}}
 function drawEtf(ctx,W,H,a){const E=NX.etf,st=etfStats(E,a),A=a.toUpperCase(),{u,m}=cardBase(ctx,W,H,`Data: Farside Investors, US$m net daily flows, through ${dU(ymd(st.L.date))} (last trading day)`);const top=m+90*u;
   ctx.fillStyle=TH.tx;ctx.font=FT(54*u);ctx.fillText(`US spot ${A} ETF flows`,m,top+40*u);ctx.fillStyle=TH.ac;ctx.font=F(26*u,600);ctx.fillText(`${fM(st.L.total)} on ${dShort(ymd(st.L.date))} · 7 days ${fM(st.s7)} · 30 days ${fM(st.s30)}`,m,top+84*u);
@@ -1216,15 +1254,15 @@ function oppScore(s){const c={},m=s.om;
   s.opp=c;s.score=Math.round(Object.keys(OW).reduce((q,k)=>q+OW[k]*c[k][0],0));return s.score}
 function sbHTML(s){const c=s.opp;if(!c)return'';return`<table class="cor sbt"><tr><th style="text-align:left">Part</th><th>Score</th><th>Weight</th><th>Adds</th></tr>${Object.keys(OW).map(k=>`<tr><td style="text-align:left">${OWN[k]}<div class="mu" style="font-size:12px;line-height:1.35">${esc(c[k][1])}</div></td><td>${Math.round(c[k][0])}</td><td>${OW[k]*100}%</td><td><b>${(OW[k]*c[k][0]).toFixed(1)}</b></td></tr>`).join('')}<tr><td style="text-align:left"><b>Opportunity score</b></td><td></td><td></td><td><b>${s.score}</b></td></tr></table><small class="note">${OPP_INFO}</small>`}
 const SIGT={pi:['the Pi Cycle Top ratio (111DMA ÷ 2×350DMA)','Ratio of the 111-day MA to twice the 350-day MA, daily closes.'],mayer:["BTC's Mayer Multiple (price ÷ 200DMA)",'Price divided by its 200-day moving average, daily closes.'],'2y':['BTC against its 2-year moving average','The 2-year MA is the average of the last 730 daily closes.'],rainbow:['BTC on the log-regression rainbow','Fair value here is a model fitted in the app, not a measured price.'],dd:["BTC's drawdown from its all-time high",'Measured on daily closes.'],wrsi:["BTC's weekly RSI",'14-week RSI on completed Mon–Sun candles.'],ethbtc:['ETH/BTC','Binance ETHBTC daily closes.'],gold:['BTC priced in gold','Gold via PAX Gold (1 PAXG = 1 oz).'],linkbtc:['LINK against BTC over 30 days','LINK/BTC ratio from Binance daily closes.'],hash:['the hashrate 30D/60D ratio','Below 1.0 is miner capitulation on the Hash Ribbons.'],halv:['BTC in this halving cycle','Halving cycles are a small sample: four so far.'],stable:['stablecoin supply growth','All USD-pegged stablecoins, DefiLlama, completed UTC days.']};
-function sigSubj(s){return/^rv/.test(s.id)?`${s.asset} ${s.n}-day volatility (Binance closes)`:(SIGT[s.id]||[s.title])[0]}
+function sigSubj(s){return/^rv/.test(s.id)?`${s.asset} ${s.n}-day volatility (${s.ex||'Binance'} closes)`:(SIGT[s.id]||[s.title])[0]}
 function prepSig(s){const d=closedSet(SIGD);s.kind='sig';s.fbIn=d?.P?.src==='Coinbase'&&!/^rv|ethbtc|gold|linkbtc|stable|hash/.test(s.id);if(s.id==='stable')s.asset='USD';if(s.id==='linkbtc')s.asset='LINK';if(s.id==='ethbtc')s.asset='ETH';
   try{s.ms=s.msPre||msFor(s,d)}catch(e){s.ms=null}if(s.ms){s.om=oppMeta(s.ms,s.ms.dir,s.msPre||s.id==='ethbtc'?Infinity:5);s.fmt=s.ms.fmt;s.lastT=s.om.last;if(s.readF)s.read=s.readF(s.om)}else s.lastT=d.P?d.P.t.at(-1):null;
-  s.single=/rainbow|hash|stable/.test(s.id);s.srcS=(s.src||'').split(',')[0].replace(/ daily closes.*/,'')||(/hash/.test(s.id)?'blockchain.com':s.id==='stable'?'DefiLlama':/ethbtc|gold/.test(s.id)?'Binance':(d.P?.src||'blockchain.com'));
+  s.single=/rainbow|hash|stable/.test(s.id);s.srcS=(s.src||'').split(',')[0].replace(/ daily closes.*/,'')||(/hash/.test(s.id)?'blockchain.com':s.id==='stable'?'DefiLlama':s.id==='ethbtc'?exN(d.EB):s.id==='gold'?exN(d.PG):(d.P?.src||'blockchain.com'));
   oppScore(s);s.why=s.om?`${cap1(sigSubj(s))} is ${s.fmt(s.om.cur)}, ${s.om.share>50||s.om.sinceDays<60?s.om.pctTxt:s.om.pctTxt+' and '+s.om.sinceTxt}.`:s.read+'.';
   try{s.cap=capFirst({kind:'sig',id:s.id},s)}catch(e){}}
 let SIGP=null,SIGDAY=null;const utcDay=()=>Math.floor(Date.now()/DAY);
 function ensureSig(force){if(SIGDAY!==utcDay())force=true;if(SIG&&!force)return Promise.resolve(SIG);if(SIGP&&!force)return SIGP;SIGDAY=utcDay();
-  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=closedSet(await loadSigData());if(nd.P||!SIGD)SIGD=nd}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
+  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=closedSet(await loadSigData());SIGD=mergeSig(nd,SIGD)}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
 
 // ---------- TODAY briefing
 // Market state chips: each names the metric, its direction and the figure (no lean words). Rules are shown on tap.
@@ -1235,26 +1273,34 @@ const RULE={
  deriv:'BTC perpetual funding per 8h: above +0.01% = "Funding positive" (longs paying shorts), below −0.01% = "Funding negative" (shorts paying longs), within ±0.01% = "Funding neutral" (the same ±0.01%/8h neutral band is used everywhere in the app). OI change (7 days, in BTC terms so price moves do not count) is shown for context from data/derivs.json (single venue, usually OKX).',
  liq:'Stablecoin supply change over 30 days (DefiLlama) and US spot BTC+ETH ETF net flows over 7 trading days (Farside). Descriptive only.'};
 // C7: one neutral band for funding everywhere (percent per 8h)
-function btcFund(){const DL=DV?.assets?.BTC?.latest;if(DL?.funding!=null)return{f:DL.funding,src:(DV.assets.BTC.funding?.source||'OKX')+' via derivs.json'};const dv=D.ins.bitcoin?.dv;return dv&&dv.f!=null?{f:dv.f,src:(dv.src||'Binance')+' live'+(STALEM['BTC funding']?' (derivs.json stale)':' (derivs.json unavailable)')}:null}
+function btcFund(){const DL=DV?.assets?.BTC?.latest;if(DL?.funding!=null)return{f:DL.funding,src:(DV.assets.BTC.funding?.source||'OKX')+' via derivs.json'};const dv=D.ins.bitcoin?.dv;return dv&&dv.f!=null?{f:dv.f,src:(dv.src||'Binance')+' '+dvLbl(dv)+(STALEM['BTC funding']?' (derivs.json stale)':' (derivs.json unavailable)')}:null}
+// #15: a live funding/OI reading is only called live while it is fresh (fetched within LIVE_MAX); an older one is labelled with its fetch time
+const LIVE_MAX=10*60000,dvLbl=dv=>dv?.at&&Date.now()-dv.at<=LIVE_MAX?'live':`as of ${dv?.at?hmU(dv.at):'an unknown time'} (fetched earlier, not live)`;
 const FUND_BAND=.01,fundSt=f=>f>FUND_BAND?'Funding positive':f<-FUND_BAND?'Funding negative':'Funding neutral';
 const st30=()=>{const s=SIGD?.ST;if(!s||s.v.length<2)return null;const n=s.v.length,k=Math.floor(s.t[n-1]/DAY)-30,j=s.t.findIndex(x=>Math.floor(x/DAY)===k);return j<0||!s.v[j]?null:(s.v[n-1]/s.v[j]-1)*100};// exact calendar date 30 days earlier, else null
 const etfStale=()=>{try{if(!NX.etf?.last_date)return false;const lt=ymd(NX.etf.last_date)+DAY,bh=bizH(lt,Date.now());if(bh>48){STALEM.etf={age:(Date.now()-lt)/36e5,src:'Farside',lim:48,limT:'48 business-hour'};return true}delete STALEM.etf;return false}catch(e){return false}};
 const etf7=()=>{if(!NX.etf||etfStale())return null;try{const m=etfComb(NX.etf),k=[...m.keys()].sort();return k.length<7?null:k.slice(-7).reduce((s,x)=>s+m.get(x),0)}catch(e){return null}};
-function macDeltas(){const M=MAC.M;if(!M)return null;const o={};try{const G=gm2(M);o.yoy=G?.yoyCC??G?.yoy;o.yoyUSD=G?.yoy;o.m2m=G?mU(G.t.at(-1)):'';const dx=ser('DTWEXBGS',M);if(dx){const j=back(dx,91);o.dxy=dx.v.at(-1);o.dxy3=(o.dxy/dx.v[j]-1)*100}
+function macDeltas(){const M=MAC.M;if(!M)return null;const o={};try{const G=gm2(M);o.yoy=G?.yoyCC??null;o.yoyUSD=G?.yoy;o.m2m=G?mU(G.t.at(-1)):'';const dx=ser('DTWEXBGS',M);if(dx){const j=back(dx,91);o.dxy=dx.v.at(-1);o.dxy3=(o.dxy/dx.v[j]-1)*100}
   const ry=ser('DFII10',M);if(ry){const j=back(ry,91);o.ry=ry.v.at(-1);o.ry3=(o.ry-ry.v[j])*100}}catch(e){}return o}
 function marketStates(){const out=[],P=SIGD?.P;
   const trend=(k,t,v,src)=>{const N=v.length;if(N<220)return{k,st:'No data',why:'Not enough price history',rule:RULE.trend};const m=sma(v,200)[N-1],i30=back({t,v},30),c30=(v[N-1]/v[i30]-1)*100,gap=(v[N-1]/m-1)*100,st=`${gap>=0?'Above':'Below'} 200DMA, ${pct(c30,1)} 30d`;
     return{k,st,why:`${usdK(v[N-1])} close ${dShort(t[N-1])} is ${Math.abs(gap).toFixed(1)}% ${gap>=0?'above':'below'} its 200-day MA; ${pct(c30,1)} in 30 days (${src})`,rule:RULE.trend}};
-  const CB=SIGD?.CL?.BTC;out.push(CB?trend('BTC',CB.t,CB.v,'Binance closes'):P?trend('BTC',P.t,P.v,P.src||'daily'):{k:'BTC',st:'No data',why:SIGD?'Price history unavailable: Binance, blockchain.com and Coinbase did not answer':'Loading price history…',rule:RULE.trend});
-  const E=SIGD?.CL?.ETH;out.push(E?trend('ETH',E.t,E.v,'Binance closes'):{k:'ETH',st:'No data',why:SIGD?'Price history unavailable: Binance and Coinbase did not answer':'Loading price history…',rule:RULE.trend});
+  const CB=SIGD?.CL?.BTC;out.push(CB?trend('BTC',CB.t,CB.v,exN(CB)+' closes'):P?trend('BTC',P.t,P.v,P.src||'daily'):{k:'BTC',st:'No data',why:SIGD?'Price history unavailable: Binance, blockchain.com and Coinbase did not answer':'Loading price history…',rule:RULE.trend});
+  const E=SIGD?.CL?.ETH;out.push(E?trend('ETH',E.t,E.v,exN(E)+' closes'):{k:'ETH',st:'No data',why:SIGD?'Price history unavailable: Binance and Coinbase did not answer':'Loading price history…',rule:RULE.trend});
   const EB=SIGD?.EB,dom=D.glob?.market_cap_percentage?.btc;
   const AL=(()=>{try{return MK?altCalc()?.L:null}catch(e){return null}})();
   if(AL&&AL.eb!=null&&AL.eb30!=null){const c=AL.eb30;out.push({k:'Alts',st:`ETH/BTC ${c>5?'up':c<-5?'down':'flat'}, ${pct(c,1)} 30d`,why:`ETH/BTC ${AL.eb.toFixed(4)} (close ${dShort(dIso(AL.d))}), ${pct(c,1)} in 30 days${dom?`; BTC dominance ${dom.toFixed(1)}% (snapshot)`:''}`,rule:RULE.alts})}
   else if(EB&&EB.v.length>31){const N=EB.v.length,c=(EB.v[N-1]/EB.v[back(EB,30)]-1)*100;out.push({k:'Alts',st:`ETH/BTC ${c>5?'up':c<-5?'down':'flat'}, ${pct(c,1)} 30d`,why:`ETH/BTC ${EB.v[N-1].toFixed(4)} (close ${dShort(EB.t[N-1])}), ${pct(c,1)} in 30 days${dom?`; BTC dominance ${dom.toFixed(1)}% (snapshot)`:''}`,rule:RULE.alts})}
   else out.push({k:'Alts',st:'No data',why:SIGD?`ETH/BTC history unavailable (market.json and exchanges did not answer)${dom?`; BTC dominance ${dom.toFixed(1)}%`:''}`:dom?`BTC dominance ${dom.toFixed(1)}%; ETH/BTC history loading`:'Loading…',rule:RULE.alts});
-  const md=macDeltas();if(md&&md.dxy3!=null){let sc=0;const p=[];if(md.dxy3<-1)sc++;else if(md.dxy3>1)sc--;if(md.ry3<-25)sc++;else if(md.ry3>25)sc--;if(md.yoy>5)sc++;else if(md.yoy<0)sc--;
-    out.push({k:'Macro',st:`Real yield ${md.ry3>=0?'rising':'falling'}, ${md.ry3>=0?'+':'−'}${Math.abs(Math.round(md.ry3))}bp 3M`,why:`Dollar ${pct(md.dxy3,1)} in 3 months; 10Y real yield ${md.ry.toFixed(2)}% (${md.ry3>=0?'+':''}${Math.round(md.ry3)}bp); global M2 ${pct(md.yoy,1)} YoY at constant FX (${md.m2m}). Score ${sc>=0?'+':''}${sc}`,rule:RULE.macro})}
-  else out.push({k:'Macro',st:'No data',why:MAC.fail?'macro.json unavailable (offline and no saved copy)':'Loading macro.json…',rule:RULE.macro});
+  /* #19: each macro input is optional. A missing series (e.g. DFII10) never breaks the chip; the score counts only the inputs present and names the missing ones. */
+  const md=macDeltas(),hv=k=>md&&md[k]!=null&&isFinite(md[k]);
+  if(hv('dxy3')||hv('ry3')||hv('yoy')){let sc=0;const miss=[],pr=[];
+    if(hv('dxy3')){if(md.dxy3<-1)sc++;else if(md.dxy3>1)sc--;pr.push(`Dollar ${pct(md.dxy3,1)} in 3 months`)}else{miss.push('dollar index (FRED DTWEXBGS)');pr.push('Dollar —')}
+    if(hv('ry3')){if(md.ry3<-25)sc++;else if(md.ry3>25)sc--;pr.push(`10Y real yield ${md.ry.toFixed(2)}% (${md.ry3>=0?'+':''}${Math.round(md.ry3)}bp)`)}else{miss.push('10Y real yield (FRED DFII10)');pr.push('10Y real yield —')}
+    if(hv('yoy')){if(md.yoy>5)sc++;else if(md.yoy<0)sc--;pr.push(`global M2 ${pct(md.yoy,1)} YoY at constant FX (${md.m2m})`)}else{miss.push('global M2 at constant FX');pr.push('global M2 at constant FX —')}
+    const n=3-miss.length,st=hv('ry3')?`Real yield ${md.ry3>=0?'rising':'falling'}, ${md.ry3>=0?'+':'−'}${Math.abs(Math.round(md.ry3))}bp 3M`:hv('dxy3')?`Dollar ${md.dxy3>=0?'rising':'falling'}, ${pct(md.dxy3,1)} 3M`:`Global M2 ${pct(md.yoy,1)} YoY`;
+    out.push({k:'Macro',st,partial:miss.length?miss:null,why:`${pr.join('; ')}. Score ${sc>=0?'+':''}${sc} from ${n} of 3 inputs${miss.length?` (missing: ${miss.join(', ')})`:''}`,rule:RULE.macro})}
+  else out.push({k:'Macro',st:'No data',why:MAC.fail?'macro.json unavailable (offline and no saved copy)':MAC.M?'Dollar index, 10Y real yield and constant-FX global M2 are all missing from macro.json':'Loading macro.json…',rule:RULE.macro});
   const BF=btcFund();if(BF){const f=BF.f*100,o=oiChg('BTC',7);out.push({k:'Derivatives',st:`${fundSt(f)}, ${f<0?'−':''}${Math.abs(f).toFixed(4)}%/8h`,why:`BTC funding ${f.toFixed(4)}% per 8h (${BF.src})${o?`; OI ${pct(o.ch,1)} in 7 days in BTC terms (${o.src})`:''}`,rule:RULE.deriv})}
   else if(STALEM['BTC funding'])out.push({k:'Derivatives',st:'Funding: '+staleTxt('BTC funding'),stale:1,why:`Live funding feeds (Binance, OKX) did not answer and the cached derivs.json funding is ${ageTxt(STALEM['BTC funding'].age,1,DVLIM.funding)} old, past its ${DVLIM.funding}h limit, so no reading is shown`,rule:RULE.deriv});
   else out.push({k:'Derivatives',st:'No data',why:Object.keys(D.ins).length?'Funding unavailable from Binance and OKX right now':'Loading funding…',rule:RULE.deriv});
@@ -1279,13 +1325,13 @@ function clusters(){const P=SIGD?.P,out=[],md=macDeltas()||{},I=(l,v,ok)=>({l,v,
     dd!=null?I('Drawdown deeper than −40%',dd.toFixed(1)+'%',dd<-40):na('Drawdown deeper than −40%','n/a'),r2!=null?I('Price < 1.2× the 2-year MA',r2.toFixed(2)+'×',r2<1.2):na('Price < 1.2× the 2-year MA','n/a'),
     hr!=null?I('Hash ribbon capitulation (30D < 60D)',hr.toFixed(3),hr<1):na('Hash ribbon capitulation (30D < 60D)','n/a')]});
   out.push({name:'High-percentile readings',desc:'Leverage, valuation and momentum readings at the high end of their history (completed closes).',in:[
-    (()=>{const r=oiCapNow('BTC');return r?I('OI ÷ market cap in top 10% of its history',`${r.v.toFixed(2)}% · ${r.pTxt}`,r.share<=10&&r.side==='hi'):na('OI ÷ market cap in top 10% of its history','loading')})(),
+    (()=>{const r=oiCapNow('BTC');return r?I('OI (coins) ÷ circulating supply in top 10% of its history',`${r.v.toFixed(2)}% · ${r.pTxt}`,r.share<=10&&r.side==='hi'):na('OI (coins) ÷ circulating supply in top 10% of its history',STALEM['BTC oicap']?'stale: '+(SIGSTALE.find(x=>x.id==='oicapBTC')?.staleWhy||''):'loading')})(),
     mayer!=null?I('Mayer Multiple > 2.0',mayer.toFixed(2),mayer>2):na('Mayer Multiple > 2.0','n/a'),wr!=null?I('Weekly RSI > 75',wr.toFixed(1),wr>75):na('Weekly RSI > 75','n/a'),
     pi!=null?I('Pi Cycle ratio > 0.9',pi.toFixed(3),pi>.9):na('Pi Cycle ratio > 0.9','n/a'),f!=null?I('Funding > 0.03%/8h',fs,f>.0003):na('Funding > 0.03%/8h','n/a'),
     r2!=null?I('Price > 3× the 2-year MA',r2.toFixed(2)+'×',r2>3):na('Price > 3× the 2-year MA','n/a')]});
   out.push({name:'Liquidity measures rising',desc:'Money and flow measures that are rising (descriptive, not a forecast).',in:[
-    md.yoy!=null?I('Global M2 YoY > 5% (constant FX)',pct(md.yoy,1),md.yoy>5):na('Global M2 YoY > 5% (constant FX)','loading'),md.dxy3!=null?I('Dollar index down over 3 months',pct(md.dxy3,1),md.dxy3<0):na('Dollar index down over 3 months','loading'),
-    md.ry3!=null?I('10Y real yield down over 3 months',(md.ry3>=0?'+':'')+Math.round(md.ry3)+'bp',md.ry3<0):na('10Y real yield down over 3 months','loading'),
+    md.yoy!=null?I('Global M2 YoY > 5% (constant FX)',pct(md.yoy,1),md.yoy>5):na('Global M2 YoY > 5% (constant FX)',MAC.M?'— (constant-FX growth missing)':'loading'),md.dxy3!=null?I('Dollar index down over 3 months',pct(md.dxy3,1),md.dxy3<0):na('Dollar index down over 3 months','loading'),
+    md.ry3!=null?I('10Y real yield down over 3 months',(md.ry3>=0?'+':'')+Math.round(md.ry3)+'bp',md.ry3<0):na('10Y real yield down over 3 months',MAC.M?'— (FRED DFII10 missing)':'loading'),
     s3!=null?I('Stablecoin supply up > 1% (30 days)',pct(s3,1),s3>1):na('Stablecoin supply up > 1% (30 days)','n/a'),e7!=null?I('BTC+ETH ETF flows positive (7 trading days)',fM(e7,1),e7>0):na('BTC+ETH ETF flows positive (7 trading days)','loading')]});
   out.forEach(c=>{c.avail=c.in.filter(x=>x.ok!=null).length;c.met=c.in.filter(x=>x.ok===true).length;c.active=c.avail>=3&&c.met/c.avail>=.75});
   return out.filter(c=>c.avail>=3).sort((a,b)=>b.met/b.avail-a.met/a.avail)}
@@ -1300,7 +1346,8 @@ function macItems(){const M=MAC.M,out=[];if(!M||!MAC.cards.length)return out;
   const W=wkSer();if(W){const a=W.v.map((v,i)=>i>=13?(v/W.v[i-13]-1)*100:null);mk('netliq',{t:W.t,a},'the 13-week change in US net liquidity',pct(a.at(-1),1),['WALCL','WTREGEN','RRPONTSYD'])}
   const C=curveInfo(M);if(C)mk('curve',{t:C.s.t,a:C.s.v},'the 2s10s Treasury spread',(C.cur>=0?'+':'')+C.cur.toFixed(2)+' pts',['T10Y2Y']);
   return out}
-async function ensureMac(){if(!MAC.M){try{const r=await dataFile('macro');MAC.M=r.v;MAC.src=r.src;MAC.fail=0}catch(e){MAC.fail=1;return null}}
+const DATA_TTL=15*60000;// #10/#11: macro.json and derivs.json are re-read after 15 min (the data job runs hourly), not kept for the life of the page
+async function ensureMac(){if(!MAC.M||Date.now()-(MAC.at||0)>DATA_TTL){try{const r=await dataFile('macro');if(r.v!==MAC.M){MAC.M=r.v;MAC.cards=[];MAC.items=null}MAC.src=r.src;MAC.fail=0;MAC.at=Date.now()}catch(e){MAC.fail=1;if(!MAC.M)return null}}
   if(!MAC.btc){try{await macBTC()}catch(e){}}if(!MAC.cards.length){try{MAC.cards=buildMacro(MAC.M,MAC.btc);macCaps()}catch(e){}}if(!MAC.items)MAC.items=macItems();return MAC.M}
 function macCaps(){MAC.cards.forEach(s=>{try{s.cap=capFirst({kind:'mac',id:s.id})}catch(e){}})}
 function todayItems(){if(!MAC.items&&MAC.M&&MAC.cards.length)MAC.items=macItems();return[...(SIG||[]),...(MAC.items||[])].filter(x=>x.score!=null).sort((a,b)=>b.score-a.score)}
@@ -1362,14 +1409,16 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-sb],[data-
 // ---------- CAPTION ENGINE: 3 styles per chart, built from the chart's own numbers
 const STY=[['simple','Simple'],['analytical','Analytical'],['ct','CT-native']];
 // banned in generation and in the audit
-const BANNED=[[/what are you buying/i,'"What are you buying"'],[/what'?s your move/i,'"What\'s your move"'],[/everyone'?s watching/i,'"Everyone\'s watching"'],[/are you ready/i,'"Are you ready"'],[/don'?t miss/i,'"Don\'t miss"'],[/\bLFG\b/i,'"LFG"'],[/to the moon/i,'"to the moon"'],[/\b(starts|begins|is starting) (here|now)\b/i,'a call ("starts here")'],[/\balt ?season (is )?(coming|here|loading|imminent|upon us)\b/i,'an altseason call'],[/\balt ?season has (begun|started|arrived)\b/i,'an altseason call'],[/\babout to (go |turn )?(explode|pump|rip|moon|break ?out|send|parabolic)\b/i,'a call ("about to…")'],[/\bparabolic\b/i,'"parabolic"'],[/\bnext leg (up|down)\b/i,'a call ("next leg")'],[/\b(load up|loading up|accumulate now|time to buy|buy the dip|last chance)\b/i,'a buy call'],[/\bwill (hit|reach|touch|break|see)\b/i,'a price call ("will hit")'],[/\bprice target\b/i,'"price target"'],[/\bthe (bottom|top) is in\b/i,'"the bottom/top is in"'],[/\bthis is the (bottom|top)\b/i,'"this is the bottom/top"'],[/\bsend it\b/i,'"send it"'],[/\bwagmi\b/i,'"WAGMI"'],[/\bgenerational\b/i,'"generational"']];
+const BANNED=bwList(BANNED_WORDS.banned);
 // RULE 1 (C4): never say what to do or call a zone good value. Blocked even when "historically"/"history" is present. Only text quoted from a news headline (exempt) is skipped.
-const RULE1=[[/\b(golden|death)[- ]cross regime\b|\boverbought\b|\boversold\b|\b(long|short)[- ]term trend is (up|down)\b/i,'regime/overbought wording (state the measurement)'],[/\b(bullish|bearish|supportive|headwinds?|tailwinds?|risk[- ]on|risk[- ]off|favou?rable|unfavou?rable)\b/i,'lean word (bullish/bearish/supportive/headwind/risk-on…)'],[/\bbuy[- ]zones?\b/i,'"buy zone"'],[/\bvalue zones?\b|\bdeep(est)?[- ]value\b|\bgood value\b/i,'"value zone"'],[/\bbuy signals?\b/i,'"buy signal"'],[/\baccumulat(e|es|ing|ion)\b/i,'"accumulate"'],[/\bfire[- ]sale\b/i,'"fire sale"'],[/\bsell(ing|s)?\b/i,'"sell"'],[/\bevery cycle\b/i,'"every cycle"'],[/\balways\b/i,'"always"'],[/\bnever\b/i,'"never"'],[/\bin history\b/i,'"in history"'],[/\bbest buy\b/i,'"best buy"']];
-window.RPT_WORDS={region:REGION_RE,rule1:RULE1,banned:BANNED};
+const RULE1=bwList(BANNED_WORDS.rule1);
+// narrow 'sell-off' noun exception (shared file): a noun naming a market move, or a quoted headline with its source, is removed before the rule-1 check
+const SELLOFF_NOUN=bwRe(BANNED_WORDS.sell_off_noun.noun),SELLOFF_HL=bwRe(BANNED_WORDS.sell_off_noun.headline),selloffStrip=t=>t.replace(new RegExp(SELLOFF_HL.source,'g'+SELLOFF_HL.flags),' ').replace(new RegExp(SELLOFF_NOUN.source,'g'+SELLOFF_NOUN.flags),' ');
+window.RPT_WORDS={region:REGION_RE,rule1:RULE1,banned:BANNED,risky:RISKY,src:BANNED_WORDS};
 // severity: rule-1 call/lean words, buy/price/altseason calls and regional terms are red (do not post); the rest (hype/style) amber
 const lintSev=x=>/^(Banned phrase \(rule 1|Regional content|Banned phrase: (a call|a buy call|a price call|an altseason call|"price target"|"the bottom\/top is in"|"this is the bottom\/top"))/.test(x)?'bad':'warn';
 function lintBanned(txt,exempt,openCandle){const out=[],T=txt.trim();if(REGION_RE.test(T))out.push(`Regional content ("${T.match(REGION_RE)[0]}"): posts stay USD and global, no regional market terms.`);for(const [re,l] of BANNED)if(re.test(T))out.push(`Banned phrase: ${l}.`);
-  const T1=exempt&&exempt.length>8?T.split(exempt).join(' '):T;for(const [re,l] of RULE1)if(re.test(T1))out.push(`Banned phrase (rule 1, no calls): ${l}.`);
+  const T1=selloffStrip(exempt&&exempt.length>8?T.split(exempt).join(' '):T);for(const [re,l] of RULE1)if(re.test(T1))out.push(`Banned phrase (rule 1, no calls): ${l}.`);
   if(openCandle&&/\b(daily )?(close[sd]?|closing)\b(?! to\b)/i.test(T.replace(/\bclose to\b/gi,'')))out.push('Says "close" but the number comes from today\'s unfinished UTC candle. Use the last completed close or drop the word.');
   if(/\bNFA\b[\s.!)]*(\p{Extended_Pictographic}\uFE0F?\s*)*$/iu.test(T))out.push('Banned closer: "NFA". Drop it; the numbers speak for themselves.');
   const qs=T.split(/(?<=[.!?])\s+|\n+/).map(x=>x.trim()).filter(x=>/\?\s*(\p{Extended_Pictographic}\s*)*$/u.test(x)&&/\b(you|your|you're|y'all|thoughts|agree|anyone|who else)\b/i.test(x)&&!(exempt&&exempt.includes(x.replace(/\s*(\p{Extended_Pictographic}\s*)*$/u,''))));
@@ -1388,20 +1437,20 @@ const tidy0=s=>s.replace(/[ \t]+/g,' ').replace(/ +([.,;:])/g,'$1').replace(/([^
 // Style rules: the number goes in the first line; past-pattern claims carry a count and dates computed from loaded data; news names its source inline; no calls.
 const CAPT={
 vol:{simple:[
- F=>!F.rare?`${F.A}'s ${F.n}-day close-to-close volatility on Binance is ${F.val}${F.z?', '+F.z:''} (through ${F.date}).`:`${F.A}'s daily closes on Binance are the ${F.lo?'quietest':'wildest'} ${F.recordAll?'on record':'since '+F.sinceY}. ${F.n}-day close-to-close volatility is ${F.val}.`,
- F=>`${F.n}-day volatility on ${F.A} (Binance closes) is ${F.val}, ${F.since||F.pos}.`,
- F=>`${F.val} is ${F.A}'s ${F.n}-day realized volatility on Binance closes, ${F.pos}. ${F.lo?'Low volatility says nothing about direction.':'High volatility says nothing about direction either.'}`,
- F=>`${F.A} ${F.n}-day volatility: ${F.val} (Binance closes through ${F.date}). That's ${F.since||F.pos}.`],
+ F=>!F.rare?`${F.A}'s ${F.n}-day close-to-close volatility on ${F.ex} is ${F.val}${F.z?', '+F.z:''} (through ${F.date}).`:`${F.A}'s daily closes on ${F.ex} are the ${F.lo?'quietest':'wildest'} ${F.recordAll?'on record':'since '+F.sinceY}. ${F.n}-day close-to-close volatility is ${F.val}.`,
+ F=>`${F.n}-day volatility on ${F.A} (${F.ex} closes) is ${F.val}, ${F.since||F.pos}.`,
+ F=>`${F.val} is ${F.A}'s ${F.n}-day realized volatility on ${F.ex} closes, ${F.pos}. ${F.lo?'Low volatility says nothing about direction.':'High volatility says nothing about direction either.'}`,
+ F=>`${F.A} ${F.n}-day volatility: ${F.val} (${F.ex} closes through ${F.date}). That's ${F.since||F.pos}.`],
 analytical:[
- F=>`${F.A} ${F.n}D realized volatility is ${F.val} (Binance close-to-close, annualized, through ${F.date}). That is ${PS(F.pos,F.since)}. ${F.note}`,
+ F=>`${F.A} ${F.n}D realized volatility is ${F.val} (${F.ex} close-to-close, annualized, through ${F.date}). That is ${PS(F.pos,F.since)}. ${F.note}`,
  F=>`${F.val} ${F.n}-day realized vol for ${F.A}, ${F.z}. ${cap1(F.since||F.pos)}. Source: ${F.src}.`,
- F=>`${F.A} ${F.n}D vol on Binance closes: ${F.val}. Percentile: ${F.pos}. Last comparable reading: ${F.sinceD||'none in the data'}.`,
- F=>`${F.val} on ${F.A} ${F.n}-day realized volatility (Binance closes, ${F.date}), ${F.since||F.pos}. ${F.lo?'Compression is a condition, not a signal.':'Expansion is a condition, not a signal.'} ${F.note}`],
+ F=>`${F.A} ${F.n}D vol on ${F.ex} closes: ${F.val}. Percentile: ${F.pos}. Last comparable reading: ${F.sinceD||'none in the data'}.`,
+ F=>`${F.val} on ${F.A} ${F.n}-day realized volatility (${F.ex} closes, ${F.date}), ${F.since||F.pos}. ${F.lo?'Compression is a condition, not a signal.':'Expansion is a condition, not a signal.'} ${F.note}`],
 ct:[
- F=>`${F.A} ${F.n}D vol ${F.val} on Binance closes. ${cap1(F.since||F.pos)}. ${F.lo?'Coiled.':'Messy.'}`,
- F=>`${F.val} ${F.n}D realized on ${F.tk} (Binance). ${F.lo?'Range traders happy, breakout traders waiting.':'Both sides getting run.'}`,
- F=>`${F.A} vol ${F.lo?'asleep':'wide awake'}: ${F.val} over ${F.n} days on Binance closes, ${F.since||F.pos}.`,
- F=>`${F.n}D vol, ${F.A} (Binance): ${F.val}. ${cap1(F.pos)}. ${F.lo?'Tight.':'Loud.'}`]},
+ F=>`${F.A} ${F.n}D vol ${F.val} on ${F.ex} closes. ${cap1(F.since||F.pos)}. ${F.lo?'Coiled.':'Messy.'}`,
+ F=>`${F.val} ${F.n}D realized on ${F.tk} (${F.ex}). ${F.lo?'Range traders happy, breakout traders waiting.':'Both sides getting run.'}`,
+ F=>`${F.A} vol ${F.lo?'asleep':'wide awake'}: ${F.val} over ${F.n} days on ${F.ex} closes, ${F.since||F.pos}.`,
+ F=>`${F.n}D vol, ${F.A} (${F.ex}): ${F.val}. ${cap1(F.pos)}. ${F.lo?'Tight.':'Loud.'}`]},
 level:{simple:[
  F=>`${cap1(F.subj)} is ${F.val}, ${F.since||F.pos}. ${F.note}`,
  F=>`${F.val} on ${F.subj}, ${F.pos}.`,
@@ -1522,9 +1571,9 @@ ct:[
  F=>`B30 ${F.b30}, B90 ${F.b90}. ${F.state}.`,
  F=>`${F.b90} of the top 50 coins trading on Binance/OKX ahead of BTC over 90 days. ETH/BTC ${F.eb30} in a month. ${F.moodA}`,
  F=>`${F.b90} of the top 50 coins trading on Binance/OKX beating BTC on 90d. ${F.moodA}`]}};
-const FDEF={titleS:'',lead:'',run:'',view:'',recordAll:false,sinceY:'',dd:'',ath:'',athD:'',past:'',pastS:'',lowsY:'',pastList:'',cmp:'',cmpS:'',cmpCT:'',px:'',closeD:'',days:'',per:'',ret:'',rank:'',rankA:'',mtdTxt:'',p0:'',p1:'',prevPer:'',prevRet:'',moodP:'',state:'',b90:'',b30:'',eb:'',eb30:'',dma:'',liqS:'',def:'',moodA:'',open:false,share:50,from:'',A:'',tk:'',subj:'',subjS:'',subjL:'',subjTk:'',val:'',now:'',chg:'',chg2:'',pos:'',since:'',sinceD:'',z:'',note:'',caveat:'',mood:'',src:'',date:'',ctx:'',ctx2:'',n:'',yrs:5,lo:false,title:'',link:'',outlets:'',allSrc:'',desc1:'',short:'',hit:'',age:'',nOut:0,usdt:'',btc:'',btcU:'',fx:''};
+const FDEF={ex:'',titleS:'',lead:'',run:'',view:'',recordAll:false,sinceY:'',dd:'',ath:'',athD:'',past:'',pastS:'',lowsY:'',pastList:'',cmp:'',cmpS:'',cmpCT:'',px:'',closeD:'',days:'',per:'',ret:'',rank:'',rankA:'',mtdTxt:'',p0:'',p1:'',prevPer:'',prevRet:'',moodP:'',state:'',b90:'',b30:'',eb:'',eb30:'',dma:'',liqS:'',def:'',moodA:'',open:false,share:50,from:'',A:'',tk:'',subj:'',subjS:'',subjL:'',subjTk:'',val:'',now:'',chg:'',chg2:'',pos:'',since:'',sinceD:'',z:'',note:'',caveat:'',mood:'',src:'',date:'',ctx:'',ctx2:'',n:'',yrs:5,lo:false,title:'',link:'',outlets:'',allSrc:'',desc1:'',short:'',hit:'',age:'',nOut:0,usdt:'',btc:'',btcU:'',fx:''};
 function sigFacts(s){const m=s.om,A=s.asset==='USD'?'BTC':(s.asset||'BTC'),fam=/^rv/.test(s.id)?'vol':s.id==='stable'?'flows':/hash|halv/.test(s.id)?'macro':'level',note=/^rv/.test(s.id)?(m&&m.side==='lo'?'Low volatility says nothing about direction.':'Volatility measures the size of moves, not their direction.'):(s.pastTxt||(SIGT[s.id]||['',''])[1]);
-  const F={...FDEF,fam,label:s.title,A,tk:'$'+A,subj:sigSubj(s),note,val:m&&s.fmt?s.fmt(m.cur):s.read.split(' · ')[0],pos:m?m.pctTxt:'',since:m?(m.sinceDays>=60?m.sinceTxt:''):'',sinceD:m&&m.since&&m.sinceDays>=60?dU(m.since):'',yrs:m?.yrs||5,lo:m?.side==='lo',share:m?m.share:50,z:m?`${Math.abs(m.z).toFixed(1)}σ ${m.z>=0?'above':'below'} its median since ${m.from}`:'',from:m?.from||'',date:dShort(s.lastT||Date.now()),src:(s.srcS||'Binance').replace(/ \(single venue\)/,''),n:s.n||''};
+  const F={...FDEF,fam,label:s.title,A,ex:s.ex||exN(SIGD?.CL?.[A]),tk:'$'+A,subj:sigSubj(s),note,val:m&&s.fmt?s.fmt(m.cur):s.read.split(' · ')[0],pos:m?m.pctTxt:'',since:m?(m.sinceDays>=60?m.sinceTxt:''):'',sinceD:m&&m.since&&m.sinceDays>=60?dU(m.since):'',yrs:m?.yrs||5,lo:m?.side==='lo',share:m?m.share:50,z:m?`${Math.abs(m.z).toFixed(1)}σ ${m.z>=0?'above':'below'} its median since ${m.from}`:'',from:m?.from||'',date:dShort(s.lastT||Date.now()),src:(s.srcS||s.ex||'Binance').replace(/ \(single venue\)/,''),n:s.n||''};
   F.open=!s.settled&&isOpenT(s.lastT)&&!/^rv/.test(s.id);F.rare=!!(m&&(m.sinceDays>=365||!m.since));F.recordAll=!!(m&&!m.since);F.sinceY=m&&m.since?(m.sinceDays>=730?String(new Date(m.since).getUTCFullYear()):mU(m.since)):'';
   if(s.id==='dd'){const X=ddFacts('BTC');if(X&&X.fam)return{...X,label:s.title}}
   if(s.id==='ethbtc'){const E=SIGD.EB,c=(E.v.at(-1)/E.v[back(E,30)]-1)*100;F.note=`${pct(c,1)} over 30 days.`}
@@ -1618,7 +1667,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-thc]
 
 // ================= PHASE 11: derivatives, altseason engine, macro forces, news ranking, new caption families
 let DV=null,MK=null,CAPF=null;
-let DVRAW=null;async function ensureDV(){if(!DVRAW){try{DVRAW=(await dataFile('derivs')).v}catch(e){}}if(DVRAW)DV=gateDV(DVRAW);return DV}
+let DVRAW=null,DVAT=0;async function ensureDV(){if(!DVRAW||Date.now()-DVAT>DATA_TTL){try{DVRAW=(await dataFile('derivs')).v;DVAT=Date.now()}catch(e){}}if(DVRAW)DV=gateDV(DVRAW);return DV}
 // STALE GATE (hotfix): a metric past its freshness limit is removed from everything (readings, states, clusters, scores, captions, drafts, exports).
 // Limits per metric from the newest point: open interest and basis are hourly (3h, like the job cadence), funding settles every 8h (12h).
 // Live feeds (deriv()) are fresh by definition; the cached file only counts while inside the limit. STALEM keeps age + source for the 'data stale' labels.
@@ -1626,7 +1675,7 @@ const DVLIM={oi:3,basis:3,funding:12},STALEM={};
 // ages: hours+minutes under 48h ('12h10m'), whole days above. A past-limit age is rounded UP, never down to look inside the limit.
 const ageTxt=(h,past,lim)=>{if(h<48){let m=past?Math.ceil(h*60):Math.floor(h*60);if(past&&lim!=null&&m<=lim*60)m=lim*60+1;const hh=Math.floor(m/60),mm=m%60;return hh+'h'+(mm||past?mm+'m':'')}
   let d=past?Math.ceil(h/24):Math.floor(h/24);if(past&&lim!=null&&d*24<=lim)d=Math.floor(lim/24)+1;return d+'d'};
-const staleLbl=k=>k.replace(/^macro /,'').replace(/ funding$/,' Funding').replace(/ oi$/,' OI').replace(/ basis$/,' Basis').replace(/^etf$/,'ETF flows')+': '+staleTxt(k);
+const staleLbl=k=>k.replace(/^macro /,'').replace(/ funding$/,' Funding').replace(/ oi$/,' OI').replace(/ basis$/,' Basis').replace(/ oicap$/,' OI (coins) ÷ supply').replace(/^etf$/,'ETF flows')+': '+staleTxt(k);
 const limTxt=l=>l<48?l+'h':Math.round(l/24)+'d';
 // status text (after the metric name): 'stale, 12h10m old, past 12h limit (OKX)'
 function staleTxt(k){const x=STALEM[k];return x?`stale, ${ageTxt(x.age,1,x.lim)} old, past ${x.limT||limTxt(x.lim)} limit (${x.src})`:''}
@@ -1648,35 +1697,44 @@ const isOpenT=t=>t!=null&&t+DAY>Date.now();   // a daily bar whose UTC day has n
 // ---------- derivatives
 function oiChg(a,days){const A=DV?.assets?.[a];if(!A)return null;const H=A.oi_hourly,Dd=A.oi_daily,use=days<=28&&H?.points?.length>days*24?H:Dd;if(!use?.points?.length)return null;
   const P=use.points,L=P.at(-1),tgt=L[0]-days*DAY;let j=P.length-1;while(j>0&&P[j][0]>tgt)j--;if(!P[j][2]||!L[2])return null;return{ch:(L[2]/P[j][2]-1)*100,usd:L[1],coin:L[2],src:use.source,t:L[0]}}
-function supplyOf(a){const id=a==='BTC'?'bitcoin':'ethereum',m=D.mk?.[id];if(m?.market_cap&&m?.current_price)return{s:m.market_cap/m.current_price,src:D.srcMk||'market data'};
+function supplyOf(a){const id=a==='BTC'?'bitcoin':'ethereum',m=D.mk?.[id];if(m?.market_cap&&m?.current_price)return{s:m.market_cap/m.current_price,src:D.srcMk||'market data',at:D.cachedAt&&D.srcMk==='last saved prices'?D.cachedAt:Date.now(),dated:false};
   // fallback: market.json reconstructs caps as close x circulating supply, so supply = cap / close on the same day
-  const tp=MK?.totals_proxy,C=SIGD?.CL?.[a];if(tp?.points?.length&&C?.t?.length){const ci=tp.columns.indexOf(a.toLowerCase()),cm=new Map(C.t.map((t,i)=>[new Date(t).toISOString().slice(0,10),C.v[i]]));for(let i=tp.points.length-1;i>=Math.max(0,tp.points.length-5);i--){const r=tp.points[i],c=cm.get(r[0]);if(c&&r[ci])return{s:r[ci]/c,src:`market.json supply (${MK.ranking_source||'ranking source'})`}}}return null}
+  const tp=MK?.totals_proxy,C=SIGD?.CL?.[a];if(tp?.points?.length&&C?.t?.length){const ci=tp.columns.indexOf(a.toLowerCase()),cm=new Map(C.t.map((t,i)=>[new Date(t).toISOString().slice(0,10),C.v[i]]));for(let i=tp.points.length-1;i>=Math.max(0,tp.points.length-5);i--){const r=tp.points[i],c=cm.get(r[0]);if(c&&r[ci])return{s:r[ci]/c,src:`market.json supply (${MK.ranking_source||'ranking source'})`,at:Date.parse(MK.updated)||null,dated:false}}}return null}
 // OI ÷ market cap (supervisor ruling 7 Oct). Forming-candle rule: readings use the last CLOSED UTC day D only.
 // The reading for D pairs OKX OI at D's close (00:00 UTC next day, from oi_hourly) with D's market cap (market.json totals_proxy, same date).
 // If either side is missing there is no reading ('—'); OI from one day is never divided by another day's market cap.
 // Older history uses OKX daily buckets, which start 16:00 UTC (labelled in the source text).
 // D = the latest closed day that has BOTH inputs (market.json adds a day's market cap after that day closes; look back at most 3 days);
 // OI = the hourly snapshot nearest D's 00:00 UTC close, at most 30 min away. Missing either -> no reading.
-function oiCapLatest(a,now=Date.now()){const A=DV?.assets?.[a],H=A?.oi_hourly?.points||[],tp=MK?.totals_proxy,ci=tp?.columns?.indexOf(a.toLowerCase());const D0=Math.floor(now/DAY)*DAY-DAY;
-  for(let k=0;k<3;k++){const D=D0-k*DAY,c=D+DAY,dS=new Date(D).toISOString().slice(0,10);let h=null;for(const p of H)if(Math.abs(p[0]-c)<=30*60000&&(!h||Math.abs(p[0]-c)<Math.abs(h[0]-c)))h=p;
-    const r=tp?.points?.find(x=>x[0]===dS),mc=r&&ci>0?r[ci]:null;if(h&&h[1]>0&&mc>0)return{D,oi:h[1],oiT:h[0],mc,v:h[1]/mc*100}}
-  return{D:D0,oi:null,mc:null,v:null}}
-function oiCapSeries(a,now=Date.now()){const A=DV?.assets?.[a],sp=supplyOf(a);if(!A?.oi_daily?.points?.length||!sp)return null;const L=oiCapLatest(a,now);if(L.v==null)return null;
-  const P=A.oi_daily.points.filter(p=>p[0]<L.D);const t=P.map(p=>p[0]),v=P.map(p=>p[2]/sp.s*100);t.push(L.D);v.push(L.v);
-  return{t,a:v,src:A.oi_daily.source,supSrc:sp.src,latest:L,hist:'older days: OKX daily OI buckets (16:00 UTC start) ÷ supply'}}
-function oiCapNow(a){const s=oiCapSeries(a);if(!s||s.t.length<60)return null;const m=oppMeta(s,'abs',Infinity);return{v:m.cur,share:m.share,side:m.side,pTxt:m.pctTxt,m,src:s.src}}
+function oiCapLatest(a,now=Date.now()){const A=DV?.assets?.[a],H=A?.oi_hourly?.points||[],sp=supplyOf(a),D0=Math.floor(now/DAY)*DAY-DAY;
+  for(let k=0;k<3;k++){const D=D0-k*DAY,c=D+DAY;let h=null;for(const p of H)if(Math.abs(p[0]-c)<=30*60000&&p[2]>0&&(!h||Math.abs(p[0]-c)<Math.abs(h[0]-c)))h=p;
+    if(h&&sp?.s>0)return{D,want:D0,oiT:h[0],oiC:h[2],sup:sp.s,sp,v:h[2]/sp.s*100,back:k,stale:k>0}}
+  return{D:D0,want:D0,oiC:null,sup:sp?.s??null,v:null,back:null,stale:false}}
+// ONE formula for the whole stored series (ruling 8 Oct): OI in coins ÷ circulating supply (price cancels). Older days: OKX daily OI buckets (16:00 UTC start), oi_coin ÷ supply;
+// latest day: oi_coin at D's 00:00 UTC close ÷ supply. Supply has no dated history (market data gives today's circulating supply), so the label says 'supply as of <fetch date>'.
+function oiCapSeries(a,now=Date.now()){const A=DV?.assets?.[a];if(!A?.oi_daily?.points?.length)return null;const L=oiCapLatest(a,now);if(L.v==null)return null;
+  const P=A.oi_daily.points.filter(p=>p[0]<L.D&&p[2]>0);const t=P.map(p=>p[0]),v=P.map(p=>p[2]/L.sup*100),coin=P.map(p=>p[2]);t.push(L.D);v.push(L.v);coin.push(L.oiC);
+  return{t,a:v,coin,sup:L.sup,src:A.oi_daily.source||'OKX',supSrc:L.sp.src,supAt:L.sp.at,supDated:!!L.sp.dated,latest:L,hist:'older days: OKX daily OI buckets (16:00 UTC start), open interest (coins) ÷ circulating supply'}}
+// the one label (ruling 8 Oct, P1): timestamp date, then the close it belongs to; '(supply as of <fetch date>)' while supply is undated
+const oiCapLbl=(oc,D)=>`${oc.src} open interest (coins) at 00:00 UTC ${dU(D+DAY)} (${dShort(D)} close) ÷ circulating supply${oc.supDated?'':` (supply as of ${oc.supAt?dShort(oc.supAt)+' '+hmU(oc.supAt):'an unknown date'})`}`;
+function oiCapNow(a){const s=oiCapSeries(a);if(!s||s.t.length<60||s.latest.stale)return null;const m=oppMeta(s,'abs',Infinity);return{v:m.cur,share:m.share,side:m.side,pTxt:m.pctTxt,m,src:s.src}}
 function fundSeries(a){const F=DV?.assets?.[a]?.funding;if(!F?.points?.length)return null;const P=F.points,t=[],v=[];for(let i=20;i<P.length;i++){let s=0;for(let k=i-20;k<=i;k++)s+=P[k][1];t.push(P[i][0]);v.push(s/21*100)}return{t,a:v,src:F.source,raw:P}}
-function derivSignals(){const out=[];if(!DV?.assets)return out;
+let SIGSTALE=[];
+function derivSignals(){const out=[];SIGSTALE=[];for(const k of Object.keys(STALEM))if(/ oicap$/.test(k))delete STALEM[k];if(!DV?.assets)return out;
   for(const a of ['BTC','ETH']){const f=fundSeries(a);
     if(f&&f.t.length>=40){const t=f.t,v=f.a,n=v.length,first=dU(t[0]);SIGT['fund'+a]=[`${a} perpetual funding (7-day average)`,`Single venue (${f.src}), about ${Math.round((t[n-1]-t[0])/DAY)} days of history.`];
       out.push({id:'fund'+a,settled:true/* 8h funding prints are final at settlement time: no forming candle */,asset:a,title:`${a} funding rate · 7-day average`,read:`${v[n-1].toFixed(4)}% per 8h · ${f.src} · since ${first}`,src:`${f.src} perpetual funding (single venue), as of ${hmU2(t[n-1])}`,
         msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(4)+'%/8h'},confFix:[60,`Single venue (${f.src}), ${n+20} funding prints since ${first}`],
         draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(3)+'%',hl:[{v:0,c:TH.mu,l:'0'},{v:.01,c:hexA(TH.mu,.8),l:'0.01% base rate'}],series:[{t:f.raw.map(p=>p[0]),v:f.raw.map(p=>p[1]*100),c:hexA(TH.ac,.35),w:1.2,l:'per 8h print'},{v,c:TH.ac,w:3,l:'7-day average'}]})})}
     const oc=oiCapSeries(a);
-    if(oc&&oc.t.length>=60){const t=oc.t,v=oc.a,n=v.length;SIGT['oicap'+a]=[`${a} open interest ÷ market cap`,`OI from one venue (${oc.src}) in coin terms ÷ today's circulating supply (${oc.supSrc}); measures leverage on that venue, not the whole market.`];
-      out.push({id:'oicap'+a,asset:a,title:`${a} open interest ÷ market cap`,read:`${v[n-1].toFixed(3)}% of market cap · ${oc.src} perp · since ${dU(t[0])}`,src:`${oc.src} open interest at the ${dU(t[n-1])} close (00:00 UTC) ÷ that day's market cap (saved market file), as of ${hmU2(t[n-1]+DAY)}`,
-        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(3)+'%'},confFix:[60,`Single venue (${oc.src}); latest day = OI at the 00:00 UTC close ÷ that day's market cap; ${oc.hist}`],
-        draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(2)+'%',series:[{v,c:TH.ac,w:3,fill:1,l:'OI ÷ market cap'}],marks:[{t:t[n-1],v:v[n-1],c:TH.tx,l:v[n-1].toFixed(3)+'%'}]})})}}
+    if(oc&&oc.t.length>=60){const t=oc.t,v=oc.a,n=v.length,L=oc.latest,lbl=oiCapLbl(oc,t[n-1]);SIGT['oicap'+a]=[`${a} open interest ÷ circulating supply`,`${oc.src} open interest (coins) at 00:00 UTC ÷ circulating supply; one venue, so it measures leverage on that venue, not the whole market.`];
+      const card={id:'oicap'+a,asset:a,closed:t[n-1],title:`${a} open interest ÷ circulating supply`,read:`${v[n-1].toFixed(3)}% of circulating supply · ${oc.src} perp · since ${dU(t[0])}`,src:lbl,pastTxt:`${lbl}. One venue, so it measures leverage on that venue, not the whole market.`,
+        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(3)+'%'},confFix:[60,`Single venue (${oc.src}); ${lbl}; ${oc.hist}`],
+        draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(2)+'%',series:[{v,c:TH.ac,w:3,fill:1,l:'OI (coins) ÷ circulating supply'}],marks:[{t:t[n-1],v:v[n-1],c:TH.tx,l:v[n-1].toFixed(3)+'%'}]})};
+      // step-back (ruling 8 Oct): the card names the date used; a reading older than the last closed day is STALE: card.stale=true, kept out of SIG (readings, scores, POST NOW, captions), listed in SIGSTALE
+      if(L.stale){Object.assign(card,{stale:true,usedDate:new Date(L.D).toISOString().slice(0,10),wantDate:new Date(L.want).toISOString().slice(0,10),score:null,staleWhy:`Stale: latest open interest at 00:00 UTC is for the ${dU(L.D)} close; the last closed day is ${dU(L.want)}. Not used in readings, scores, POST NOW or captions.`});
+        STALEM[a+' oicap']={age:(Date.now()-(L.D+DAY))/36e5,src:oc.src,t:L.D+DAY,lim:24,limT:'last-closed-day'};SIGSTALE.push(card)}
+      else out.push(card)}}
   return out}
 
 // ---------- ALTSEASON ENGINE (spec E; every threshold below is shown in the UI)
@@ -1684,7 +1742,7 @@ const ALT={TH:{btcB90:25,erB30:50,erB90:50,erEB:5,erDom:-1,brLo:50,brHi:74,brB30
   ORDER:['Weakening','Altseason','Broadening','Early rotation','BTC-led','Mixed'],PRI:{Weakening:5,Altseason:4,Broadening:3,'Early rotation':2,'BTC-led':1,Mixed:0},
   DEF:{'BTC-led':'B90 below 25% and ETH/BTC below its 200-day average.','Early rotation':'B30 at least 50%, B90 below 50%, and ETH/BTC up 5%+ in 30 days or BTC dominance down 1+ point.',Broadening:'B90 between 50% and 74% with B30 at least 50%.',Altseason:'B90 at or above 75% on at least 5 of the last 7 days.',Weakening:'Was Broadening or Altseason within 30 days, and now B30 is below 40% or has dropped 25+ points in 14 days.',Mixed:'None of the five states is met: no clear regime.'}};
 function altCalc(){const K=MK;if(!K?.breadth?.points?.length)return null;const T=ALT.TH,m=T.hyst;
-  const B=K.breadth.points.filter(r=>r[2]!=null&&r[3]!=null),dates=B.map(r=>r[0]);
+  const B=K.breadth.points.filter(r=>r[2]!=null&&r[3]!=null&&isFinite(r[2])&&isFinite(r[3])),dates=B.map(r=>r[0]);if(!B.length)return null;// #23 no usable breadth rows: no reading, no crash
   const EBp=K.ethbtc?.points||[],ebM=new Map(EBp.map(r=>[r[0],r[1]])),ebI=new Map(EBp.map((r,i)=>[r[0],i]));
   const STp=K.stablecoins?.points||[],stM=new Map(STp.map(r=>[r[0],r[1]]));
   const GD=K.global_daily?.points||[],src0=GD.at(-1)?.[7],GDs=GD.filter(r=>r[7]===src0),domM=new Map(GDs.map(r=>[r[0],r[2]])),domOK=GDs.length>=T.domMin;
@@ -1897,7 +1955,7 @@ function cycTxt(L){const k=(L||[]).filter(x=>x.dd!=null),n=k.length;if(!n)return
 function pastCycles(){const P=SIGD?.P;if(!P)return null;const W=bearW().filter(([l,a])=>P.t.length&&P.t[0]<=a);let ath=0;const dd=P.v.map(v=>{ath=Math.max(ath,v);return(v/ath-1)*100}),out=[];
   for(const [l,a,b] of W){let mn=0,mt=null;P.t.forEach((t,i)=>{if(t>=a&&t<=b&&dd[i]<mn){mn=dd[i];mt=t}});if(mt)out.push({l,dd:mn,t:mt})}return out.length?out:null}
 function ddFacts(a='BTC'){const C=SIGD?.CL?.[a];if(!C?.v?.length)return null;let ai=0;C.v.forEach((v,i)=>{if(v>=C.v[ai])ai=i});const L=C.v.length-1,px=C.v[L],ath=C.v[ai],dd=(px/ath-1)*100,pc=a==='BTC'?pastCycles():null,days=Math.round((C.t[L]-C.t[ai])/DAY),closeD=dU(C.t[L]);
-  const F={...FDEF,fam:'dd',label:`${a} drawdown from ATH`,A:a,tk:'$'+a,dd:Math.abs(dd).toFixed(1)+'%',ath:'$'+(ath/1e3).toFixed(1)+'k',athD:dU(C.t[ai]),px:'$'+(px/1e3).toFixed(1)+'k',closeD,days,date:closeD,src:'Binance daily closes',open:false};
+  const F={...FDEF,fam:'dd',label:`${a} drawdown from ATH`,A:a,tk:'$'+a,dd:Math.abs(dd).toFixed(1)+'%',ath:'$'+(ath/1e3).toFixed(1)+'k',athD:dU(C.t[ai]),px:'$'+(px/1e3).toFixed(1)+'k',closeD,days,date:closeD,src:exN(C)+' daily closes',open:false};
   if(pc){const Z=cycTxt(pc),A=Math.abs(dd),dir=A<Z.a?'shallower':A>Z.b?'deeper':'';F.past=Z.rng;F.pastS=Z.s;F.lowsY=`${Z.lows} (${Z.y})`;F.pastList=pc.map(x=>`${x.l} −${Math.abs(x.dd).toFixed(0)}% (${mU(x.t)})`).join(', ');
     F.cmp=dir?`${dir} than ${Z.n>1?'all of them':'it'}`:'within that range';F.cmpS=`${cap1(Z.s)}; this one is ${F.cmp}.`;F.cmpCT=dir?`${cap1(dir)} than ${Z.lows} (${Z.y}).`:`Inside the range of ${Z.lows} (${Z.y}).`}
   else{F.past='—';F.pastList='—';F.cmp='—';F.cmpS='';F.cmpCT='';F.fam=null}
@@ -1998,14 +2056,16 @@ $('#handle').value=S.handle;$('#handle').oninput=e=>{S.handle=e.target.value;sav
 
 $('#sigRef').onclick=()=>renderSignals(true);
 $('#macRef').onclick=()=>{MAC.btc=null;renderMacro(true)};
-$('#refBtn').onclick=()=>{SIG=null;MAC.items=null;Object.keys(cache).forEach(k=>delete cache[k]);D.kl={};D.ins={};refresh(true)};
+$('#refBtn').onclick=()=>{invalidateAll();refresh(true)};
+// #12 manual refresh: every cached dataset is dropped, so the next read fetches it again
+function invalidateAll(){SIG=null;SIGP=null;SIGDAY=null;MAC.M=null;MAC.at=0;MAC.cards=[];MAC.items=null;MAC.btc=null;DVRAW=null;DVAT=0;Object.keys(DF).forEach(k=>delete DF[k]);Object.keys(cache).forEach(k=>delete cache[k]);D.kl={};D.ins={}}
 let _rw=innerWidth;addEventListener('resize',()=>{if(Math.abs(innerWidth-_rw)<2)return;_rw=innerWidth;clearTimeout(window._rz);window._rz=setTimeout(()=>tab(TAB,1),200)});
 // ---------- boot
 function offBanner(){const el=$('#offBan');if(!el)return;const off=!navigator.onLine||(NET.ok===0&&NET.fail>0),dead=!!D.cachedAt||!S.watch.some(w=>D.mk[w.id]?.current_price!=null);const at=D.cachedAt||D.liveAt||null;
   if(off||dead){el.style.display='block';el.textContent=`${off?'Offline':'Live sources unreachable'} · data as of ${at?hmU(at):'unknown (no saved copy yet)'}`}else el.style.display='none'}
 addEventListener('online',()=>{offBanner();refresh()});addEventListener('offline',offBanner);
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol)&&(!navigator.webdriver||/[?&]sw=1/.test(location.search)))navigator.serviceWorker.register('sw.js').catch(()=>{});
-async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);offBanner();ensureCC().then(()=>{if(TAB==='studio')renderStudio()}).catch(()=>{});const _y=scrollY;requestAnimationFrame(()=>{if(_y>0&&scrollY<_y-2)scrollTo(0,_y)});renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else drawChartScreen()}if(TAB==='markets'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio();if(TAB==='today')renderToday()}
+async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);offBanner();ensureCC().then(()=>{if(TAB==='studio')renderStudio()}).catch(()=>{});const _y=scrollY;requestAnimationFrame(()=>{if(_y>0&&scrollY<_y-2)scrollTo(0,_y)});renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else refreshChart()}if(TAB==='markets'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio();if(TAB==='today')renderToday()}
 applyTheme(THEME);document.fonts.ready.then(()=>setTimeout(()=>tab(TAB),300));refresh();setInterval(()=>{if(!document.hidden)refresh()},90000);
 // E12: background work for tabs that are not visible runs when the main thread is idle
 const idle=(f,to=6000)=>('requestIdleCallback'in window)?requestIdleCallback(f,{timeout:to}):setTimeout(f,200);

@@ -12,7 +12,7 @@ pg.on('pageerror',e=>console.log('pageerror',e.message));
 await pg.goto(URL,{waitUntil:'domcontentloaded'});await pg.waitForFunction(()=>typeof drawChart==='function'&&typeof tab==='function',{timeout:60000});
 for(const t of ['markets','chart','studio','markets']){await pg.evaluate(t=>{try{tab(t)}catch(e){}},t);await new Promise(r=>setTimeout(r,6000))}
 const R={};
-R.SHARED_WORD_LIST_sweep_reads_app=(()=>{const own=/\\bIndia|rupee|\\bINR\\b/.test(SWEEP.split('\n').find(l=>/^const BANNED=/.test(l))||'');return{pass:!own&&/RPT_WORDS\.region/.test(SWEEP)&&/RPT_WORDS\.rule1/.test(SWEEP)}})();
+R.SHARED_WORD_LIST_sweep_reads_app=(()=>{const own=/\\bIndia|rupee|\\bINR\\b/.test(SWEEP.split('\n').find(l=>/^const BANNED=/.test(l))||'');return{pass:!own&&/shared','banned-words\.json/.test(SWEEP)&&/BW\.region/.test(SWEEP)&&/BW\.rule1/.test(SWEEP)}})();// India/INR bans: covered through the ONE shared source (shared/banned-words.json 'region')
 Object.assign(R,await pg.evaluate(async(DA)=>{const out={};const T=(k,f)=>{try{out[k]=f()}catch(e){out[k]={pass:false,err:String(e.stack||e).slice(0,300)}}};
  const P=CanvasRenderingContext2D.prototype,of=P.fillText;let TX=[];P.fillText=function(t,...a){TX.push(String(t));return of.call(this,t,...a)};
  const run=(fn,W=1600,H=900)=>{TX=[];const c=document.createElement('canvas');c.width=W;c.height=H;let err=null;try{fn(c.getContext('2d'),W,H)}catch(e){err=String(e)}return{tx:TX.slice(),err}};
