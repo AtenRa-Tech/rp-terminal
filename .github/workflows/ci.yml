@@ -50,29 +50,35 @@ jobs:
         run: cd tests && npm install --no-audit --no-fund
       - name: Serve the site locally
         run: |
+          mkdir -p "$RUNNER_TEMP/gates"
           python3 -m http.server 8765 >/dev/null 2>&1 &
           for i in $(seq 1 20); do curl -sf http://localhost:8765/index.html >/dev/null && break; sleep 1; done
       - name: Node test suites (headless Chrome; skipped on hourly data redeploys to save minutes)
         if: ${{ !inputs.data_redeploy }}
-        run: tests/run-all.sh
+        run: set -o pipefail; tests/run-all.sh 2>&1 | tee "$RUNNER_TEMP/gates/node-suites.log"
       - name: Known-answer tests (frozen 30 Sep 2026 snapshot, data-golden.json)
-        run: GOLD=tests/fixtures node tests/tgolden.js
+        run: set -o pipefail; GOLD=tests/fixtures node tests/tgolden.js 2>&1 | tee "$RUNNER_TEMP/gates/known-answer.log"
       - name: Caption sweep gate (blocking)
-        run: node qa/caption-sweep.js http://localhost:8765/index.html
+        run: set -o pipefail; node qa/caption-sweep.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/caption-sweep.log"
       - name: Export check gate (blocking, built files; 29 exports need @RPTIME, Data source + as-of, UTC time, no lean words)
         working-directory: ${{ runner.temp }}
         # one retry after 90 s only to ride out a CoinGecko/CoinPaprika rate limit; any second failure blocks
-        run: node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }
+        run: set -o pipefail; { node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
       - name: Stale-data gate (blocking) - a metric past its freshness limit gives no reading anywhere (team tests + boundary/mixed/scores/confidence)
         run: |
-          set -e
-          node qa/stale-derivs.js http://localhost:8765/index.html
-          node qa/stale-captions.js http://localhost:8765/index.html
-          node qa/stale-derivs2.js http://localhost:8765/index.html
-          node qa/stale-conf.js http://localhost:8765/index.html
+          set -eo pipefail
+          { node qa/stale-derivs.js http://localhost:8765/index.html
+            node qa/stale-captions.js http://localhost:8765/index.html
+            node qa/stale-derivs2.js http://localhost:8765/index.html
+            node qa/stale-conf.js http://localhost:8765/index.html; } 2>&1 | tee "$RUNNER_TEMP/gates/stale-data.log"
       - name: News replay diff (report only)
         continue-on-error: true
         run: node qa/news-replay.js run http://localhost:8765/index.html
+      - name: Watchdog - failing gate lines to the job summary as ::error
+        if: failure()
+        env:
+          DATA_REDEPLOY: ${{ inputs.data_redeploy }}
+        run: bash .github/scripts/gate-summary.sh "${{ inputs.data_redeploy && 'Data redeploy test' || 'Test' }}"
 
   deploy:
     needs: test
@@ -110,7 +116,7 @@ jobs:
       - name: Wait for Pages CDN
         run: sleep 60
       - name: Smoke test the live site
-        run: node tests/tsmoke.js "$SITE_URL"
+        run: mkdir -p "$RUNNER_TEMP/gates"; set -o pipefail; node tests/tsmoke.js "$SITE_URL" 2>&1 | tee "$RUNNER_TEMP/gates/smoke.log"
       - name: Export check on the live site (failure rolls back)
         working-directory: ${{ runner.temp }}
         run: node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL" || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL"; }
@@ -134,6 +140,21 @@ jobs:
           age=$(curl -s "${SITE_URL}data/derivs.json?v=$(date +%s)" | python3 -c "import json,sys,datetime as d;u=json.load(sys.stdin)['updated'];print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" || echo 999)
           echo "derivs.json age ${age}h"
           if [ "$age" -ge 2 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
+      - name: Watchdog - failing smoke lines to the job summary as ::error
+        if: failure()
+        env:
+          DATA_REDEPLOY: ${{ inputs.data_redeploy }}
+        run: bash .github/scripts/gate-summary.sh "Live smoke (rolled back)"
+
+  live-lag:
+    # Watchdog item 3: runs after every main CI run, green or not; red with ::error when the live derivs.json is 6h+ behind main
+    needs: [test, smoke]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Live data watchdog (fails loudly if live derivs.json is more than 6h behind main)
+        run: python3 .github/scripts/live-lag.py
 
   rollback:
     needs: smoke
