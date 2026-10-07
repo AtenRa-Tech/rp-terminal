@@ -25,10 +25,10 @@ const r=await pg.evaluate(()=>{const o={};const rep=t=>{const c=t.replace(/https
    const d=document.createElement('div');d.innerHTML=freshLine();o.aud={txt:(d.textContent.match(/audits[^·]*/)||[''])[0],name:audName(its[1])}}catch(e){o.aud={err:String(e)}}finally{its.forEach((x,i)=>{x.audit=keep[i][0];x.auditWhy=keep[i][1]})}}
  // card line
  {const A=altCalc(),d=document.createElement('div');d.innerHTML=altTodayHTML();o.card={txt:[...d.querySelectorAll('.msw')].map(x=>x.textContent).join(' | '),n:A.avail.filter(Boolean).length,dd:A.domDays,ok:A.domOK,min:ALT.TH.domMin}}
- // pulse movers (7 Oct live rollback): stablecoins / tokenized T-bills excluded; a real sub-0.05% move never prints as 0.0%
+ // pulse movers (ruling 7 Oct): stablecoins / yield tokens excluded; gainer >= +0.1%, loser <= -0.1%; fewer qualifiers = fewer slots (format is not the gate)
  {const T0=D.top;try{const mk=(sym,ch,px=5)=>({id:sym,symbol:sym,name:sym,current_price:px,market_cap:1e9,price_change_percentage_24h:ch});
    D.top=[mk('usyc',.00935,1.14),mk('usdt',.001,1),mk('aaa',4.2),mk('bbb',2.1),mk('ccc',1.4),mk('ddd',-.03),mk('eee',-1.2),mk('fff',-3.3),mk('ggg',.5)];
-   const mv=pulseMovers();o.pulse={syms:mv.map(c=>c.symbol),txt:mv.map(c=>mvPct(c.price_change_percentage_24h))}}catch(e){o.pulse={err:String(e)}}finally{D.top=T0}}
+   const mv=pulseMovers(),all=[...mv.g,...mv.l];o.pulse={g:mv.g.map(c=>c.symbol),l:mv.l.map(c=>c.symbol),syms:all.map(c=>c.symbol),txt:all.map(c=>mvPct(c.price_change_percentage_24h))}}catch(e){o.pulse={err:String(e)}}finally{D.top=T0}}
  return o});
 ok(/No capitulation/.test(r.hash.read||'')?!r.hash.bad.length:true,"hash: 'above 1.0, no capitulation' replaces the status text (said once, no repeated clause)",r.hash);
 ok(!r.blank.length,'templates: no blank caption template on any signal card',r.blank);
@@ -37,6 +37,6 @@ ok(!r.fund.length,"funding: 'single venue (OKX)' said once; no 'rare within that
 ok(r.age==='BTC history age 0.6d',"history age measured from candle close: 6 Oct candle at 14:10 UTC 7 Oct = 0.6d",r.age);
 ok(!!r.aud&&(r.aud.txt||"").includes(`⚠ ${r.aud.name}: Robustness: the range measure disagrees (19.0% over 30 days).`),"audits footer names the warning chart and its reason",r.aud);
 ok(r.card.ok||r.card.txt.includes(`${r.card.n}/6 inputs; dominance excluded, ${r.card.dd}/${r.card.min} days of data`),"card line: 'N/6 inputs; dominance excluded, k/31 days of data' (live count)",r.card);
-ok(!!r.pulse.syms&&!r.pulse.syms.some(x=>/usyc|usdt/.test(x))&&r.pulse.syms.join()==='aaa,bbb,ccc,fff,eee,ddd'&&!r.pulse.txt.some(t=>/^[+−-]?0\.0%$/.test(t))&&r.pulse.txt.includes('-0.03%'),"pulse movers: stablecoins/T-bill tokens excluded; sub-0.05% move keeps 2 decimals (no lone 0.0%)",r.pulse);
+ok(!!r.pulse.syms&&!r.pulse.syms.some(x=>/usyc|usdt/.test(x))&&r.pulse.g.join()==='aaa,bbb,ccc'&&r.pulse.l.join()==='fff,eee'&&!r.pulse.syms.includes('ddd')&&!r.pulse.txt.some(t=>/^[+−-]?0\.0%$/.test(t)),"pulse movers: stablecoins/T-bill tokens excluded; -0.03% is no loser (gate 0.1%), 2 loser slots",r.pulse);
 ok(!errs.length,'no page errors',errs.slice(0,3));
 console.log('FAILS:',F.length,JSON.stringify(F));await b.close();process.exit(F.length?1:0)})();

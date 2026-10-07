@@ -1,5 +1,5 @@
 // tforming.js: forming-candle rule (7 Oct, approved). Readings, scores, POST NOW and caption values use the last CLOSED candle;
-// the Data line reads 'through <closed> (<x> candle forming)' + rendered UTC time; a live header value is labelled 'live' beside the closed value.
+// the Data line reads 'through <date> (forming)' + rendered UTC time (approved wording; readings stay on the closed candle); a live header value is labelled 'live' beside the closed value.
 // Fails on b479fff-era code, passes on the fix. URL=... node tests/tforming.js
 const p=require('puppeteer-core');const URL=process.env.URL||'http://localhost:8765/index.html';
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,700):''));if(!c)F.push(n)};
@@ -18,7 +18,7 @@ const r=await pg.evaluate(()=>{const o={},DAYm=864e5,today=Math.floor(Date.now()
  const syn={t,o:op,h,l,c,v,src:'Binance',pair:'BTC/USDT',complete:true,pages:1};
  window.AXLOG=[];const cv=document.createElement('canvas');cv.width=1080;cv.height=1350;const ctx=cv.getContext('2d');
  const keep={d:CH.d,iv:CH.iv,n:CH.n,cross:CH.cross};let lay=null;try{CH.d=syn;CH.iv='1d';CH.n=120;CH.cross=null;lay=drawChart(ctx,cv.width,cv.height,{...CH,d:syn,iv:'1d',n:120,cross:null});drawChartScreen()}catch(e){o.chartErr=String(e)}
- const hdr=(AXLOG||[]).filter(x=>x.fn==='chartHdr').at(0)||{};o.hdr={ohlcC:hdr.ohlcC,closedC:c[N-2],formC:c[N-1],live:hdr.live||'',tag:hdr.tag,data:hdr.data,closedD:axFull(t[N-2]),formD:axDay(t[N-1])};
+ const hdr=(AXLOG||[]).filter(x=>x.fn==='chartHdr').at(0)||{};o.hdr={ohlcC:hdr.ohlcC,closedC:c[N-2],formC:c[N-1],live:hdr.live||'',tag:hdr.tag,data:hdr.data,closedD:axFull(t[N-2]),formD:axDay(t[N-1]),formFull:axFull(t[N-1])};
  o.screen=document.getElementById('chSrc')?.textContent||'';
  // 3. chart caption facts: the value is the closed candle's, never the forming one
  let Fc=null;try{Fc=capFacts({kind:'studio',t:'chart'})}catch(e){Fc={err:String(e)}}o.cap={now:Fc?.now,closed:money(c[N-2]),form:money(c[N-1]),caps:Fc&&!Fc.err?STY.map(([st])=>capPick(Fc,st,-1,()=>.5).t):[]};
@@ -30,8 +30,8 @@ ok(r.sig.n>5&&!r.sig.diff.length,'score: every signal score and reading unchange
 ok(r.sig.pnBase===r.sig.pnUp&&r.sig.pnBase===r.sig.pnDn&&!r.sig.diff.some(x=>x[2].pn!==x[3]?.pn),'POST NOW: count and flags unchanged when only the forming candle moves',r.sig);
 ok(r.hdr.ohlcC===r.hdr.closedC,'chart header: OHLC shows the last CLOSED candle, not the forming one',r.hdr);
 ok(/^live 777(\.0+)? · \d\d:\d\d UTC$/.test(r.hdr.live),"chart header: forming price shown beside it, labelled 'live HH:MM UTC'",r.hdr);
-ok(typeof r.hdr.data==='string'&&r.hdr.data.includes(`through ${r.hdr.closedD} (${r.hdr.formD} candle forming) · rendered `)&&/rendered \d+ \w{3} \d\d:\d\d UTC$/.test(r.hdr.data),"export Data line: 'through <closed date> (<date> candle forming) · rendered <UTC time>'",r.hdr);
-ok(r.screen.includes(`through ${r.hdr.closedD} (${r.hdr.formD} candle forming)`)&&/rendered \d+ \w{3} \d\d:\d\d UTC$/.test(r.screen),'chart screen Data line: closed-through date + forming marker + rendered UTC time',r.screen);
+ok(typeof r.hdr.data==='string'&&r.hdr.data.includes(`through ${r.hdr.formFull} (forming) · rendered `)&&/rendered \d+ \w{3} \d\d:\d\d UTC$/.test(r.hdr.data),"export Data line: 'through <date> (forming) · rendered <UTC time>'",r.hdr);
+ok(r.screen.includes(`through ${r.hdr.formFull} (forming) · rendered `)&&/rendered \d+ \w{3} \d\d:\d\d UTC$/.test(r.screen),'chart screen Data line: through <date> (forming) + rendered UTC time',r.screen);
 ok(typeof r.cap.now==='string'&&r.cap.now.startsWith(r.cap.closed)&&!r.cap.caps.some(t=>t.includes(r.cap.form)),'chart caption: value is the closed candle, forming value never used',r.cap);
 ok(r.lint===true,"lint: 'close' attached to a forming value is flagged",r.lint);
 ok(!errs.length&&!r.chartErr,'no page errors',[errs.slice(0,3),r.chartErr]);

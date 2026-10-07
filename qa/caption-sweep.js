@@ -5,7 +5,7 @@
 const {chromium}=require('playwright-core');
 const ARGS=process.argv.slice(2),URL=ARGS.find(a=>!a.startsWith('--'))||'https://atenra-tech.github.io/rp-terminal/',LIVENEWS=!ARGS.includes('--no-live-news');
 const fs0=require('fs'),RDIR=process.env.RDIR||(__dirname+'/news-replay'),SNAPS=fs0.existsSync(RDIR)?fs0.readdirSync(RDIR).filter(f=>/^20.*\.json$/.test(f)).sort().map(f=>({f,...JSON.parse(fs0.readFileSync(RDIR+'/'+f))})):[];
-const BANNED=[/\bnoted\.?$|\bNoted\./,/\bhistorically\b/i,/\blooks? fine\b/i,/\bbuy(ing)? (zone|signal|the dip)\b/i,/\bsell(ing)? (zone|signal)\b/i,/\bvalue zone\b/i,/\bdeepest-value\b/i,/\baccumulat(e|ion)\b/i,/\bfire sale\b/i,/\bsell,? seriously\b/i,/\bevery (cycle|top|bottom)\b/i,/\balways\b/i,/\bnever\b/i,/\bin history\b/i,/\bbest (buy|entry|time)\b/i,/\bguarantee/i,/\bBREAKING\b/,/\bconfirmed\b/i];// regional + rule-1 call/lean lists are NOT duplicated here: they are read from the app's own RPT_WORDS (one source of truth, also used by the news filter and the draft audit)
+const BANNED=[/\b(in|for) a (long|good|while) while\b|\bin ages\b/i,/\bnoted\.?$|\bNoted\./,/\bhistorically\b/i,/\blooks? fine\b/i,/\bbuy(ing)? (zone|signal|the dip)\b/i,/\bsell(ing)? (zone|signal)\b/i,/\bvalue zone\b/i,/\bdeepest-value\b/i,/\baccumulat(e|ion)\b/i,/\bfire sale\b/i,/\bsell,? seriously\b/i,/\bevery (cycle|top|bottom)\b/i,/\balways\b/i,/\bnever\b/i,/\bin history\b/i,/\bbest (buy|entry|time)\b/i,/\bguarantee/i,/\bBREAKING\b/,/\bconfirmed\b/i];// regional + rule-1 call/lean lists are NOT duplicated here: they are read from the app's own RPT_WORDS (one source of truth, also used by the news filter and the draft audit)
 const STATUS=/\((?:[^)]*\b(?:busy|failed|429|timeout|error|fallback|pending)\b[^)]*)\)/i;
 const BADTOK=/\b(NaN|undefined|null|Infinity)\b|\[object/;
 function repeated(t){const w=t.replace(/https?:\/\/\S+/g,' ').toLowerCase().replace(/[^a-z0-9%$. ]/g,' ').split(/\s+/).filter(Boolean);const s=new Set();for(let i=0;i+4<=w.length;i++){const g=w.slice(i,i+4).join(' ');if(s.has(g))return g;s.add(g)}return null}
@@ -59,6 +59,7 @@ const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try
  if(r.lint&&r.lint.length)fails.push([...loc,'app lint: '+r.lint.join(',')]);
  if(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/.test(t))fails.push([...loc,'empty slot "'+t.match(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/)[0]+'"']);
  const rc=repClause(t);if(rc)fails.push([...loc,'repeated phrase "'+rc+'"']);
+ {const n0=new Date(),M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],td=n0.getUTCDate()+' '+M[n0.getUTCMonth()];const re=new RegExp('\\b'+td+'(?: \\d{4})?(?: UTC)? close|\\bclosed? (?:on )?'+td+'\\b','i');if(re.test(t))fails.push([...loc,'forming candle called a close: "'+t.match(re)[0]+'"'])}
  // forming-candle rule (7 Oct): never attach 'close' to a forming value; a forming value only appears labelled live
  if((r.open||(r.fv&&t.includes(r.fv)))&&/\b(daily )?(close[sd]?|closing)\b/i.test(t.replace(/\bclose to\b/gi,'')))fails.push([...loc,'"close" on a forming value']);
  if(r.fv&&t.includes(r.fv)&&!/\blive\b/i.test(t))fails.push([...loc,'forming value '+r.fv+' without a live label']);

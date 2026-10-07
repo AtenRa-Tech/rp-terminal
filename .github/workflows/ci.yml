@@ -60,6 +60,8 @@ jobs:
         run: set -o pipefail; GOLD=tests/fixtures node tests/tgolden.js 2>&1 | tee "$RUNNER_TEMP/gates/known-answer.log"
       - name: Caption sweep gate (blocking)
         run: set -o pipefail; node qa/caption-sweep.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/caption-sweep.log"
+      - name: Pulse movers gate (blocking; 5 fixtures + history fixture, movers and heatmap, Crypto News GOD's qa/pulse-movers.js)
+        run: set -o pipefail; node qa/pulse-movers.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/pulse-movers.log"
       - name: Export check gate (blocking, built files; 29 exports need @RPTIME, Data source + as-of, UTC time, no lean words)
         working-directory: ${{ runner.temp }}
         # one retry after 90 s only to ride out a CoinGecko/CoinPaprika rate limit; any second failure blocks
@@ -120,6 +122,8 @@ jobs:
       - name: Export check on the live site (failure rolls back)
         working-directory: ${{ runner.temp }}
         run: node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL" || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL"; }
+      - name: Pulse movers on the live site (failure rolls back)
+        run: node qa/pulse-movers.js "$SITE_URL"
       - name: Stale-data gate on the live site (blocking; failure rolls back)
         run: |
           set -e
