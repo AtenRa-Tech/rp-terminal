@@ -41,11 +41,26 @@ KEEP_DAYS = 760
 UNIVERSE_N, MIN_HIST = 50, 120
 TOTALS_N = 150
 
-STABLE = {"USDT", "USDC", "DAI", "USDE", "FDUSD", "PYUSD", "USDS", "USD1", "TUSD", "USDD", "RLUSD", "FRAX", "USDG", "GHO",
-          "CRVUSD", "LUSD", "USDP", "GUSD", "BUSD", "USDB", "USDX", "USDA", "EURC", "EURS", "EURT", "USDTB", "USYC", "BUIDL",
-          "USR", "DOLA", "SUSD", "MIM", "FRXUSD", "USD0", "AUSD", "USDF", "BFUSD", "USDO", "USX", "ZUSD", "EUSD", "USDL", "XUSD",
-          "OUSD", "USDY", "OUSG", "USTB", "USDM", "BOLD", "MUSD", "DEUSD", "SRUSD", "RUSD", "USDN", "CUSD", "AVUSD", "USDZ",
-          "USDC.E", "USDAI", "UUSD", "M", "CASH", "BTSE"}
+# ONE shared list with the app (Pulse movers, heatmap): shared/dollar-tokens.json. tests/tdollar.js asserts both read the same symbols.
+DOLLAR = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared", "dollar-tokens.json"), encoding="utf-8"))
+STABLE = set(DOLLAR["stable"]) | set(DOLLAR["yield"])
+CALM = DOLLAR["calm"]
+
+
+def calm_dollar(c, d):
+    """Second check (same rule as the app): |24h| < ch24 AND 30-day stdev of daily close-to-close returns < sd30 %/day.
+    This job loads daily closes for every candidate, so it uses the closes version (no 7d/30d fallback needed)."""
+    cl = [d[k][0] for k in sorted(d)][-31:]
+    if len(cl) < 31 or any(not x or x <= 0 for x in cl):
+        return False
+    r = [(cl[i + 1] / cl[i] - 1) * 100 for i in range(30)]
+    ch24 = c.get("pc24")
+    if ch24 is None:
+        ch24 = r[-1]
+    if abs(ch24) >= CALM["ch24"]:
+        return False
+    mu = sum(r) / len(r)
+    return (sum((x - mu) ** 2 for x in r) / len(r)) ** 0.5 < CALM["sd30"]
 PEGGED = {"XAUT", "PAXG", "KAU", "XAUM", "CGO", "DGX"}
 DUP_SYM = {"WBTC", "WETH", "STETH", "WSTETH", "WEETH", "EETH", "RETH", "CBBTC", "CBETH", "METH", "EZETH", "RSETH", "BTCB", "BTC.B",
            "SOLVBTC", "LBTC", "JITOSOL", "MSOL", "BNSOL", "TBTC", "WBETH", "BETH", "CLBTC", "FBTC", "SUSDE", "SUSDS", "USDT0",
@@ -93,7 +108,7 @@ def ranking():
             q = x.get("quotes", {}).get("USD", {})
             if x.get("rank") and q.get("market_cap"):
                 coins.append({"id": x["id"], "sym": x["symbol"].upper(), "name": x["name"], "rank": x["rank"], "price": q["price"],
-                              "mcap": q["market_cap"], "vol": q.get("volume_24h"), "pc30": q.get("percent_change_30d")})
+                              "mcap": q["market_cap"], "vol": q.get("volume_24h"), "pc30": q.get("percent_change_30d"), "pc24": q.get("percent_change_24h")})
         return "CoinPaprika", {"total": float(g["market_cap_usd"]), "btc_dom": float(g["bitcoin_dominance_percentage"]), "vol": float(g["volume_24h_usd"])}, coins
     except Exception as e:  # noqa
         print("CoinPaprika failed:", str(e)[:120], "-> CoinLore", file=sys.stderr)
@@ -203,6 +218,9 @@ def main():
         d, s = closes(c["sym"], c["price"])
         if d is None:
             skipped.append({"sym": c["sym"], "rank": c["rank"], "why": s})
+            continue
+        if calm_dollar(c, d):
+            skipped.append({"sym": c["sym"], "rank": c["rank"], "why": "dollar-like: |24h| < %s%% and 30-day close-to-close stdev < %s%%/day" % (CALM["ch24"], CALM["sd30"])})
             continue
         c["src"] = s
         data[c["sym"]] = d

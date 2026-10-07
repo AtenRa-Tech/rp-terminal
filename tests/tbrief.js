@@ -16,7 +16,7 @@ const T=await pg.evaluate(()=>({nav:[...document.querySelectorAll('nav button')]
 console.log(JSON.stringify(T,null,1));
 ok(T.def==='s-today','Today is the default tab');ok(T.nav.length===7&&!T.nav.some(x=>/CLIPPED/.test(x)),'nav 7 tabs, none clipped');
 ok(T.chips.length===6&&T.chips.filter(c=>!/No data/.test(c)).length>=5,'6 state chips, >=5 with data');ok(T.recs.length>=3,'>=3 recommendations');
-ok(T.clusters.length>=1,'at least one cluster rendered');ok(/in \d+d|in \d+h/.test(T.ev||''),'next event countdown');ok(/Sources OK|stale|fallback in use: .+\(primary .+ failed\)|sources: /.test(T.ev||''),'freshness line');
+ok(T.clusters.length>=1,'at least one cluster rendered');ok(/in \d+d|in \d+h|in \d+m\b/.test(T.ev||''),'next event countdown');ok(/Sources OK|stale|fallback in use: .+\(primary .+ failed\)|sources: /.test(T.ev||''),'freshness line');
 await pg.screenshot({path:'b-today.png'});
 await pg.evaluate(()=>scrollTo(0,document.querySelectorAll('#todayBox .card')[2].getBoundingClientRect().top+scrollY-60));await W(500);await pg.screenshot({path:'b-today2.png'});
 // chip rule on tap

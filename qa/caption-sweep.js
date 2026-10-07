@@ -5,7 +5,7 @@
 const {chromium}=require('playwright-core');
 const ARGS=process.argv.slice(2),URL=ARGS.find(a=>!a.startsWith('--'))||'https://atenra-tech.github.io/rp-terminal/',LIVENEWS=!ARGS.includes('--no-live-news');
 const fs0=require('fs'),RDIR=process.env.RDIR||(__dirname+'/news-replay'),SNAPS=fs0.existsSync(RDIR)?fs0.readdirSync(RDIR).filter(f=>/^20.*\.json$/.test(f)).sort().map(f=>({f,...JSON.parse(fs0.readFileSync(RDIR+'/'+f))})):[];
-const BANNED=[/\bnoted\.?$|\bNoted\./,/\bhistorically\b/i,/\blooks? fine\b/i,/\bbuy(ing)? (zone|signal|the dip)\b/i,/\bsell(ing)? (zone|signal)\b/i,/\bvalue zone\b/i,/\bdeepest-value\b/i,/\baccumulat(e|ion)\b/i,/\bfire sale\b/i,/\bsell,? seriously\b/i,/\bevery (cycle|top|bottom)\b/i,/\balways\b/i,/\bnever\b/i,/\bin history\b/i,/\bbest (buy|entry|time)\b/i,/\bguarantee/i,/\bBREAKING\b/,/\bconfirmed\b/i];// regional + rule-1 call/lean lists are NOT duplicated here: they are read from the app's own RPT_WORDS (one source of truth, also used by the news filter and the draft audit)
+const BANNED=[/\b(in|for) a (long|good|while) while\b|\bin ages\b/i,/\bnoted\.?$|\bNoted\./,/\bhistorically\b/i,/\blooks? fine\b/i,/\bbuy(ing)? (zone|signal|the dip)\b/i,/\bsell(ing)? (zone|signal)\b/i,/\bvalue zone\b/i,/\bdeepest-value\b/i,/\baccumulat(e|ion)\b/i,/\bfire sale\b/i,/\bsell,? seriously\b/i,/\bevery (cycle|top|bottom)\b/i,/\balways\b/i,/\bnever\b/i,/\bin history\b/i,/\bbest (buy|entry|time)\b/i,/\bguarantee/i,/\bBREAKING\b/,/\bconfirmed\b/i];// regional + rule-1 call/lean lists are NOT duplicated here: they are read from the app's own RPT_WORDS (one source of truth, also used by the news filter and the draft audit)
 const STATUS=/\((?:[^)]*\b(?:busy|failed|429|timeout|error|fallback|pending)\b[^)]*)\)/i;
 const BADTOK=/\b(NaN|undefined|null|Infinity)\b|\[object/;
 function repeated(t){const w=t.replace(/https?:\/\/\S+/g,' ').toLowerCase().replace(/[^a-z0-9%$. ]/g,' ').split(/\s+/).filter(Boolean);const s=new Set();for(let i=0;i+4<=w.length;i++){const g=w.slice(i,i+4).join(' ');if(s.has(g))return g;s.add(g)}return null}
@@ -20,10 +20,10 @@ const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--
 const p=await b.newPage({viewport:{width:412,height:915}});
 await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:90000});
 await p.waitForTimeout(8000);
-for(const t of ['signals','macro','altseason','news','studio','today']){await p.evaluate(t=>{try{tab(t)}catch(e){}},t);await p.waitForTimeout(4000)}
+for(const t of ['signals','macro','altseason','news','chart','studio','today']){await p.evaluate(t=>{try{tab(t)}catch(e){}},t);await p.waitForTimeout(4000)}
 const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
  (SIG||[]).forEach(s=>ctxs.push([{kind:'sig',id:s.id},s]));(MAC.cards||[]).forEach(s=>ctxs.push([{kind:'mac',id:s.id}]));
- ['btc','eth'].forEach(a=>ctxs.push([{kind:'etf',a}]));ctxs.push([{kind:'alt'}]);ctxs.push([{kind:'dd',a:'BTC'}]);ctxs.push([{kind:'perf',a:'BTC'}]);ctxs.push([{kind:'studio',t:'pulse'}]);
+ ['btc','eth'].forEach(a=>ctxs.push([{kind:'etf',a}]));ctxs.push([{kind:'alt'}]);ctxs.push([{kind:'dd',a:'BTC'}]);ctxs.push([{kind:'perf',a:'BTC'}]);ctxs.push([{kind:'studio',t:'pulse'}]);ctxs.push([{kind:'studio',t:'chart'}]);
  const gen=(c,o,tag,warn)=>{const id=(tag||c.kind)+':'+(c.id||c.a||c.t||(c.n&&c.n.title)||'');let F;
   try{F=capFacts(c,o)}catch(e){out.push({c:id,err:'capFacts '+e,warn});return}if(!F){out.push({c:id,err:'null facts',warn});return}
   const ref=JSON.stringify(F)+' '+(document.querySelector('[data-id="'+(c.id||'')+'"]')?.innerText||'');
@@ -32,8 +32,10 @@ const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
   if(c._v==='pos')F={...F,since:F.pos};if(c._v==='lt60')F={...F,since:'',sinceD:''};
   for(const [st] of STY){CAPT[F.fam][st].forEach((fn,i)=>{let t;try{t=tidy(fn(F));if(t&&typeof t!=='string')t=String(t)}catch(e){t='ERR '+e}
     let lint=[];try{lint=t?lintBanned(t,F.title,F.open):[]}catch(e){}
-    out.push({c:id,st,i,t,len:t?(()=>{try{return xLen(t)}catch(e){return t.length}})():0,lint,ref,warn})});
-   let pk;try{pk=capPick(F,st,-1,()=>.5);if(pk&&typeof pk!=='string')pk=pk.t||pk.text||pk.cap||JSON.stringify(pk)}catch(e){pk='ERR '+e}out.push({c:id,st,i:'picked',t:pk,len:pk?(()=>{try{return xLen(pk)}catch(e){return pk.length}})():0,lint:[],ref,picked:1,warn})}};
+    out.push({c:id,st,i,t,len:t?(()=>{try{return xLen(t)}catch(e){return t.length}})():0,lint,ref,warn,open:!!F.open,fv:F.formV||''})});
+   let pk;try{pk=capPick(F,st,-1,()=>.5);if(pk&&typeof pk!=='string')pk=pk.t||pk.text||pk.cap||JSON.stringify(pk)}catch(e){pk='ERR '+e}out.push({c:id,st,i:'picked',t:pk,len:pk?(()=>{try{return xLen(pk)}catch(e){return pk.length}})():0,lint:[],ref,picked:1,warn,open:!!F.open,fv:F.formV||''})}
+  // forming-candle rule: sig readings come from the last CLOSED daily candle -> facts never flagged open and never dated today (UTC)
+  if(!tag&&!c._v&&c.kind==='sig'){const td=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});out.push({c:'sig~closed:'+(c.id||''),closedChk:1,settled:!!(o&&o.settled),isOpen:!!F.open,today:F.date&&new RegExp('(^|\\D)'+td+'(\\D|$)').test(String(F.date))?String(F.date):'',warn})}};
  for(const [c,o] of ctxs)gen(c,o);
  // news from frozen replay snapshots (blocking)
  const realNow=Date.now,realNews=D.news;for(const S0 of SNAPS){Date.now=()=>S0.now;D.news=S0.news;try{newsClusters().slice(0,6).forEach(c=>gen({kind:'news',n:c.lead},null,'news@'+S0.f.slice(0,16)))}catch(e){out.push({c:'news@'+S0.f,err:String(e)})}finally{Date.now=realNow;D.news=realNews}}
@@ -46,7 +48,7 @@ await b.close();
 if(!W){console.error('caption sweep: app does not expose RPT_WORDS (shared word list)');process.exit(1)}
 BANNED.push(new RegExp(...W.region));const RULE1=W.rule1.map(x=>new RegExp(...x));// rule 1 on news captions runs through the app lint (headline text exempt), on every other card directly
 let fails=[];
-const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try{if(r.err){fails.push([r.c,'-','-',r.err]);continue}const t=r.t||'';const loc=[r.c,r.st,r.i];
+const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try{if(r.err){fails.push([r.c,'-','-',r.err]);continue}if(r.closedChk){if(r.isOpen)fails.push([r.c,'-','-','sig reading taken from the forming candle']);if(r.today&&!r.settled)fails.push([r.c,'-','-','sig reading dated today (forming candle): '+r.today]);continue}const t=r.t||'';const loc=[r.c,r.st,r.i];
  if(!t){fails.push([...loc,'blank caption']);continue}// a blank template or blank pick means Studio offers an empty caption
  if(/^ERR /.test(t))fails.push([...loc,'template threw: '+t]);
  if(r.len>280)fails.push([...loc,'over 280 ('+r.len+')']);
@@ -57,6 +59,10 @@ const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try
  if(r.lint&&r.lint.length)fails.push([...loc,'app lint: '+r.lint.join(',')]);
  if(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/.test(t))fails.push([...loc,'empty slot "'+t.match(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/)[0]+'"']);
  const rc=repClause(t);if(rc)fails.push([...loc,'repeated phrase "'+rc+'"']);
+ {const n0=new Date(),M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],td=n0.getUTCDate()+' '+M[n0.getUTCMonth()];const re=new RegExp('\\b'+td+'(?: \\d{4})?(?: UTC)? close|\\bclosed? (?:on )?'+td+'\\b','i');if(re.test(t))fails.push([...loc,'forming candle called a close: "'+t.match(re)[0]+'"'])}
+ // forming-candle rule (7 Oct): never attach 'close' to a forming value; a forming value only appears labelled live
+ if((r.open||(r.fv&&t.includes(r.fv)))&&/\b(daily )?(close[sd]?|closing)\b/i.test(t.replace(/\bclose to\b/gi,'')))fails.push([...loc,'"close" on a forming value']);
+ if(r.fv&&t.includes(r.fv)&&!/\blive\b/i.test(t))fails.push([...loc,'forming value '+r.fv+' without a live label']);
  const rp=repeated(t);if(rp)fails.push([...loc,'repeated phrase "'+rp+'"']);
  if(/\blive\b/i.test(t)&&/\b(\d{1,2} \w{3}|close)\b/i.test(t)&&!/\blive[^.]{0,25}\d\d:\d\d ?UTC/i.test(t))fails.push([...loc,'live and close values without labels']);
  const ref=r.ref.replace(/[,\s+−-]/g,'');for(const n of nums(t.replace(/https?:\/\/\S+/g,' '))){if(trivial(n))continue;const core=n.replace(/[%kMBT×σ]|bp|EH\/s/g,'');if(core&&!ref.includes(core))fails.push([...loc,'number '+n+' not on card'])}}finally{fails=fails0}}
