@@ -27,7 +27,8 @@ Object.assign(R,await pg.evaluate(async(DA)=>{const out={};const T=(k,f)=>{try{o
    const a=run(drawFng,1200,400),pu=run((x,W,H)=>drawCard(x,W,H,'pulse'),3840,2160);D.fng=keep;D.glob=keepG;renderGlobal();
    return{lbl:fngLbl(f),g,pass:fngLbl(f)===want&&g===want&&a.tx.includes(want)&&pu.tx.includes(want)}});
  T('CORR_table_window',()=>{const L=S.watch.filter(w=>D.ins[w.id]);if(!L.length)return{pass:false,err:'insights not loaded'};const el=document.getElementById('corrAsof');const asof=Math.min(...L.map(w=>D.ins[w.id].asof));
-   return{txt:el&&el.textContent,pass:!!el&&el.textContent.startsWith('30 daily returns to '+axFull(asof))&&asof+864e5<=Date.now()+1}});
+   const m=el&&el.textContent.match(/^30D, through (\d{1,2} \w{3} \d{4}) \(returns on shared UTC close dates\)/),end=m?Date.parse(m[1]+' UTC'):NaN;// shared end date of the date-joined window (7 Oct ruling), never after the latest close
+   return{txt:el&&el.textContent,pass:!!m&&end<=asof&&asof-end<=3*864e5&&asof+864e5<=Date.now()+1}});
  T('HEAT_buttons_disabled_without_tiles',()=>{const keep=D.top;const st=document.getElementById('stType'),sv=st.value;D.top=[];renderHeat();const b1=document.querySelector('[data-x="heat"]').disabled;st.value='heat';const ok0=heatGate();const s1=['stExp','stX','stShare'].map(i=>document.getElementById(i).disabled);
    st.value='price';heatGate();const s2=['stExp','stX','stShare'].map(i=>document.getElementById(i).disabled);D.top=keep;renderHeat();const b2=document.querySelector('[data-x="heat"]').disabled;st.value=sv;heatGate();
    return{b1,s1,s2,b2,hasTiles:heatItems().length,pass:b1&&!ok0&&s1.every(Boolean)&&!s2.some(Boolean)&&(heatItems().length?b2===false:b2===true)}});
