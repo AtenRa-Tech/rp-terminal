@@ -20,10 +20,10 @@ const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--
 const p=await b.newPage({viewport:{width:412,height:915}});
 await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:90000});
 await p.waitForTimeout(8000);
-for(const t of ['signals','macro','altseason','news','studio','today']){await p.evaluate(t=>{try{tab(t)}catch(e){}},t);await p.waitForTimeout(4000)}
+for(const t of ['signals','macro','altseason','news','chart','studio','today']){await p.evaluate(t=>{try{tab(t)}catch(e){}},t);await p.waitForTimeout(4000)}
 const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
  (SIG||[]).forEach(s=>ctxs.push([{kind:'sig',id:s.id},s]));(MAC.cards||[]).forEach(s=>ctxs.push([{kind:'mac',id:s.id}]));
- ['btc','eth'].forEach(a=>ctxs.push([{kind:'etf',a}]));ctxs.push([{kind:'alt'}]);ctxs.push([{kind:'dd',a:'BTC'}]);ctxs.push([{kind:'perf',a:'BTC'}]);ctxs.push([{kind:'studio',t:'pulse'}]);
+ ['btc','eth'].forEach(a=>ctxs.push([{kind:'etf',a}]));ctxs.push([{kind:'alt'}]);ctxs.push([{kind:'dd',a:'BTC'}]);ctxs.push([{kind:'perf',a:'BTC'}]);ctxs.push([{kind:'studio',t:'pulse'}]);ctxs.push([{kind:'studio',t:'chart'}]);
  const gen=(c,o,tag,warn)=>{const id=(tag||c.kind)+':'+(c.id||c.a||c.t||(c.n&&c.n.title)||'');let F;
   try{F=capFacts(c,o)}catch(e){out.push({c:id,err:'capFacts '+e,warn});return}if(!F){out.push({c:id,err:'null facts',warn});return}
   const ref=JSON.stringify(F)+' '+(document.querySelector('[data-id="'+(c.id||'')+'"]')?.innerText||'');
@@ -32,8 +32,10 @@ const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
   if(c._v==='pos')F={...F,since:F.pos};if(c._v==='lt60')F={...F,since:'',sinceD:''};
   for(const [st] of STY){CAPT[F.fam][st].forEach((fn,i)=>{let t;try{t=tidy(fn(F));if(t&&typeof t!=='string')t=String(t)}catch(e){t='ERR '+e}
     let lint=[];try{lint=t?lintBanned(t,F.title,F.open):[]}catch(e){}
-    out.push({c:id,st,i,t,len:t?(()=>{try{return xLen(t)}catch(e){return t.length}})():0,lint,ref,warn})});
-   let pk;try{pk=capPick(F,st,-1,()=>.5);if(pk&&typeof pk!=='string')pk=pk.t||pk.text||pk.cap||JSON.stringify(pk)}catch(e){pk='ERR '+e}out.push({c:id,st,i:'picked',t:pk,len:pk?(()=>{try{return xLen(pk)}catch(e){return pk.length}})():0,lint:[],ref,picked:1,warn})}};
+    out.push({c:id,st,i,t,len:t?(()=>{try{return xLen(t)}catch(e){return t.length}})():0,lint,ref,warn,open:!!F.open,fv:F.formV||''})});
+   let pk;try{pk=capPick(F,st,-1,()=>.5);if(pk&&typeof pk!=='string')pk=pk.t||pk.text||pk.cap||JSON.stringify(pk)}catch(e){pk='ERR '+e}out.push({c:id,st,i:'picked',t:pk,len:pk?(()=>{try{return xLen(pk)}catch(e){return pk.length}})():0,lint:[],ref,picked:1,warn,open:!!F.open,fv:F.formV||''})}
+  // forming-candle rule: the same card with a value from today's unfinished candle (open=true) -> the app's own pick must never say 'close'
+  if(!tag&&!c._v&&c.kind==='sig')for(const [st] of STY){let pk;try{pk=capPick({...F,open:true},st,-1,()=>.5).t}catch(e){pk='ERR '+e}out.push({c:'sig~forming:'+(c.id||''),st,i:'picked',t:pk,len:pk?pk.length:0,lint:[],ref,picked:1,warn,open:true})}};
  for(const [c,o] of ctxs)gen(c,o);
  // news from frozen replay snapshots (blocking)
  const realNow=Date.now,realNews=D.news;for(const S0 of SNAPS){Date.now=()=>S0.now;D.news=S0.news;try{newsClusters().slice(0,6).forEach(c=>gen({kind:'news',n:c.lead},null,'news@'+S0.f.slice(0,16)))}catch(e){out.push({c:'news@'+S0.f,err:String(e)})}finally{Date.now=realNow;D.news=realNews}}
@@ -57,6 +59,9 @@ const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try
  if(r.lint&&r.lint.length)fails.push([...loc,'app lint: '+r.lint.join(',')]);
  if(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/.test(t))fails.push([...loc,'empty slot "'+t.match(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/)[0]+'"']);
  const rc=repClause(t);if(rc)fails.push([...loc,'repeated phrase "'+rc+'"']);
+ // forming-candle rule (7 Oct): never attach 'close' to a forming value; a forming value only appears labelled live
+ if((r.open||(r.fv&&t.includes(r.fv)))&&/\b(daily )?(close[sd]?|closing)\b/i.test(t.replace(/\bclose to\b/gi,'')))fails.push([...loc,'"close" on a forming value']);
+ if(r.fv&&t.includes(r.fv)&&!/\blive\b/i.test(t))fails.push([...loc,'forming value '+r.fv+' without a live label']);
  const rp=repeated(t);if(rp)fails.push([...loc,'repeated phrase "'+rp+'"']);
  if(/\blive\b/i.test(t)&&/\b(\d{1,2} \w{3}|close)\b/i.test(t)&&!/\blive[^.]{0,25}\d\d:\d\d ?UTC/i.test(t))fails.push([...loc,'live and close values without labels']);
  const ref=r.ref.replace(/[,\s+−-]/g,'');for(const n of nums(t.replace(/https?:\/\/\S+/g,' '))){if(trivial(n))continue;const core=n.replace(/[%kMBT×σ]|bp|EH\/s/g,'');if(core&&!ref.includes(core))fails.push([...loc,'number '+n+' not on card'])}}finally{fails=fails0}}
