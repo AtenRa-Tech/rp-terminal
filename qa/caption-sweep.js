@@ -23,6 +23,8 @@ const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
  const gen=(c,o,tag,warn)=>{const id=(tag||c.kind)+':'+(c.id||c.a||c.t||(c.n&&c.n.title)||'');let F;
   try{F=capFacts(c,o)}catch(e){out.push({c:id,err:'capFacts '+e,warn});return}if(!F){out.push({c:id,err:'null facts',warn});return}
   const ref=JSON.stringify(F)+' '+(document.querySelector('[data-id="'+(c.id||'')+'"]')?.innerText||'');
+  if(!tag&&F.pos&&F.since!==F.pos&&!c._v){gen({...c,_v:1},o,c.kind+'~since=pos',warn);}
+  if(c._v)F={...F,since:F.pos};
   for(const [st] of STY){CAPT[F.fam][st].forEach((fn,i)=>{let t;try{t=tidy(fn(F));if(t&&typeof t!=='string')t=String(t)}catch(e){t='ERR '+e}
     let lint=[];try{lint=t?lintBanned(t,F.title,F.open):[]}catch(e){}
     out.push({c:id,st,i,t,len:t?(()=>{try{return xLen(t)}catch(e){return t.length}})():0,lint,ref,warn})});

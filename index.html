@@ -1382,7 +1382,7 @@ ct:[
  F=>`${F.subjS}: ${F.now}${F.chg2?', '+F.chg2:''}. ${F.mood}`,
  F=>`${F.now} on ${F.subjL}, ${F.chg}. ${F.mood}`]},
 macro:{simple:[
- F=>`${cap1(F.subj)} is ${F.now}${F.chg?', '+F.chg:''}.${F.pos?` That's ${F.pos}${F.since?', '+F.since:''}.`:''}`,
+ F=>`${cap1(F.subj)} is ${F.now}${F.chg?', '+F.chg:''}.${F.pos?` That's ${PS(F.pos,F.since,', ')}.`:''}`,
  F=>`${F.now}: ${F.subjL}${F.chg?` (${F.chg})`:''}. ${F.mood}`,
  F=>`${cap1(F.subj)}: ${F.now}${F.chg?', '+F.chg:''}. Data through ${F.date}.`,
  F=>`${cap1(F.subjL)} at ${F.now}${F.chg?', '+F.chg:''}. ${F.caveat}`],
