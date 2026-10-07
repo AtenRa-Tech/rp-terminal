@@ -49,6 +49,6 @@ ok(nH(r.past.wlo.cap)&&/Weekly RSI closed below 35 in \d+ earlier weeks? of load
 ok(!r.vol.length,"vol: no 'Historically' / 'quiet stretches' line in any vol template branch",r.vol);
 ok(!r.curve,"yield curve: recession line dropped",r.curve);
 ok(r.alt.domMin===31&&r.alt.x31&&r.alt.x31.domOK===true&&r.alt.x31.dom30!=null,"market state: dominance (a 30-day change only) is used once 31 daily snapshots exist",r.alt);
-ok(r.alt.domOK||r.alt.line.includes(`${r.alt.n}/6 inputs, dominance excluded (${r.alt.domDays}/31 days of data)`),"market state short line: 'N/6 inputs, dominance excluded (k/31 days of data)' from the live count",r.alt.line);
+ok(r.alt.domOK||r.alt.line.includes(`${r.alt.n}/6 inputs; dominance excluded, ${r.alt.domDays}/31 days of data`),"market state short line: 'N/6 inputs; dominance excluded, k/31 days of data' from the live count",r.alt.line);
 ok(!errs.length,'no page errors',errs.slice(0,3));
 console.log('FAILS:',F.length,JSON.stringify(F));await b.close();process.exit(F.length?1:0)})();
