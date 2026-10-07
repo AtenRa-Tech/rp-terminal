@@ -6,7 +6,7 @@ d="${RUNNER_TEMP:-/tmp}/gates"; lbl="${1:-CI}"; S="${GITHUB_STEP_SUMMARY:-/dev/s
 { echo "## $lbl: blocked"; if [ "${DATA_REDEPLOY:-false}" = "true" ]; then echo "**Data redeploy: the live site keeps its old data until this gate passes.**"; fi; } >> "$S"
 shopt -s nullglob; logs=("$d"/*.log); found=0
 for f in "${logs[@]}"; do g=$(basename "$f" .log)
-  lines=$(grep -E '^ ?FAIL |FAILS: [1-9]|[1-9][0-9]* blocking failures|[0-9]+ images, [1-9][0-9]* fail|^Error|Process completed with exit code [1-9]' "$f" | head -40)
+  lines=$(grep -E '^ ?FAIL |FAILS: [1-9]|[1-9][0-9]* blocking failures|[0-9]+ images, [1-9][0-9]* fail|^Error|Process completed with exit code [1-9]' "$f" | grep -vE '^ ?PASS ' | head -40)
   [ -z "$lines" ] && continue; found=1
   { echo "### $g"; echo '```'; echo "$lines"; echo '```'; } >> "$S"
   while IFS= read -r l; do e=${l//'%'/'%25'}; e=${e//$'\r'/}; echo "::error title=$lbl gate: $g::$e"; done <<< "$lines"
