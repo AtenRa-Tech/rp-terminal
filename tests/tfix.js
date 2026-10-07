@@ -30,8 +30,8 @@ async function page(ctx,setup){const pg=await (ctx||b).newPage();await pg.setVie
   o.fresh=freshLine();return o});
  ok(r.usdK==='$124.7k'&&r.usdB==='$450.0k','rounding: usdK(124,658.54) = $124.7k; small $ never $0M',[r.usdK,r.usdB]);
  ok(!r.rule1.length,'C4 RULE1 phrases flagged even after "Historically"',r.rule1);
- ok(Math.abs(r.wrsi-61.6)<0.6,'weekly RSI from completed Sunday closes ≈61.6',r.wrsi);
- ok(Math.abs(r.stable/1e9-311.2)<1.5,'stablecoins last completed day ≈$311.2B',r.stable);
+ ok(Number.isFinite(r.wrsi)&&r.wrsi>0&&r.wrsi<100,'weekly RSI on live data is a valid reading (known answer 61.6 on frozen 30 Sep data lives in tgolden.js)',r.wrsi);
+ ok(Number.isFinite(r.stable)&&r.stable>1e11&&r.stable<1e12,'stablecoins last completed day is a valid live reading (known answer $311.2B on frozen data lives in tgolden.js)',r.stable);
  ok(r.fund==='Funding neutral','C7 funding -0.0011% is "Funding neutral"',r.fund);
  ok(/derivs\.json/.test(r.bf||'')&&(r.der||'').includes(r.bf),'funding: one source (derivs.json, labelled) on Today chip',[r.bf,r.der]);
  ok(!r.clF||/derivs\.json/.test(r.clF),'funding: clusters use the same labelled source',r.clF);
