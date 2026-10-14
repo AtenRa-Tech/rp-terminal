@@ -1,0 +1,199 @@
+name: Fast publish (derivs data)
+
+# FAST path for derivs-only data commits (target < 8 min from the derivatives run to live). Dispatched by derivs.yml after its push.
+# Runs only the data gates below, deploys, smoke-tests live and rolls back automatically. Any failure = nothing published:
+# live keeps the last good files and the app shows those cards as stale. Code changes and anything beyond derivs.json/_runs.json
+# go through the full "CI and deploy" (path selection: .github/scripts/publish_path.py); the full suite also runs daily (live-suite.yml).
+on:
+  workflow_dispatch:
+    inputs:
+      derivs_run_at:
+        description: 'last_run of the derivatives run that triggered this (for the end-to-end time)'
+        required: false
+
+permissions:
+  contents: read
+
+# own group: never queued behind (or cancelled by) the 25+ min full CI. A newer pending publish replaces an older pending one,
+# which is fine: it carries newer data.
+concurrency:
+  group: publish-derivs
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://atenra-tech.github.io/rp-terminal/
+  NODE_PATH: ${{ github.workspace }}/tests/node_modules
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      path: ${{ steps.path.outputs.path }}
+      sha: ${{ steps.path.outputs.sha }}
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Path selection (fast only when nothing but derivs.json/_runs.json differs from the last good deploy)
+        id: path
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          good=$( { gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json headSha,updatedAt -q '.[0]|"\(.updatedAt) \(.headSha)"'; \
+                    gh run list --repo "$GITHUB_REPOSITORY" --workflow publish-derivs.yml --status success -L 1 --json headSha,updatedAt -q '.[0]|"\(.updatedAt) \(.headSha)"'; } | sort | tail -1 | cut -d' ' -f2)
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -z "$good" ]; then echo "path=full" >> "$GITHUB_OUTPUT"; echo "no previous good deploy found: FULL"; exit 0; fi
+          python3 .github/scripts/publish_path.py "$good" HEAD
+      - name: Not derivs-only - hand over to the full "CI and deploy"
+        if: steps.path.outputs.path == 'full'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=true && echo "dispatched CI and deploy (full path)"
+      - uses: actions/setup-node@v4
+        if: steps.path.outputs.path == 'fast'
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: tests/package.json
+      - name: Install test deps
+        if: steps.path.outputs.path == 'fast'
+        run: cd tests && npm install --no-audit --no-fund --prefer-offline
+      - name: Data gates (blocking, in parallel) - fixture consistency, closed hours, stale-derivs2, stale captions, card presence, OI ÷ supply label, caption sweep
+        if: steps.path.outputs.path == 'fast'
+        run: |
+          python3 -m http.server 8765 >/dev/null 2>&1 &
+          for i in $(seq 1 20); do curl -sf http://localhost:8765/index.html >/dev/null && break; sleep 1; done
+          U=http://localhost:8765/index.html; mkdir -p g; t0=$(date +%s)
+          node qa/fixture-consistency.js > g/fixture.log 2>&1 & p1=$!
+          python3 tests/tclosed_hours.py > g/closed.log 2>&1 & p2=$!
+          node qa/stale-derivs2.js $U > g/stale-derivs2.log 2>&1 & p3=$!
+          DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js $U > g/stale-captions.log 2>&1 & p4=$!
+          node qa/card-presence.js $U > g/card-presence.log 2>&1 & p5=$!
+          node qa/oicap-label.js $U > g/oicap.log 2>&1 & p6=$!
+          node qa/caption-sweep.js $U > g/caption-sweep.log 2>&1 & p7=$!
+          fail=0
+          for p in $p1 $p2 $p3 $p4 $p5 $p6 $p7; do wait $p || fail=1; done
+          for f in g/*.log; do echo "=== $f"; tail -4 "$f"; done
+          echo "gates took $(( $(date +%s) - t0 ))s"
+          [ $fail = 0 ] || { grep -h "^FAIL\|::error" g/*.log | head -20; echo "::error title=Fast publish blocked::a data gate failed; nothing published, live keeps the last good files"; exit 1; }
+
+  deploy:
+    needs: gates
+    if: needs.gates.outputs.path == 'fast'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: ${{ steps.dep.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gates.outputs.sha }}
+      - name: Build site folder from the gated commit
+        run: mkdir _site && cp -r index.html sw.js manifest.webmanifest icons data _site/ && cp README.md _site/ 2>/dev/null || true
+      - name: Newest derivs from main HEAD at deploy time; refuse if older than live
+        run: |
+          python3 .github/scripts/no_regress.py snapshot live-before.json
+          bash .github/scripts/newest_data.sh _site
+          # data that arrived after the gates ran gets the two data-only gates again
+          cp _site/data/derivs.json data/derivs.json && python3 tests/tclosed_hours.py > closed.log || { cat closed.log; exit 1; }; echo "closed hours OK on deploy-time data"
+      - name: Log publish timing into _runs.json (published copy)
+        env:
+          DERIVS_RUN_AT: ${{ inputs.derivs_run_at }}
+        run: |
+          python3 - <<'PY'
+          import json, os, datetime as d
+          p = '_site/data/_runs.json'; R = json.load(open(p)); now = d.datetime.now(d.timezone.utc)
+          P = lambda s: d.datetime.fromisoformat(s.replace('Z', '+00:00'))
+          start = os.environ.get('DERIVS_RUN_AT') or R.get('last_run')
+          pub = {'path': 'fast', 'workflow_run': os.environ.get('GITHUB_RUN_ID'), 'derivs_run_at': start,
+                 'deploy_started': now.strftime('%Y-%m-%dT%H:%M:%SZ'), 'minutes_to_deploy': round((now - P(start)).total_seconds() / 60, 1) if start else None}
+          R['publish'] = pub
+          if R.get('runs'): R['runs'][-1]['publish'] = pub
+          json.dump(R, open(p, 'w'), separators=(',', ':'))
+          print('publish timing', pub)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: live-before
+          path: live-before.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: dep
+        uses: actions/deploy-pages@v4
+
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: tests/package.json
+      - run: cd tests && npm install --no-audit --no-fund --prefer-offline
+      - uses: actions/download-artifact@v4
+        with:
+          name: live-before
+      - name: Wait for Pages CDN to serve the new _runs.json
+        run: |
+          for i in $(seq 1 12); do
+            v=$(curl -s "${SITE_URL}data/_runs.json?v=$(date +%s)" | python3 -c "import json,sys;print((json.load(sys.stdin).get('publish') or {}).get('workflow_run'))" 2>/dev/null)
+            [ "$v" = "$GITHUB_RUN_ID" ] && { echo "live serves this publish"; break; }; sleep 10
+          done
+      - name: Live smoke + card presence + live never went backwards (failure rolls back)
+        run: |
+          set -e
+          python3 .github/scripts/no_regress.py after live-before.json
+          node tests/tsmoke.js "$SITE_URL"
+          node qa/card-presence.js "$SITE_URL"
+      - name: End-to-end time
+        if: always()
+        run: curl -s "${SITE_URL}data/_runs.json?v=$(date +%s)" | python3 -c "import json,sys,datetime as d;R=json.load(sys.stdin);p=R.get('publish') or {};s=p.get('derivs_run_at');n=d.datetime.now(d.timezone.utc);print('derivs run',s,'| live verified',n.strftime('%FT%TZ'),'| end-to-end',round((n-d.datetime.fromisoformat(s.replace('Z','+00:00'))).total_seconds()/60,1) if s else '—','min')" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  rollback:
+    needs: smoke
+    if: failure() && needs.smoke.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      actions: read
+      contents: read
+    environment:
+      name: github-pages
+    steps:
+      - name: Last good deploy (newest successful CI and deploy or fast publish before this one)
+        id: good
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$( { gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json headSha,updatedAt -q '.[0]|"\(.updatedAt) \(.headSha)"'; \
+                   gh run list --repo "$GITHUB_REPOSITORY" --workflow publish-derivs.yml --status success -L 1 --json headSha,updatedAt -q '.[0]|"\(.updatedAt) \(.headSha)"'; } | sort | tail -1 | cut -d' ' -f2)
+          [ -n "$sha" ] || { echo "::error::no previous good deploy"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "rolling back to $sha"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.good.outputs.sha }}
+      # rollback is the one deploy allowed to put older data back: the newer data just failed live smoke
+      - run: mkdir _site && cp -r index.html manifest.webmanifest icons data _site/ && (cp sw.js _site/ 2>/dev/null || true)
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+          name: github-pages-rollback
+      - uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-rollback
