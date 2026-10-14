@@ -70,6 +70,8 @@ jobs:
         working-directory: ${{ runner.temp }}
         # one retry after 90 s only to ride out a CoinGecko/CoinPaprika rate limit; any second failure blocks
         run: set -o pipefail; { node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
+      - name: Derivatives run log (blocking) - _runs.json freshness per feed, 24h hourly sample, 95% SLA logic
+        run: python3 tests/truns.py
       - name: Fixture consistency (blocking) - no derivs fixture has a latest timestamp newer than its own series beyond the metric limit
         run: set -o pipefail; node qa/fixture-consistency.js 2>&1 | tee "$RUNNER_TEMP/gates/fixture-consistency.log"
       - name: Stale-data gate (blocking) - a metric past its freshness limit gives no reading anywhere (team tests + boundary/mixed/scores/confidence)
@@ -145,15 +147,19 @@ jobs:
         run: URL="$SITE_URL" node tests/tqa6.js
       - name: Range buttons, indicators and stated ranges on the live site (blocking; failure rolls back)
         run: URL="$SITE_URL" node tests/trange.js
-      - name: Data job fallback - dispatch "Refresh data" if a data file is stale (GitHub cron is best-effort)
+      - name: Data job fallback - dispatch "Refresh derivatives" (and "Refresh data") when _runs.json says a run is late or a feed is stale (GitHub cron is best-effort)
         # not on data redeploys: a data run that could not refresh derivs.json must not re-trigger itself in a loop
         if: always() && !inputs.data_redeploy
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          age=$(curl -s "${SITE_URL}data/derivs.json?v=$(date +%s)" | python3 -c "import json,sys,datetime as d;u=json.load(sys.stdin)['updated'];print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" || echo 999)
-          echo "derivs.json age ${age}h"
-          if [ "$age" -ge 2 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
+          # freshness from data/_runs.json (per-feed timestamps from the last derivatives run), not derivs.json 'updated'
+          j=$(curl -s "${SITE_URL}data/_runs.json?v=$(date +%s)")
+          last=$(printf '%s' "$j" | python3 -c "import json,sys,datetime as d;R=json.load(sys.stdin);print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(R['last_run'].replace('Z','+00:00'))).total_seconds()//3600))" 2>/dev/null || echo 999)
+          bad=$(printf '%s' "$j" | python3 -c "import json,sys;R=json.load(sys.stdin);print(sum(1 for v in R['runs'][-1]['feeds'].values() if not v['ok']))" 2>/dev/null || echo 99)
+          echo "last derivatives run ${last}h ago; feeds past their limit in that run: ${bad}"
+          if [ "$last" -ge 1 ] || [ "$bad" -gt 0 ]; then gh workflow run derivs.yml --repo "$GITHUB_REPOSITORY" && echo "dispatched Refresh derivatives"; fi
+          if [ "$last" -ge 7 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
       - name: Watchdog - failing smoke lines to the job summary as ::error
         if: failure()
         env:
@@ -169,6 +175,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Live data watchdog (fails loudly if live derivs.json is more than 6h behind main)
         run: python3 .github/scripts/live-lag.py
+      - name: Derivatives SLA alarm (fails loudly unless derivatives were within limits in >= 95% of hourly samples over 24h; reads data/_runs.json on the live site)
+        run: |
+          curl -sf "${SITE_URL:-https://atenra-tech.github.io/rp-terminal/}data/_runs.json?v=$(date +%s)" -o /tmp/runs-live.json || cp data/_runs.json /tmp/runs-live.json
+          python3 scripts/runs_log.py --check 95 /tmp/runs-live.json
 
   rollback:
     needs: smoke

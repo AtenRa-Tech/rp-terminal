@@ -856,7 +856,7 @@ function drawSig(ctx,W,H,s){if(!s||typeof s.draw!=='function'){/* signal gone (r
   const X=m,Y=top+150*u,Wd=W-2*m,Ht=H-Y-m-80*u;watermark(ctx,X,Y,Wd-86*u,Ht,u);s.draw(ctx,X,Y,Wd,Ht,u)}
 let SIG=null,SIGL=false,SIGD=null;
 async function renderSignals(force){const box=$('#sigList'),y0=scrollY;if(!SIG||force){box.innerHTML='<div class="card mu">Scanning 15 years of Bitcoin data for rare signals…</div>';await ensureSig(force)}
-  if(!SIG.length){box.innerHTML='<div class="card mu">Could not load signal data. Tap ↻ to retry.</div>';return}
+  if(!SIG.length&&!(SIGSTALE||[]).length){box.innerHTML='<div class="card mu">Could not load signal data. Tap ↻ to retry.</div>';return}// every card stale: the stale cards still render (P0 freshness)
   const ORD=SIG.slice().sort((a,b)=>b.score-a.score);
   box.innerHTML=ORD.map(s=>{const i=SIG.indexOf(s),k='sig|'+s.id;return`<div class="card sig" data-sid="${s.id}"><h3>${postNow(s)?'<span class="bias b-up">POST NOW</span>':''}<span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px;min-width:0">${esc(s.title)}</span><span class="sp"></span><button class="btn sm num" data-sb="${k}" title="Opportunity score: tap for the breakdown">${s.score} ⓘ</button></h3>
    <div class="sbx ${OPEN.has(k)?'on':''}" data-sbx="${k}">${OPEN.has(k)?sbHTML(s):''}</div>
@@ -1262,7 +1262,7 @@ function prepSig(s){const d=closedSet(SIGD);s.kind='sig';s.fbIn=d?.P?.src==='Coi
   try{s.cap=capFirst({kind:'sig',id:s.id},s)}catch(e){}}
 let SIGP=null,SIGDAY=null;const utcDay=()=>Math.floor(Date.now()/DAY);
 function ensureSig(force){if(SIGDAY!==utcDay())force=true;if(SIG&&!force)return Promise.resolve(SIG);if(SIGP&&!force)return SIGP;SIGDAY=utcDay();
-  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=closedSet(await loadSigData());SIGD=mergeSig(nd,SIGD)}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
+  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=closedSet(await loadSigData());SIGD=mergeSig(nd,SIGD)}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG=staleSweep(SIG);SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
 
 // ---------- TODAY briefing
 // Market state chips: each names the metric, its direction and the figure (no lean words). Rules are shown on tap.
@@ -1718,14 +1718,23 @@ function oiCapSeries(a,now=Date.now(),V=DV){const A=V?.assets?.[a];if(!A?.oi_dai
 // the one label (ruling 8 Oct, P1): timestamp date, then the close it belongs to; '(supply as of <fetch date>)' while supply is undated
 const oiCapLbl=(oc,D)=>`${oc.src} open interest (coins) at 00:00 UTC ${dU(D+DAY)} (${dShort(D)} close) ÷ circulating supply${oc.supDated?'':` (supply as of ${oc.supAt?dShort(oc.supAt)+' '+hmU(oc.supAt):'an unknown date'})`}`;
 function oiCapNow(a){const s=oiCapSeries(a);if(!s||s.t.length<60||s.latest.stale)return null;const m=oppMeta(s,'abs',Infinity);return{v:m.cur,share:m.share,side:m.side,pTxt:m.pctTxt,m,src:s.src}}
-function fundSeries(a){const F=DV?.assets?.[a]?.funding;if(!F?.points?.length)return null;const P=F.points,t=[],v=[];for(let i=20;i<P.length;i++){let s=0;for(let k=i-20;k<=i;k++)s+=P[k][1];t.push(P[i][0]);v.push(s/21*100)}return{t,a:v,src:F.source,raw:P}}
+function fundSeries(a,V=DV){const F=V?.assets?.[a]?.funding;if(!F?.points?.length)return null;const P=F.points,t=[],v=[];for(let i=20;i<P.length;i++){let s=0;for(let k=i-20;k<=i;k++)s+=P[k][1];t.push(P[i][0]);v.push(s/21*100)}return{t,a:v,src:F.source,raw:P}}
 let SIGSTALE=[];
+// P0 freshness (14 Oct): a card whose feed is past its limit stays VISIBLE in SIGSTALE with its date and 'stale', and is out of SIG (scores, POST NOW, captions).
+// Limits: settled funding prints 12h (DVLIM.funding); weekly cards the last completed week; daily cards the last closed UTC day, one day of publishing lag allowed.
+const SIGLAG={daily:1,weekly:14};
+function staleLimit(s,now=Date.now()){const cd=Math.floor(now/DAY)*DAY-DAY;if(s.settled)return{t:now-DVLIM.funding*36e5,lab:`${DVLIM.funding}h limit`};if(s.id==='wrsi')return{t:cd-SIGLAG.weekly*DAY,lab:'last completed week'};return{t:cd-SIGLAG.daily*DAY,lab:'last closed UTC day (one day publishing lag allowed)'}}
+function staleSweep(L,now=Date.now()){const keep=[];for(const k of Object.keys(STALEM))if(/^sig /.test(k))delete STALEM[k];for(const s of L||[]){if(s.stale){if(!SIGSTALE.includes(s))SIGSTALE.push(s);continue}const T=s.closed??s.lastT;if(T==null||!isFinite(T)){keep.push(s);continue}const lim=staleLimit(s,now);
+  if(T<lim.t){Object.assign(s,{stale:true,score:null,read:'—',usedDate:new Date(T).toISOString().slice(0,10),staleWhy:`Stale: last data ${dU(T)}${s.settled?' '+hmU(T):''}, past its ${lim.lab}. Not used in readings, scores, POST NOW or captions.`});STALEM['sig '+s.id]={age:(now-T)/36e5,src:String(s.src||'').split(' ')[0]||'feed',t:T,lim:null,limT:lim.lab};SIGSTALE.push(s)}else keep.push(s)}return keep}
 function derivSignals(){const out=[];SIGSTALE=[];for(const k of Object.keys(STALEM))if(/ oicap$/.test(k))delete STALEM[k];if(!DV?.assets)return out;
-  for(const a of ['BTC','ETH']){const f=fundSeries(a);
+  for(const a of ['BTC','ETH']){let f=fundSeries(a),fGated=false;
+    // funding past its 12h limit (gateDV dropped it): the card stays listed from the raw file, marked stale, never a reading
+    if(!(f&&f.t.length>=40)&&STALEM[a+' funding']&&DVRAW){const f2=fundSeries(a,DVRAW);if(f2&&f2.t.length>=40){f=f2;fGated=true}}
     if(f&&f.t.length>=40){const t=f.t,v=f.a,n=v.length,first=dU(t[0]);SIGT['fund'+a]=[`${a} perpetual funding (7-day average)`,`Single venue (${f.src}), about ${Math.round((t[n-1]-t[0])/DAY)} days of history.`];
-      out.push({id:'fund'+a,settled:true/* 8h funding prints are final at settlement time: no forming candle */,asset:a,title:`${a} funding rate · 7-day average`,read:`${v[n-1].toFixed(4)}% per 8h · ${f.src} · since ${first}`,src:`${f.src} perpetual funding (single venue), as of ${hmU2(t[n-1])}`,
+      (fGated?SIGSTALE:out).push({id:'fund'+a,settled:true/* 8h funding prints are final at settlement time: no forming candle */,asset:a,title:`${a} funding rate · 7-day average`,read:`${v[n-1].toFixed(4)}% per 8h · ${f.src} · since ${first}`,src:`${f.src} perpetual funding (single venue), as of ${hmU2(t[n-1])}`,
         msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(4)+'%/8h'},confFix:[60,`Single venue (${f.src}), ${n+20} funding prints since ${first}`],
         draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(3)+'%',hl:[{v:0,c:TH.mu,l:'0'},{v:.01,c:hexA(TH.mu,.8),l:'0.01% base rate'}],series:[{t:f.raw.map(p=>p[0]),v:f.raw.map(p=>p[1]*100),c:hexA(TH.ac,.35),w:1.2,l:'per 8h print'},{v,c:TH.ac,w:3,l:'7-day average'}]})})}
+    if(fGated){const c=SIGSTALE.find(x=>x.id==='fund'+a),T=f.t.at(-1);if(c)Object.assign(c,{stale:true,score:null,read:'—',usedDate:new Date(T).toISOString().slice(0,10),staleWhy:`Stale: last 8h print ${dU(T)} ${hmU(T)} (${staleTxt(a+' funding')}). Not used in readings, scores, POST NOW or captions.`})}
     // OI past its freshness limit (gateDV dropped it): the card is still listed, built from the raw file and marked stale, never a reading
     let oc=oiCapSeries(a),gated=false;if(!(oc&&oc.t.length>=60)&&STALEM[a+' oi']&&DVRAW){const o2=oiCapSeries(a,Date.now(),DVRAW);if(o2&&o2.t.length>=60){oc=o2;gated=true}}
     if(oc&&oc.t.length>=60){const t=oc.t,v=oc.a,n=v.length,L=oc.latest,lbl=oiCapLbl(oc,t[n-1]);SIGT['oicap'+a]=[`${a} open interest ÷ circulating supply`,`${oc.src} open interest (coins) at 00:00 UTC ÷ circulating supply; one venue, so it measures leverage on that venue, not the whole market.`];
