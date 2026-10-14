@@ -4,7 +4,7 @@
 const p=require('puppeteer-core'),fs=require('fs'),path=require('path');const URL=process.env.URL||'http://localhost:8765/index.html';
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,700):''));if(!c)F.push(n)};
 // strict sweep rules present (repeated 2+ word clause, blank caption, 'Noted.')
-{const src=fs.readFileSync(process.env.SWEEP||path.join(__dirname,'..','qa','caption-sweep.js'),'utf8');let rc=null,B=[];try{const m=src.match(/const BANNED=(\[.*?\]);/);B=eval(m[1]);eval(src.match(/function repClause[^\n]*\n/)[0].replace('function repClause','rc=function'));}catch(e){}
+{const SWP=process.env.SWEEP||path.join(__dirname,'..','qa','caption-sweep.js'),src=fs.readFileSync(SWP,'utf8');let B=[];try{const __dirname=path.dirname(SWP);eval(src.split('\n').filter(l=>/^const (BW|BANNED)=/.test(l)).join('\n')+'\nB=BANNED;')}catch(e){}let rc=null;try{eval(src.match(/function repClause[^\n]*\n/)[0].replace('function repClause','rc=function'));}catch(e){}
  const REP_OK=[];ok(typeof rc==='function'&&rc('No capitulation. Above 1.0, no capitulation.')==='no capitulation'&&rc('BTC at $1. ETH at $2.')===null&&B.some(re=>re.test('Mid-range. Noted.'))&&/fails\.push\(\[\.\.\.loc,'blank caption'\]\)/.test(src),"sweep: repeated 2+ word clause, blank caption and 'Noted.' all block",{rc:typeof rc})}
 (async()=>{const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915});
 const errs=[];pg.on('pageerror',e=>errs.push(e.message));

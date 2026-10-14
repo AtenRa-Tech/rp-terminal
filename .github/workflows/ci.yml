@@ -62,15 +62,21 @@ jobs:
         run: set -o pipefail; node qa/caption-sweep.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/caption-sweep.log"
       - name: Pulse movers gate (blocking; 5 fixtures + history fixture, movers and heatmap, Crypto News GOD's qa/pulse-movers.js)
         run: set -o pipefail; node qa/pulse-movers.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/pulse-movers.log"
+      - name: OI ÷ supply label gate (blocking; Crypto News GOD's qa/oicap-label.js, unchanged)
+        run: set -o pipefail; node qa/oicap-label.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/oicap-label.log"
+      - name: Sell-off lint gate (blocking; 13 sentences through the app's lintBanned(), qa/selloff-lint.js unchanged)
+        run: set -o pipefail; node qa/selloff-lint.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/selloff-lint.log"
       - name: Export check gate (blocking, built files; 29 exports need @RPTIME, Data source + as-of, UTC time, no lean words)
         working-directory: ${{ runner.temp }}
         # one retry after 90 s only to ride out a CoinGecko/CoinPaprika rate limit; any second failure blocks
         run: set -o pipefail; { node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
+      - name: Fixture consistency (blocking) - no derivs fixture has a latest timestamp newer than its own series beyond the metric limit
+        run: set -o pipefail; node qa/fixture-consistency.js 2>&1 | tee "$RUNNER_TEMP/gates/fixture-consistency.log"
       - name: Stale-data gate (blocking) - a metric past its freshness limit gives no reading anywhere (team tests + boundary/mixed/scores/confidence)
         run: |
           set -eo pipefail
           { node qa/stale-derivs.js http://localhost:8765/index.html
-            node qa/stale-captions.js http://localhost:8765/index.html
+            DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js http://localhost:8765/index.html
             node qa/stale-derivs2.js http://localhost:8765/index.html
             node qa/stale-conf.js http://localhost:8765/index.html; } 2>&1 | tee "$RUNNER_TEMP/gates/stale-data.log"
       - name: News replay diff (report only)
@@ -124,11 +130,15 @@ jobs:
         run: node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL" || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL"; }
       - name: Pulse movers on the live site (failure rolls back)
         run: node qa/pulse-movers.js "$SITE_URL"
+      - name: OI ÷ supply label on the live site (failure rolls back)
+        run: node qa/oicap-label.js "$SITE_URL"
+      - name: Sell-off lint on the live site (failure rolls back)
+        run: node qa/selloff-lint.js "$SITE_URL"
       - name: Stale-data gate on the live site (blocking; failure rolls back)
         run: |
           set -e
           node qa/stale-derivs.js "$SITE_URL"
-          node qa/stale-captions.js "$SITE_URL"
+          DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js "$SITE_URL"
           node qa/stale-derivs2.js "$SITE_URL"
           node qa/stale-conf.js "$SITE_URL"
       - name: Axis label minimum on the live site (blocking; failure rolls back)
