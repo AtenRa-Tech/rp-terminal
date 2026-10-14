@@ -43,8 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          good=$( { gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json headSha,updatedAt -q '.[0]|"\(.updatedAt) \(.headSha)"'; \
-                    gh run list --repo "$GITHUB_REPOSITORY" --workflow publish-derivs.yml --status success -L 1 --json headSha,updatedAt -q '.[0]|"\(.updatedAt) \(.headSha)"'; } | sort | tail -1 | cut -d' ' -f2)
+          good=$(bash .github/scripts/last_good.sh)
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if [ -z "$good" ]; then echo "path=full" >> "$GITHUB_OUTPUT"; echo "no previous good deploy found: FULL"; exit 0; fi
           python3 .github/scripts/publish_path.py "$good" HEAD
@@ -180,8 +179,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha=$( { gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json headSha,updatedAt -q '.[0]|"\(.updatedAt) \(.headSha)"'; \
-                   gh run list --repo "$GITHUB_REPOSITORY" --workflow publish-derivs.yml --status success -L 1 --json headSha,updatedAt -q '.[0]|"\(.updatedAt) \(.headSha)"'; } | sort | tail -1 | cut -d' ' -f2)
+          sha=$(bash .github/scripts/last_good.sh)
           [ -n "$sha" ] || { echo "::error::no previous good deploy"; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "rolling back to $sha"
       - uses: actions/checkout@v4
