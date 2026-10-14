@@ -33,6 +33,11 @@ const r=await pg.evaluate(async()=>{const OCL=a=>typeof oiCapLatest==='function'
   o.noOIall=gone();
   {const raw4=JSON.parse(JSON.stringify(keepDV));raw4.assets.BTC.oi_hourly.points=raw4.assets.BTC.oi_hourly.points.filter(p=>{const m=((p[0]%DAYm)+DAYm)%DAYm;return m>30*60000&&m<DAYm-30*60000});DVRAW=raw4;DV=gateDV(raw4);o.no7=gone()}
   DVRAW=keepDV;DV=gateDV(keepDV);const AD=(0,eval)('D'),keepMk=AD.mk;try{AD.mk={};MK={...keepMK,totals_proxy:{...keepMK.totals_proxy,points:[]}};o.noSup={v:OCL('BTC').v,card:!!derivSignals().find(s=>s.id==='oicapBTC')}}finally{AD.mk=keepMk;MK=keepMK}
+  // global_daily (15 Oct ruling): fixture with today's forming row (absurd 77.777% dominance) and a CoinGecko row; only rows <= last_close_date and CoinPaprika count
+  {const lcd=dS(D),gd=JSON.parse(JSON.stringify(keepMK.global_daily||{points:[]}));const P=(gd.points||[]).filter(r=>String(r[0])<=lcd);const l=P.at(-1)||[lcd,2.9e12,57,10,1.2e12,9e11,1.4e11,'CoinPaprika'];
+   P.push([dS(day0),l[1]*1.37,77.777,1.1,l[4],l[5],l[6],'CoinPaprika']);P.push([lcd+'x',l[1],66.666,9,l[4],l[5],l[6],'CoinGecko']);gd.points=P;
+   MK={...keepMK,last_close_date:lcd,global_daily:gd};let A=null,txt='';try{A=altCalc()}catch(e){}try{txt=JSON.stringify(todayItems?todayItems():'')+JSON.stringify(A?.L||{})}catch(e){}
+   const G=gdClosed(MK);o.gd={n:G.length,last:G.at(-1)?.[0],lcd,srcs:[...new Set(G.map(r=>r[7]))],domDays:A?.domDays,domSrc:A?.domSrc,want:P.filter(r=>String(r[0])<=lcd&&r[7]==='CoinPaprika').length,leak:/77\.77|66\.66/.test(txt)};MK=keepMK}
   derivSignals();
  }finally{SIGD=keepD;DVRAW=realDV;DV=gateDV(realDV);MK=keepMK}
  return o});
@@ -48,5 +53,6 @@ ok(r.sb2.stale&&r.sb2.D===r.sb2.want&&!r.sb2.inOut&&r.sb2.card&&r.sb2.card.stale
 ok(r.noOIall&&r.noOIall.v==null&&!r.noOIall.card&&r.noOIall.stale&&/^—/.test(r.noOIall.read||"")&&r.noOIall.score===null&&r.noOIall.dash&&!r.noOIall.today&&/^OKX open interest \(coins\) at 00:00 UTC /.test(r.noOIall.src||""),"OI ÷ supply: no hourly OI -> no reading (the 16:00 daily bucket is never a stand-in); card stays in SIGSTALE showing '—'",r.noOIall);
 ok(r.no7&&r.no7.v==null&&!r.no7.card&&r.no7.stale&&/^—/.test(r.no7.read||"")&&r.no7.score===null&&r.no7.dash&&!r.no7.today&&/^OKX open interest \(coins\) at 00:00 UTC /.test(r.no7.src||""),"OI ÷ supply: no 00:00 UTC OI value in the last 7 days -> card in SIGSTALE (stale:true, score null) showing '—', not in SIG or Today",r.no7);
 ok(r.noSup.v==null&&!r.noSup.card,"OI ÷ supply: no circulating supply -> no reading",r.noSup);
+ok(r.gd&&r.gd.n===r.gd.want&&r.gd.n>0&&r.gd.last<=r.gd.lcd&&r.gd.srcs.join()==='CoinPaprika'&&(r.gd.domDays==null||r.gd.domDays===r.gd.want)&&(r.gd.domSrc==null||r.gd.domSrc==='CoinPaprika')&&!r.gd.leak,"global_daily: today's forming row and non-CoinPaprika rows never reach readings, scores or captions (rows <= last_close_date only)",r.gd);
 ok(!errs.length,'no page errors',errs.slice(0,5));
 await b.close();console.log('\nFAILS:',F.length,JSON.stringify(F));process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});
