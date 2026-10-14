@@ -29,7 +29,9 @@ const r=await pg.evaluate(async()=>{const OCL=a=>typeof oiCapLatest==='function'
     return{D:Lk.D,want:D-k*DAYm,stale:Lk.stale,inOut:!!out.find(x=>x.id==='oicapBTC'),card:st?{stale:st.stale,usedDate:st.usedDate,wantDate:st.wantDate,score:st.score,src:st.src,why:st.staleWhy}:null,
       today:todayItems().some(x=>x.id==='oicapBTC'),postNow:st?postNow(st):false,cluster:(clusters().flatMap(c=>c.in).find(x=>/OI \(coins\)/.test(x.l))||{}).v}};
   const keepSIG=SIG;o.sb1=stepBack(1);o.sb2=stepBack(2);SIG=keepSIG;
-  const raw3=JSON.parse(JSON.stringify(keepDV));raw3.assets.BTC.oi_hourly.points=[];DVRAW=raw3;DV=gateDV(raw3);o.noOIall={v:OCL('BTC').v,card:!!derivSignals().find(s=>s.id==='oicapBTC'),stale:SIGSTALE.some(x=>x.id==='oicapBTC')};
+  const raw3=JSON.parse(JSON.stringify(keepDV));raw3.assets.BTC.oi_hourly.points=[];DVRAW=raw3;DV=gateDV(raw3);const gone=()=>{const out=derivSignals(),st=SIGSTALE.find(x=>x.id==='oicapBTC');SIG=[...out];let html='';try{renderSignals();html=document.querySelector('[data-sid="oicapBTC"][data-stale="1"]')?.textContent||''}catch(e){html='ERR '+e}SIG=keepSIG2;return{v:OCL('BTC').v,card:!!out.find(s=>s.id==='oicapBTC'),stale:st?.stale===true,read:st?.read,score:st?.score,src:st?.src,dash:/—/.test(html),today:todayItems().some(x=>x.id==='oicapBTC')}};const keepSIG2=SIG;
+  o.noOIall=gone();
+  {const raw4=JSON.parse(JSON.stringify(keepDV));raw4.assets.BTC.oi_hourly.points=raw4.assets.BTC.oi_hourly.points.filter(p=>{const m=((p[0]%DAYm)+DAYm)%DAYm;return m>30*60000&&m<DAYm-30*60000});DVRAW=raw4;DV=gateDV(raw4);o.no7=gone()}
   DVRAW=keepDV;DV=gateDV(keepDV);const AD=(0,eval)('D'),keepMk=AD.mk;try{AD.mk={};MK={...keepMK,totals_proxy:{...keepMK.totals_proxy,points:[]}};o.noSup={v:OCL('BTC').v,card:!!derivSignals().find(s=>s.id==='oicapBTC')}}finally{AD.mk=keepMk;MK=keepMK}
   derivSignals();
  }finally{SIGD=keepD;DVRAW=realDV;DV=gateDV(realDV);MK=keepMK}
@@ -43,7 +45,8 @@ ok(r.oc.src&&r.oc.src.startsWith(r.oc.lbl)&&/^OKX open interest \(coins\) at 00:
 ok(!/market cap|today'?s/i.test(r.oc.src+' '+r.oc.title+' '+r.oc.desc)&&/÷ circulating supply/.test(r.oc.title)&&/÷ circulating supply/.test(r.oc.desc),"OI ÷ supply: no 'market cap' or 'today's' on the card (title, description, src)",r.oc);
 ok(r.sb1.stale&&r.sb1.D===r.sb1.want&&!r.sb1.inOut&&r.sb1.card&&r.sb1.card.stale===true&&r.sb1.card.usedDate===dIs(r.sb1.want)&&r.sb1.card.score==null&&!r.sb1.today&&!r.sb1.postNow&&/^stale/.test(r.sb1.cluster||''),"step-back 1 day: card names the date used, stale:true, out of SIG/readings/scores/POST NOW/captions",r.sb1);
 ok(r.sb2.stale&&r.sb2.D===r.sb2.want&&!r.sb2.inOut&&r.sb2.card&&r.sb2.card.stale===true&&r.sb2.card.usedDate===dIs(r.sb2.want)&&/\(\d{1,2} [A-Z][a-z]{2} close\)/.test(r.sb2.card.src)&&!r.sb2.today&&!r.sb2.postNow,"step-back 2 days (fixture): card stale (stale:true, usedDate 2 days back), excluded everywhere",r.sb2);
-ok(r.noOIall.v==null&&!r.noOIall.card&&!r.noOIall.stale,"OI ÷ supply: no hourly OI -> no reading (the 16:00 daily bucket is never a stand-in)",r.noOIall);
+ok(r.noOIall&&r.noOIall.v==null&&!r.noOIall.card&&r.noOIall.stale&&/^—/.test(r.noOIall.read||"")&&r.noOIall.score===null&&r.noOIall.dash&&!r.noOIall.today&&/^OKX open interest \(coins\) at 00:00 UTC /.test(r.noOIall.src||""),"OI ÷ supply: no hourly OI -> no reading (the 16:00 daily bucket is never a stand-in); card stays in SIGSTALE showing '—'",r.noOIall);
+ok(r.no7&&r.no7.v==null&&!r.no7.card&&r.no7.stale&&/^—/.test(r.no7.read||"")&&r.no7.score===null&&r.no7.dash&&!r.no7.today&&/^OKX open interest \(coins\) at 00:00 UTC /.test(r.no7.src||""),"OI ÷ supply: no 00:00 UTC OI value in the last 7 days -> card in SIGSTALE (stale:true, score null) showing '—', not in SIG or Today",r.no7);
 ok(r.noSup.v==null&&!r.noSup.card,"OI ÷ supply: no circulating supply -> no reading",r.noSup);
 ok(!errs.length,'no page errors',errs.slice(0,5));
 await b.close();console.log('\nFAILS:',F.length,JSON.stringify(F));process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});
