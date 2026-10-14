@@ -1041,7 +1041,7 @@ const dShort=t=>new Date(t).toLocaleDateString('en-GB',{timeZone:'UTC',day:'nume
 const mi=t=>{const d=new Date(t);return d.getUTCFullYear()*12+d.getUTCMonth()};
 const usdT=b=>'$'+(b/1000).toFixed(2)+'T';
 const fM=(v,sign=1)=>v==null||!isFinite(v)?'–':(v<0?'-':sign?'+':'')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';
-const CAD={Monthly:75,Daily:5,Weekly:14},H10=/^(DEX|DTWEX)/;
+const CAD={Monthly:75,Daily:5,Weekly:12},/* weekly series stale after 12 days (15 Oct ruling) */H10=/^(DEX|DTWEX)/;
 // Daily Fed H.15 series: stale after 3 US business days (Fed holidays skipped). ONE limit, read by the cards and by tests/tsmoke.js.
 const FEDD={ids:['DGS10','DGS2','DFII10','T10Y2Y'],lim:3};
 function usHol(y){const f=(m,d)=>{const t=new Date(Date.UTC(y,m,d));const w=t.getUTCDay();if(w===0)t.setUTCDate(d+1);if(w===6)t.setUTCDate(d-1);return t.toISOString().slice(0,10)},// US bond-market calendar (H.15 Treasury yields): Sunday -> Monday, Saturday -> Friday
@@ -1369,8 +1369,8 @@ function freshLine(){const p=[];let stale=0;
   const fb=fbList(),ss=Object.entries(SRCST),bad=ss.filter(([,v])=>!v.ok).map(([k])=>k),noBTC=D.mk.bitcoin?.current_price==null&&S.watch.some(w=>w.id==='bitcoin');
   const sl=ss.length?`<span id="srcSt">sources: ${ss.map(([k,v])=>`${esc(k)} ${v.ok?'✓':'✗'}`).join(', ')}</span>`:'';const allOK=!fb.length&&!bad.length&&!noBTC&&ss.length;
   return`${noBTC?'<span class="dn">BTC price missing (no live source answered)</span> · ':''}${fb.length?`<span class="dn">fallback in use: ${esc(fb.join('; '))}</span>${stale?` · <span class="dn">${stale} stale</span>`:''}`:stale?`<span class="dn">${stale} stale</span>`:allOK?'<span class="up">Sources OK</span>':bad.length?`<span class="dn">failed: ${esc(bad.join(', '))}</span>`:''}${sl?' · '+sl:''} · ${p.join(' · ')}`}
-// E8: stale warnings by job cadence: derivs.json hourly (limit 3h); market.json every 6h (limit 8h); etf.json is only rewritten when Farside adds a day (limit 30h, plus the trading-day check on its last date); macro per series via fresh(); calendar 8 days
-const DLIM={derivs:3,market:8,etf:30,calendar:24*8};
+// E8: stale warnings by job cadence: derivs.json hourly (limit 3h); market.json hourly via the Netlify timer (limit 2h, 15 Oct ruling); etf.json is only rewritten when Farside adds a day (limit 30h, plus the trading-day check on its last date); macro per series via fresh(); calendar 8 days
+const DLIM={derivs:3,market:2,etf:30,calendar:24*8};
 // Freshness of derivs comes from data/_runs.json last_run (written by scripts/runs_log.py), never from derivs.json 'updated'.
 function dataStale(){const o=[];for(const[n,h]of Object.entries(DLIM)){let u;
   if(n==='derivs'){u=DF['_runs']?.v?.last_run;if(!u)continue} // no last_run yet (seed / not loaded): do not invent a reading from 'updated'

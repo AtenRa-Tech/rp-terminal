@@ -57,6 +57,49 @@ def load(p, dflt):
         return dflt
 
 
+# ---- market + macro freshness (15 Oct ruling). Same rules as the app: market.json 2h; macro per series: daily Fed H.15
+# (DGS10, DGS2, DFII10, T10Y2Y) 3 US business days with bond-market holidays skipped; weekly 12 days; H.10 daily FX 10 days;
+# other daily 5 days; monthly 75 days. Reported in _runs.json; they do not change the derivatives SLA ('ok').
+import datetime as _dt
+MARKET = os.path.join(os.path.dirname(DERIVS), "market.json"); MACRO = os.path.join(os.path.dirname(DERIVS), "macro.json")
+MARKET_LIM_H = 2; FEDD = ("DGS10", "DGS2", "DFII10", "T10Y2Y"); FEDD_LIM = 3; CAD = {"Monthly": 75, "Daily": 5, "Weekly": 12}
+def us_hol(y):
+    D = _dt.date
+    def f(m, d):
+        t = D(y, m, d); w = t.weekday()
+        return t + _dt.timedelta(1) if w == 6 else t - _dt.timedelta(1) if w == 5 else t
+    def nth(m, wd, n):  # wd: Monday=0
+        t = D(y, m, 1); return t + _dt.timedelta((wd - t.weekday()) % 7 + 7 * (n - 1))
+    def last(m, wd):
+        t = (D(y, m + 1, 1) if m < 12 else D(y + 1, 1, 1)) - _dt.timedelta(1); return t - _dt.timedelta((t.weekday() - wd) % 7)
+    return {f(1, 1), nth(1, 0, 3), nth(2, 0, 3), last(5, 0), f(6, 19), f(7, 4), nth(9, 0, 1), nth(10, 0, 2), f(11, 11), nth(11, 3, 4), f(12, 25)}
+def us_biz_days(last_ymd, now_ms):
+    x = _dt.date.fromisoformat(str(last_ymd)[:10]); e = _dt.datetime.fromtimestamp(now_ms / 1000, _dt.timezone.utc).date(); n = 0; H = {}
+    while x < e:
+        x += _dt.timedelta(1)
+        if x.year not in H: H[x.year] = us_hol(x.year)
+        if x.weekday() < 5 and x not in H[x.year]: n += 1
+    return n
+def market_fresh(m, t):
+    u = (m or {}).get("updated")
+    if not u: return {"ok": False, "why": "market.json missing or no 'updated'", "limit_h": MARKET_LIM_H}
+    age = (t - _dt.datetime.fromisoformat(u.replace("Z", "+00:00")).timestamp() * 1000) / H
+    return {"ok": age <= MARKET_LIM_H, "updated": u, "age_h": round(age, 2), "limit_h": MARKET_LIM_H}
+def macro_fresh(M, t):
+    out = {}
+    for sid, s in ((M or {}).get("series") or {}).items():
+        ld = s.get("last_date")
+        if not ld or not s.get("points"): out[sid] = {"ok": False, "why": "missing or invalid observation date"}; continue
+        f = "Monthly" if str(s.get("freq", "")).startswith("Monthly") else "Weekly" if str(s.get("freq", "")).startswith("Weekly") else "Daily"
+        if sid in FEDD:
+            bd = us_biz_days(ld, t); out[sid] = {"ok": bd <= FEDD_LIM, "last_date": ld, "biz_days": bd, "limit": f"{FEDD_LIM} US business days"}
+        else:
+            age = (t - _dt.datetime.fromisoformat(ld[:10] + "T00:00:00+00:00").timestamp() * 1000) / (24 * H)
+            lim = 10 if f == "Daily" and (sid.startswith("DEX") or sid.startswith("DTWEX")) else CAD[f]
+            out[sid] = {"ok": age <= lim, "last_date": ld, "age_d": round(age, 1), "limit": f"{lim} days ({f.lower()})"}
+    return out
+
+
 def record():
     t = now_ms()
     d = load(DERIVS, {})
@@ -64,14 +107,17 @@ def record():
     ok = bool(fd) and all(v["ok"] for v in fd.values())
     R = load(RUNS, {})
     runs = (R.get("runs") or [])[-199:]
-    runs.append({"t": iso(t), "workflow": os.environ.get("GITHUB_WORKFLOW", "local"), "run_id": os.environ.get("GITHUB_RUN_ID"), "feeds": fd, "ok": ok})
+    mk, mc = market_fresh(load(MARKET, {}), t), macro_fresh(load(MACRO, {}), t)
+    runs.append({"t": iso(t), "workflow": os.environ.get("GITHUB_WORKFLOW", "local"), "run_id": os.environ.get("GITHUB_RUN_ID"), "feeds": fd, "ok": ok,
+                 "market": mk, "macro_stale": sorted(k for k, v in mc.items() if not v["ok"])})
     hr = t // H * H
     hourly = [s for s in (R.get("hourly") or []) if s.get("hour_ms", 0) > hr - 24 * H and s.get("hour_ms") != hr]
     hourly.append({"hour_ms": hr, "hour": iso(hr), "t": iso(t), "ok": ok, "stale": [k for k, v in fd.items() if not v["ok"]]})
     hourly.sort(key=lambda s: s["hour_ms"])
     out = {"note": "Written by scripts/runs_log.py after each derivatives run. Freshness per feed from derivs.json latest.*_t (not 'updated'). "
                    "Limits: oi 3h, basis 3h, funding 12h. sla_24h counts a missing hour as not within.",
-           "last_run": iso(t), "runs": runs, "hourly": hourly, "sla_24h": sla(hourly, t)}
+           "last_run": iso(t), "runs": runs, "hourly": hourly, "sla_24h": sla(hourly, t),
+           "market": mk, "macro": mc}
     tmp = RUNS + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"), allow_nan=False)

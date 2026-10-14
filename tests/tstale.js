@@ -45,5 +45,13 @@ const ds=await pg.evaluate(()=>{const o={},H=36e5,now=Date.now(),iso=t=>new Date
 ok(ds.oldRun.length===1&&/5\.0h old/.test(ds.oldRun[0]),"dataStale: _runs.json last_run 5h old -> derivs banner, even though derivs.json 'updated' is fresh",ds);
 ok(ds.freshRun.length===0,"dataStale: _runs.json last_run 30 min old -> no derivs banner, even though derivs.json 'updated' is 9h old",ds);
 ok(ds.seed.length===0,"dataStale: _runs.json without last_run (seed) -> no derivs reading invented",ds);
+// 15 Oct ruling: market.json banner limit 2h, weekly macro 12 days
+const mk=await pg.evaluate(()=>{const now=Date.now(),iso=t=>new Date(t).toISOString(),sv=DF.market,o={lim:DLIM.market,wk:CAD.Weekly};
+ DF.market={v:{updated:iso(now-3*36e5)},at:now,src:'live'};o.old=dataStale().filter(x=>/^market/.test(x));
+ DF.market={v:{updated:iso(now-1.5*36e5)},at:now,src:'live'};o.fresh=dataStale().filter(x=>/^market/.test(x));
+ const M={series:{W:{freq:'Weekly',last_date:new Date(now-13*864e5).toISOString().slice(0,10),points:[[0,1]]},W2:{freq:'Weekly',last_date:new Date(now-11*864e5).toISOString().slice(0,10),points:[[0,1]]}}};
+ o.w13=fresh('W',M).over;o.w11=fresh('W2',M).over;if(sv)DF.market=sv;else delete DF.market;return o});
+ok(mk.lim===2&&mk.old.length===1&&/limit 2h/.test(mk.old[0])&&mk.fresh.length===0,'banner: market.json 3h old -> stale (limit 2h); 1.5h -> fresh',mk);
+ok(mk.wk===12&&mk.w13===true&&mk.w11===false,'macro weekly: 13 days old stale, 11 days fresh (limit 12 days)',mk);
 ok(!errs.length,'no page errors',errs.slice(0,3));
 console.log('FAILS:',F.length,JSON.stringify(F));await b.close();process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(2)});
