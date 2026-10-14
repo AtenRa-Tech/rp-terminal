@@ -20,7 +20,7 @@ on:
 
 permissions:
   contents: write
-  actions: write   # dispatch "CI and deploy" (data_redeploy) after a data push
+  actions: write   # dispatch "CI and deploy" (data_redeploy) after a data push, and derivs.yml (backstop)
 
 concurrency:
   group: refresh-data
@@ -37,6 +37,18 @@ jobs:
         with:
           ssh-key: ${{ secrets.DATA_DEPLOY_KEY }}
 
+      # Backstop (14 Oct): GitHub has not fired derivs.yml on its schedule, while this workflow does fire. Dispatch it when the LIVE
+      # data/_runs.json last_run is 30+ min old, null or missing. Logged in the step output and the job summary.
+      - name: Derivs backstop - dispatch "Refresh derivatives" when live _runs.json last_run is >= 30 min old
+        id: backstop
+        env:
+          SITE_URL: https://atenra-tech.github.io/rp-terminal/
+        run: python3 .github/scripts/derivs_backstop.py
+      - name: Dispatch Refresh derivatives (backstop)
+        if: steps.backstop.outputs.dispatch == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run derivs.yml --repo "$GITHUB_REPOSITORY" && echo "dispatched Refresh derivatives at $(date -u +%FT%TZ)" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Record the commit this run starts from (guard baseline)
         run: echo "BASE=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 

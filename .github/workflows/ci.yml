@@ -74,6 +74,8 @@ jobs:
         run: set -o pipefail; { node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
       - name: Derivatives run log (blocking) - _runs.json freshness per feed, 24h hourly sample, 95% SLA logic
         run: python3 tests/truns.py
+      - name: Derivs backstop decision (blocking)
+        run: python3 tests/tbackstop.py
       - name: Live data watchdog on seed/missing _runs.json (blocking)
         run: python3 tests/tlivelag.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
