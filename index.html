@@ -530,7 +530,7 @@ async function analyze(w){const d0=await klines(w,'1d',400),open=d0.t.at(-1)+864
   if(R1!=null)pts.push(`RSI ${R1.toFixed(0)}, ${R1>70?'above 70':R1<30?'below 30':R1>=50?'above the 50 midline':'below the 50 midline'}.`);
   if(H1!=null&&H0!=null)pts.push(`MACD histogram ${H1>=0?'positive':'negative'} and ${Math.abs(H1)>=Math.abs(H0)?'widening':'narrowing'}.`);
   if(B.up[N-1]!=null){const bw=(B.up[N-1]-B.lo[N-1])/B.mid[N-1]*100;const bws=[];for(let i=N-120;i<N;i++)if(B.up[i]!=null)bws.push((B.up[i]-B.lo[i])/B.mid[i]*100);const rk=bws.filter(x=>x<bw).length/bws.length;if(rk<.15)pts.push(`Bollinger bands are ${bw.toFixed(1)}% wide, in the bottom 15% of 120 days.`)}
-  if(dv){const f=dv.f*100,fs=fundSt(f);pts.push(`Funding ${f.toFixed(4)}% per 8h (${dv.src}, live), ${fs==='Funding positive'?'above':fs==='Funding negative'?'below':'inside'} the ±0.01% neutral band.`)}
+  if(dv){const f=dv.f*100,fs=fundSt(f);pts.push(`Funding ${f.toFixed(4)}% per 8h (${dv.src}, ${dv.at?'fetched '+hmU(dv.at):'fetch time unknown'}), ${fs==='Funding positive'?'above':fs==='Funding negative'?'below':'inside'} the ±0.01% neutral band.`)}
   const ch30=N>30?(last/c[N-31]-1)*100:null,bias=ch30==null?'30d —':`30d ${ch30>=0?'up':'down'}, ${pct(ch30,1)}`;
   return{w,last,ch30,rsi:R1,vol,hi52,lo52,fromHi:(last/hi52-1)*100,dv,bias,pts,src:d0.src||'Binance',pair:d0.pair,asof:d.t[N-1],rets:c.slice(-31).map((v,i,a)=>i?Math.log(v/a[i-1]):null).slice(1),cl:{t:d.t.slice(-45),v:c.slice(-45)}}}
 const biasCls=b=>'b-nt';
