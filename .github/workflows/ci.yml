@@ -70,11 +70,13 @@ jobs:
         working-directory: ${{ runner.temp }}
         # one retry after 90 s only to ride out a CoinGecko/CoinPaprika rate limit; any second failure blocks
         run: set -o pipefail; { node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
+      - name: Fixture consistency (blocking) - no derivs fixture has a latest timestamp newer than its own series beyond the metric limit
+        run: set -o pipefail; node qa/fixture-consistency.js 2>&1 | tee "$RUNNER_TEMP/gates/fixture-consistency.log"
       - name: Stale-data gate (blocking) - a metric past its freshness limit gives no reading anywhere (team tests + boundary/mixed/scores/confidence)
         run: |
           set -eo pipefail
           { node qa/stale-derivs.js http://localhost:8765/index.html
-            node qa/stale-captions.js http://localhost:8765/index.html
+            DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js http://localhost:8765/index.html
             node qa/stale-derivs2.js http://localhost:8765/index.html
             node qa/stale-conf.js http://localhost:8765/index.html; } 2>&1 | tee "$RUNNER_TEMP/gates/stale-data.log"
       - name: News replay diff (report only)
@@ -136,7 +138,7 @@ jobs:
         run: |
           set -e
           node qa/stale-derivs.js "$SITE_URL"
-          node qa/stale-captions.js "$SITE_URL"
+          DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js "$SITE_URL"
           node qa/stale-derivs2.js "$SITE_URL"
           node qa/stale-conf.js "$SITE_URL"
       - name: Axis label minimum on the live site (blocking; failure rolls back)

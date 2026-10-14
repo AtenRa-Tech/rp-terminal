@@ -13,9 +13,11 @@ const r=await pg.evaluate(async()=>{const OCL=a=>typeof oiCapLatest==='function'
  // 1) the cards on the page now
  o.live=check(SIG||[]);o.n=(SIG||[]).length;
  // 2) every daily series with an extra row for today: price/coin histories + derivs daily OI + market file
- const keepD=SIGD,keepDV=DVRAW,keepMK=MK;try{
+ // hermetic: the test copy of derivs.json gets hourly OI up to this hour (last value carried; test data only), so the result does not depend on the age of the committed file
+ const realDV=DVRAW,keepDV=(()=>{const x=JSON.parse(JSON.stringify(realDV)),Hm=36e5,top=Math.floor(Date.now()/Hm)*Hm;for(const A of Object.values(x.assets||{})){const P=A.oi_hourly?.points;if(!P?.length)continue;const l=P.at(-1);for(let t=l[0]+Hm;t<=top;t+=Hm)P.push([t,l[1],l[2]]);A.latest={...(A.latest||{}),oi_t:P.at(-1)[0],oi_coin:P.at(-1)[2]}}return x})();
+ const keepD=SIGD,keepMK=MK;try{
   const add=S=>S&&S.t?{...S,t:[...S.t,day0],v:[...S.v,S.v.at(-1)*1.37]}:S;const d={...SIGD};for(const k of ['P','H','EB','PG','BT','ST'])d[k]=add(SIGD[k]);d.CL={};for(const k in SIGD.CL)d.CL[k]=add(SIGD.CL[k]);
-  const raw=JSON.parse(JSON.stringify(DVRAW));for(const a in raw.assets){const A=raw.assets[a];if(A.oi_daily?.points?.length){const l=A.oi_daily.points.at(-1);if(l[0]<day0)A.oi_daily.points.push([day0,l[1]*1.37,l[2]*1.37])}}
+  const raw=JSON.parse(JSON.stringify(keepDV));for(const a in raw.assets){const A=raw.assets[a];if(A.oi_daily?.points?.length){const l=A.oi_daily.points.at(-1);if(l[0]<day0)A.oi_daily.points.push([day0,l[1]*1.37,l[2]*1.37])}}
   DVRAW=raw;DV=gateDV(raw);const list=[...buildSignals(d),...derivSignals()];list.forEach(s=>{try{prepSig(s)}catch(e){}});o.fixture=check(list);o.fn=list.length;
   // OI ÷ circulating supply (rulings 8 Oct): ONE formula for every stored point = OI in coins ÷ circulating supply (price cancels)
   const oc=list.find(s=>s.id==='oicapBTC'),L=OCL('BTC'),S=typeof oiCapSeries==='function'?oiCapSeries('BTC'):null,H=(DV.assets.BTC.oi_hourly?.points||[]),hD=H.find(p=>Math.abs(p[0]-(D+DAYm))<=30*60000);
@@ -30,7 +32,7 @@ const r=await pg.evaluate(async()=>{const OCL=a=>typeof oiCapLatest==='function'
   const raw3=JSON.parse(JSON.stringify(keepDV));raw3.assets.BTC.oi_hourly.points=[];DVRAW=raw3;DV=gateDV(raw3);o.noOIall={v:OCL('BTC').v,card:!!derivSignals().find(s=>s.id==='oicapBTC'),stale:SIGSTALE.some(x=>x.id==='oicapBTC')};
   DVRAW=keepDV;DV=gateDV(keepDV);const AD=(0,eval)('D'),keepMk=AD.mk;try{AD.mk={};MK={...keepMK,totals_proxy:{...keepMK.totals_proxy,points:[]}};o.noSup={v:OCL('BTC').v,card:!!derivSignals().find(s=>s.id==='oicapBTC')}}finally{AD.mk=keepMk;MK=keepMK}
   derivSignals();
- }finally{SIGD=keepD;DVRAW=keepDV;DV=gateDV(keepDV);MK=keepMK}
+ }finally{SIGD=keepD;DVRAW=realDV;DV=gateDV(realDV);MK=keepMK}
  return o});
 ok(r.n>5&&!r.live.length,'every signal card on the page reads the last closed day (no forming reading)',r.live);
 ok(r.fn>5&&!r.fixture.length,"every signal card still reads the last closed day when every daily series has a row for today",r.fixture);
