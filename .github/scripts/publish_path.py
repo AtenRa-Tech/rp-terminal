@@ -11,7 +11,17 @@ def select(changed):
     other = sorted(set(ch) - FAST_FILES)
     if other: return "full", "non-derivs files changed: " + ", ".join(other[:8]) + (" …" if len(other) > 8 else "")
     return "fast", "derivs-only change: " + ", ".join(sorted(ch))
+def pick_good(lines):
+    """lines: '<updatedAt> <headSha>' from gh run list (one per workflow). Ignores empty/null entries (a workflow with no successful
+    run yet prints 'null null'); returns the headSha of the newest, or '' when none."""
+    ok = []
+    for ln in lines:
+        p = ln.split()
+        if len(p) == 2 and p[0] != "null" and len(p[1]) == 40 and all(c in "0123456789abcdef" for c in p[1]): ok.append(p)
+    return max(ok)[1] if ok else ""
 if __name__ == "__main__":
+    if sys.argv[1] == "--pick":
+        print(pick_good(sys.stdin.read().splitlines())); sys.exit(0)
     good, head = sys.argv[1], sys.argv[2]
     try: changed = subprocess.check_output(["git", "diff", "--no-renames", "--name-only", good, head], text=True).splitlines()
     except Exception as e: changed = ["<diff failed: %s>" % e]

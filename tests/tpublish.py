@@ -52,4 +52,13 @@ sm = "\n".join(st.get("run", "") for st in pub["jobs"]["smoke"]["steps"]); cs = 
 ok("no_regress.py after" in sm and "no_regress.py after" in cs, "both smoke jobs fail if live went backwards")
 dvr = "\n".join(st.get("run", "") for st in dv["jobs"]["refresh"]["steps"])
 ok("publish-derivs.yml" in dvr and "ci.yml" not in dvr, "derivs.yml dispatches the fast path, not the full CI")
+# 4) last good deploy pick: 'null null' (no successful run yet) and junk are ignored; newest real one wins
+A1, A2 = "a" * 40, "b" * 40
+ok(pp.pick_good(["null null", f"2026-10-14T18:00:00Z {A1}"]) == A1, "pick: 'null null' from a workflow with no good run is ignored (was picked by sort before)")
+ok(pp.pick_good([f"2026-10-14T18:00:00Z {A1}", f"2026-10-14T19:00:00Z {A2}"]) == A2, "pick: newest good deploy wins")
+ok(pp.pick_good(["", "null null"]) == "", "pick: none -> empty (caller takes the FULL path)")
+ok(pp.pick_good(["2026-10-14T19:00:00Z HEAD"]) == "", "pick: non-sha ignored")
+lg = open(os.path.join(ROOT, ".github/scripts/last_good.sh")).read()
+ok('select(.name=="smoke")' in lg and "success" in lg, "a fast run counts as a good deploy only when its smoke job succeeded (handover runs deployed nothing)")
+ok(all("last_good.sh" in "\n".join(st.get("run", "") for st in pub["jobs"][j]["steps"]) for j in ("gates", "rollback")), "path selection and rollback both use last_good.sh")
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)
