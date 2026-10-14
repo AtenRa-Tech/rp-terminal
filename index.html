@@ -1276,7 +1276,7 @@ const RULE={
 // C7: one neutral band for funding everywhere (percent per 8h)
 // one funding entry (15 Oct ruling): rate, age, 'as of', caption and Data line all come from latest.funding at latest.funding_t, and it must be a settled print (a point in funding.points with the same time and rate); otherwise no derivs.json reading
 function fundLatest(A){const L=A?.latest,P=A?.funding?.points;if(!L||L.funding==null||L.funding_t==null||!P?.length)return null;const q=P.find(p=>p[0]===L.funding_t);return q&&q[1]===L.funding?{f:L.funding,t:L.funding_t,src:A.funding.source||'OKX'}:null}
-function btcFund(){const FL=fundLatest(DV?.assets?.BTC);if(FL)return{f:FL.f,t:FL.t,src:FL.src+' via derivs.json, settled '+hmU2(FL.t)};const dv=D.ins.bitcoin?.dv;return dv&&dv.f!=null&&dv.ft?{f:dv.f,t:dv.ft,src:(dv.src||'Binance')+' settled '+hmU2(dv.ft)+' '+dvLbl(dv)+(STALEM['BTC funding']?' (derivs.json stale)':' (derivs.json unavailable)')}:null}
+function btcFund(){const FL=fundLatest(DV?.assets?.BTC);if(FL)return{f:FL.f,t:FL.t,src:FL.src+' via derivs.json, settled '+hmU2(FL.t)};const dv=D.ins.bitcoin?.dv;return dv&&dv.f!=null&&dv.ft?{f:dv.f,t:dv.ft,src:(dv.src||'Binance')+' '+dvLbl(dv)+', settled '+hmU2(dv.ft)+(STALEM['BTC funding']?' (derivs.json stale)':' (derivs.json unavailable)')}:null}
 // #15: a live funding/OI reading is only called live while it is fresh (fetched within LIVE_MAX); an older one is labelled with its fetch time
 const LIVE_MAX=10*60000,dvLbl=dv=>dv?.at&&Date.now()-dv.at<=LIVE_MAX?'live':`as of ${dv?.at?hmU(dv.at):'an unknown time'} (fetched earlier, not live)`;
 const FUND_BAND=.01,fundSt=f=>f>FUND_BAND?'Funding positive':f<-FUND_BAND?'Funding negative':'Funding neutral';
@@ -1317,7 +1317,7 @@ function clusters(){const P=SIGD?.P,out=[],md=macDeltas()||{},I=(l,v,ok)=>({l,v,
   const f=btcFund()?.f,s3=st30(),e7=etf7();let mayer=null,wr=null,dd=null,r2=null,pi=null,hr=null;
   const PB=SIGD?.CL?.BTC?.v?.length>800?SIGD.CL.BTC:P;if(PB&&PB.v.length>800){const v=PB.v,N=v.length;mayer=v[N-1]/sma(v,200)[N-1];r2=v[N-1]/sma(v,730)[N-1];dd=(v[N-1]/Math.max(...v)-1)*100;wr=rsi((wkCloses(SIGD.CL?.BTC)||wkCloses(P)).v,14).at(-1);pi=sma(v,111)[N-1]/(2*sma(v,350)[N-1])}
   if(SIGD?.H){const v=SIGD.H.v,N=v.length;hr=sma(v,30)[N-1]/sma(v,60)[N-1]}
-  const fs=f!=null?(f*100).toFixed(4)+'%/8h · '+btcFund().src:'';
+  const BF0=btcFund(),fs=f!=null?(f*100).toFixed(4)+'%/8h · '+String(BF0.src).split(' ')[0]+(BF0.t?', settled '+hmU(BF0.t):''):'';
   out.push({name:'Low volatility, rising OI, flat funding',desc:'Measurements only: BTC 7-day volatility low, rising OI (BTC terms), funding near zero, stablecoin supply rising.',in:[
     vol?I(`BTC 7-day volatility in the bottom 20% since ${vol.from}`,`${vol.cur.toFixed(1)}% · bottom ${Math.max(1,Math.round(vol.share))}%`,vol.share<=20):na('BTC 7-day volatility in the bottom 20% (last 5 years)','loading'),
     (()=>{const o=oiChg('BTC',7);return o?I('Open interest rising (BTC terms, +3% in 7 days)',`${pct(o.ch,1)} · ${o.src}`,o.ch>3):na('Open interest (BTC)',STALEM['BTC oi']?'OI: '+staleTxt('BTC oi'):DV?'n/a':'derivs.json loading')})(),
