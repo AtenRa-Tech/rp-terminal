@@ -26,7 +26,7 @@ async function page(ctx,setup){const pg=await (ctx||b).newPage();await pg.setVie
   o.cc=D.cc.bitcoin;o.ath=athOf('bitcoin');let c30=null;const B=SIGD.CL.BTC;if(B){const N=B.v.length;c30=(B.v[N-1]/B.v[back(B,30)]-1)*100}o.c30=[ch30Of('bitcoin'),c30];
   o.th=threadSplit?threadSplit('A'.repeat(200)+'. '+'B'.repeat(200)+'. '+'C'.repeat(150)+'.\n\nhttps://example.com/x'):null;
   o.ins=Object.values(D.ins).flatMap(a=>a.pts).filter(t=>/odds of a pullback|relief bounce|big move often follows|squeeze|watch for a crossover/i.test(t));
-  o.stale=(()=>{const keep=DF.derivs;DF.derivs={v:{updated:'2020-01-01T00:00:00Z'},at:Date.now()};const s=dataStale(),fl=freshLine();DF.derivs=keep;return[s,fl.includes('stale data files')]})();
+  o.stale=(()=>{/* derivs freshness comes from data/_runs.json last_run (P0 ruling 14 Oct), not derivs.json 'updated' */const keep=DF._runs;DF._runs={v:{last_run:'2020-01-01T00:00:00Z'},at:Date.now()};const s=dataStale(),fl=freshLine();if(keep)DF._runs=keep;else delete DF._runs;return[s,fl.includes('stale data files')]})();
   o.fresh=freshLine();return o});
  ok(r.usdK==='$124.7k'&&r.usdB==='$450.0k','rounding: usdK(124,658.54) = $124.7k; small $ never $0M',[r.usdK,r.usdB]);
  ok(!r.rule1.length,'C4 RULE1 phrases flagged even after "Historically"',r.rule1);

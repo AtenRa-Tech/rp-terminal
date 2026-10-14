@@ -1,0 +1,66 @@
+name: Live suite
+
+# Daily full suite against the live site. Fails visibly (red check) when any gate fails.
+# 00:37 UTC so it sits between the :22 and :52 derivatives refreshes and after the calendar day rolls.
+on:
+  schedule:
+    - cron: '37 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-suite
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://atenra-tech.github.io/rp-terminal/
+  NODE_PATH: ${{ github.workspace }}/tests/node_modules
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install test deps
+        run: cd tests && npm install --no-audit --no-fund
+      - name: Smoke
+        run: node tests/tsmoke.js "$SITE_URL"
+      - name: Export check
+        working-directory: ${{ runner.temp }}
+        run: node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL" || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL"; }
+      - name: Pulse movers
+        run: node qa/pulse-movers.js "$SITE_URL"
+      - name: OI ÷ supply label (unchanged)
+        run: node qa/oicap-label.js "$SITE_URL"
+      - name: Card presence (unchanged)
+        run: node qa/card-presence.js "$SITE_URL"
+      - name: Sell-off lint (unchanged)
+        run: node qa/selloff-lint.js "$SITE_URL"
+      - name: Stale-data gate
+        run: |
+          set -e
+          node qa/stale-derivs.js "$SITE_URL"
+          DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js "$SITE_URL"
+          node qa/stale-derivs2.js "$SITE_URL"
+          node qa/stale-conf.js "$SITE_URL"
+      - name: Axis label minimum
+        run: URL="$SITE_URL" node tests/tqa6.js
+      - name: Range buttons / indicators
+        run: URL="$SITE_URL" node tests/trange.js
+      - name: Closed hours in live derivs.json
+        run: python3 tests/tclosed_hours.py
+      - name: Derivatives SLA (95% of 24 hourly samples; auto-fails once 24 samples exist; missing hour = miss)
+        run: |
+          curl -sf "${SITE_URL}data/_runs.json?v=$(date +%s)" -o /tmp/runs-live.json || cp data/_runs.json /tmp/runs-live.json
+          python3 scripts/runs_log.py --check 95 /tmp/runs-live.json
+      - name: Fail visibly
+        if: failure()
+        run: |
+          echo "::error::Live suite failed against ${SITE_URL}. Open this run for the red step."
+          exit 1
