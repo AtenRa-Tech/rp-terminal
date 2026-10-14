@@ -690,8 +690,8 @@ const AXEM=34;
 function axMaxN(ctx,xMin,xMax){const cv=ctx.canvas,fpx=parseFloat((ctx.font.match(/([\d.]+)px/)||[0,10.5])[1])||10.5,k=cv&&cv.isConnected&&cv.clientWidth?cv.clientWidth/cv.width:10.5/fpx,css=(xMax-xMin)*k,em=(xMax-xMin)/fpx,desk=em>=AXEM;return{css,em,desk,minN:desk?8:4,maxN:desk?10:6}}
 // every step, coarse -> fine; 'md' = fixed days of the month (2: 1,16 · 3: 1,11,21 · 6: 1,6,11,16,21,26)
 // even steps only (supervisor 3 Oct): 10/5/2/1 years, half-years, quarters, months, then 15/10/7/5-day dates, days, hours
-const AXST2=[['y',10],['y',5],['y',2],['y',1],['m',6],['m',3],['m',1],['w',2],['md',2],['md',3],['w',1],['md',6],['d',3],['d',2],['d',1],['h',12],['h',6],['h',3],['h',2],['h',1]];
-const AXSTART={y:0,m:4,d:7,h:15},AXEND={y:14,m:14,d:14,h:19};
+const AXST2=[['y',10],['y',5],['y',2],['y',1],['m',6],['m',3],['m',2],['m',1],['w',2],['md',2],['md',3],['w',1],['md',6],['d',3],['d',2],['d',1],['h',12],['h',6],['h',3],['h',2],['h',1]];
+const AXSTART={y:0,m:4,d:8,h:16},AXEND={y:15,m:15,d:15,h:20};// ['m',2] (odd months) sits between quarters and months: a narrow chart keeps every second month instead of dropping the oldest months
 // place labels at x positions; first/last are pushed inside the plot edges; returns null on collision (or the boxes)
 function axPlace(ctx,items,xMin,xMax,gap,drop){const out=[];for(const it of items){const w=ctx.measureText(it.lab).width;let x=it.x,al='center',b=[x-w/2,x+w/2];
     if(it.left){al='left';b=[x,x+w]}if(b[0]<xMin){if(x<xMin-1)continue;b=[xMin,xMin+w];x=xMin;al='left'}if(b[1]>xMax){if(x>xMax+1)continue;b=[xMax-w,xMax];x=xMax;al='right'}
