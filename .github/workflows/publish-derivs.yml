@@ -1,4 +1,5 @@
 name: Fast publish (derivs data)
+# also market/macro-only data (15 Oct P0); the name is kept so run history and last_good.sh stay continuous
 
 # FAST path for derivs-only data commits (target < 8 min from the derivatives run to live). Dispatched by derivs.yml after its push.
 # Runs only the data gates below, deploys, smoke-tests live and rolls back automatically. Any failure = nothing published:
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       derivs_run_at:
-        description: 'last_run of the derivatives run that triggered this (for the end-to-end time)'
+        description: 'time the triggering data run produced its data (derivs: _runs.json last_run; market: market.json updated), for the end-to-end time'
         required: false
 
 permissions:
@@ -30,6 +31,7 @@ jobs:
     timeout-minutes: 12
     outputs:
       path: ${{ steps.path.outputs.path }}
+      market: ${{ steps.path.outputs.market }}
       sha: ${{ steps.path.outputs.sha }}
     permissions:
       contents: read
@@ -74,8 +76,16 @@ jobs:
           node qa/card-presence.js $U > g/card-presence.log 2>&1 & p5=$!
           node qa/oicap-label.js $U > g/oicap.log 2>&1 & p6=$!
           node qa/caption-sweep.js $U > g/caption-sweep.log 2>&1 & p7=$!
+          ps="$p1 $p2 $p3 $p4 $p5 $p6 $p7"
+          if [ "${{ steps.path.outputs.market }}" = true ]; then
+            # market/macro changed: dollar-token exclusion, breadth rebuild, pulse movers (the caption sweep above already covers captions)
+            (cd tests && URL=$U node tdollar.js) > g/tdollar.log 2>&1 & ps="$ps $!"
+            python3 tests/tbreadth.py > g/tbreadth.log 2>&1 & ps="$ps $!"
+            node qa/pulse-movers.js $U > g/pulse-movers.log 2>&1 & ps="$ps $!"
+          fi
           fail=0
-          for p in $p1 $p2 $p3 $p4 $p5 $p6 $p7; do wait $p || fail=1; done
+          for p in $ps; do wait $p || fail=1; done
+          for f in g/tdollar.log; do [ -f $f ] && grep -qE '^FAIL |FAILS: [1-9]' $f && fail=1; done
           for f in g/*.log; do echo "=== $f"; tail -4 "$f"; done
           echo "gates took $(( $(date +%s) - t0 ))s"
           [ $fail = 0 ] || { grep -h "^FAIL\|::error" g/*.log | head -20; echo "::error title=Fast publish blocked::a data gate failed; nothing published, live keeps the last good files"; exit 1; }
@@ -104,6 +114,9 @@ jobs:
           bash .github/scripts/newest_data.sh _site
           # data that arrived after the gates ran gets the two data-only gates again
           cp _site/data/derivs.json data/derivs.json && python3 tests/tclosed_hours.py > closed.log || { cat closed.log; exit 1; }; echo "closed hours OK on deploy-time data"
+          # market/macro taken from main HEAD after the gates ran: only publish them if they are the gated files (else keep the gated copy)
+          for f in market.json macro.json; do cmp -s "_site/data/$f" "data/$f" || { echo "main has a newer $f than the gated one; publishing the gated $f (the newer one gets its own fast publish)"; cp "data/$f" "_site/data/$f"; }; done
+          python3 .github/scripts/no_regress.py check _site
       - name: Log publish timing into _runs.json (published copy)
         env:
           DERIVS_RUN_AT: ${{ inputs.derivs_run_at }}
@@ -113,7 +126,8 @@ jobs:
           p = '_site/data/_runs.json'; R = json.load(open(p)); now = d.datetime.now(d.timezone.utc)
           P = lambda s: d.datetime.fromisoformat(s.replace('Z', '+00:00'))
           start = os.environ.get('DERIVS_RUN_AT') or R.get('last_run')
-          pub = {'path': 'fast', 'workflow_run': os.environ.get('GITHUB_RUN_ID'), 'derivs_run_at': start,
+          M = json.load(open('_site/data/market.json')); Mu = M.get('updated')
+          pub = {'path': 'fast', 'market_updated': Mu, 'workflow_run': os.environ.get('GITHUB_RUN_ID'), 'derivs_run_at': start,
                  'deploy_started': now.strftime('%Y-%m-%dT%H:%M:%SZ'), 'minutes_to_deploy': round((now - P(start)).total_seconds() / 60, 1) if start else None}
           R['publish'] = pub
           if R.get('runs'): R['runs'][-1]['publish'] = pub
