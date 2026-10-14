@@ -10,7 +10,7 @@ Limits match the app (DVLIM): open interest 3h, basis 3h, funding 12h.
   sla_24h : {hours_sampled, hours_within, pct_within, window_start, window_end}; a missing hour counts as NOT within
 
 Usage: python scripts/runs_log.py            (record this run)
-       python scripts/runs_log.py --check 95  (exit 1 if derivatives were within limits in < 95% of the last 24 hourly slots)
+       python scripts/runs_log.py --check 95  (exit 1 if within limits in <95% of the last 24 hourly slots; a missing hour counts as a miss; once 24 samples exist the check fails on its own — no manual switch)
 """
 import datetime as dt, json, os, sys
 

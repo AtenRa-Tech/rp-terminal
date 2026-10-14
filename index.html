@@ -1370,7 +1370,13 @@ function freshLine(){const p=[];let stale=0;
   const sl=ss.length?`<span id="srcSt">sources: ${ss.map(([k,v])=>`${esc(k)} ${v.ok?'✓':'✗'}`).join(', ')}</span>`:'';const allOK=!fb.length&&!bad.length&&!noBTC&&ss.length;
   return`${noBTC?'<span class="dn">BTC price missing (no live source answered)</span> · ':''}${fb.length?`<span class="dn">fallback in use: ${esc(fb.join('; '))}</span>${stale?` · <span class="dn">${stale} stale</span>`:''}`:stale?`<span class="dn">${stale} stale</span>`:allOK?'<span class="up">Sources OK</span>':bad.length?`<span class="dn">failed: ${esc(bad.join(', '))}</span>`:''}${sl?' · '+sl:''} · ${p.join(' · ')}`}
 // E8: stale warnings by job cadence: derivs.json hourly (limit 3h); market.json every 6h (limit 8h); etf.json is only rewritten when Farside adds a day (limit 30h, plus the trading-day check on its last date); macro per series via fresh(); calendar 8 days
-const DLIM={derivs:3,market:8,etf:30,calendar:24*8};function dataStale(){const o=[];for(const[n,h]of Object.entries(DLIM)){const d=DF[n]?.v,u=d?.updated||d?.generated;if(!u)continue;const age=(Date.now()-Date.parse(u))/36e5;if(age>h)o.push(`${n}.json ${age<48?age.toFixed(1)+'h':(age/24).toFixed(1)+'d'} old (limit ${h<48?h+'h':h/24+'d'})`)}return o}
+const DLIM={derivs:3,market:8,etf:30,calendar:24*8};
+// Freshness of derivs comes from data/_runs.json last_run (written by scripts/runs_log.py), never from derivs.json 'updated'.
+function dataStale(){const o=[];for(const[n,h]of Object.entries(DLIM)){let u;
+  if(n==='derivs'){u=DF['_runs']?.v?.last_run;if(!u)continue} // no last_run yet (seed / not loaded): do not invent a reading from 'updated'
+  else{const d=DF[n]?.v;u=d?.updated||d?.generated;if(!u)continue}
+  const age=(Date.now()-Date.parse(u))/36e5;if(age>h)o.push(n==='derivs'?`derivs.json (last run ${_runsAgeLab(u)}) ${age<48?age.toFixed(1)+'h':(age/24).toFixed(1)+'d'} old (limit ${h}h)`:`${n}.json ${age<48?age.toFixed(1)+'h':(age/24).toFixed(1)+'d'} old (limit ${h<48?h+'h':h/24+'d'})`)}return o}
+const _runsAgeLab=u=>{try{return new Date(u).toISOString().slice(0,16).replace('T',' ')+' UTC'}catch(e){return String(u)}}
 // C15: every place a backup filled in for a failed primary (app runtime + data files)
 function fbList(){const o=[],fmt=x=>x.use?`${x.use} for ${x.what} (primary ${x.fail} failed)`:`no ${x.what} (primary ${x.fail} failed)`;[...(D.fb?.mk||[]),...(D.fb?.sig||[])].forEach(x=>o.push(fmt(x)));if(D.fb?.deriv)o.push(fmt(D.fb.deriv));
   try{const at=DV?.attempts||[],fl=at.filter(a=>a.tried?.length>1&&!a.tried[0].ok&&a.tried.some(t=>t.ok));if(fl.length){const prim=[...new Set(fl.map(a=>a.tried[0].source))].join('/'),use=[...new Set(fl.map(a=>a.tried.find(t=>t.ok).source))].join('/');o.push(`${use} for derivs.json (primary ${prim} futures failed)`)}}catch(e){}
@@ -1378,7 +1384,7 @@ function fbList(){const o=[],fmt=x=>x.use?`${x.use} for ${x.what} (primary ${x.f
 function stB(st){return st==='No data'||/: stale, /.test(st)?'b-nd':'b-nt'}
 let TODAYL=false;
 async function renderToday(){paintToday();if(TODAYL)return;TODAYL=true;
-  const jobs=[ensureSig().then(paintToday),ensureMac().then(paintToday),dataFile('etf').then(r=>{NX.etf=r.v;paintToday()}).catch(()=>{}),dataFile('calendar').then(r=>{NX.cal=r.v;paintToday()}).catch(()=>{}),(D.news.length?Promise.resolve():loadNews()).then(paintToday).catch(()=>{})];
+  const jobs=[ensureSig().then(paintToday),ensureMac().then(paintToday),dataFile('etf').then(r=>{NX.etf=r.v;paintToday()}).catch(()=>{}),dataFile('calendar').then(r=>{NX.cal=r.v;paintToday()}).catch(()=>{}),dataFile('_runs').then(()=>paintToday()).catch(()=>{}),(D.news.length?Promise.resolve():loadNews()).then(paintToday).catch(()=>{})];
   if(!D.ins.bitcoin){const w=S.watch.find(x=>x.id==='bitcoin')||{id:'bitcoin',sym:'BTC'};jobs.push(analyze(w).then(r=>{if(!D.ins.bitcoin)D.ins.bitcoin=r;paintToday()}).catch(()=>{}))}
   await Promise.allSettled(jobs);TODAYL=false;paintToday();idle(()=>autoAudit(),4000)}
 function paintToday(){const el=$('#todayBox');if(!el||TAB!=='today')return;const y=scrollY,now=Date.now();
@@ -1667,7 +1673,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-thc]
 
 // ================= PHASE 11: derivatives, altseason engine, macro forces, news ranking, new caption families
 let DV=null,MK=null,CAPF=null;
-let DVRAW=null,DVAT=0;async function ensureDV(){if(!DVRAW||Date.now()-DVAT>DATA_TTL){try{DVRAW=(await dataFile('derivs')).v;DVAT=Date.now()}catch(e){}}if(DVRAW)DV=gateDV(DVRAW);return DV}
+let DVRAW=null,DVAT=0;async function ensureDV(){if(!DVRAW||Date.now()-DVAT>DATA_TTL){try{DVRAW=(await dataFile('derivs')).v;DVAT=Date.now()}catch(e){}}try{await dataFile('_runs')}catch(e){}if(DVRAW)DV=gateDV(DVRAW);return DV}
 // STALE GATE (hotfix): a metric past its freshness limit is removed from everything (readings, states, clusters, scores, captions, drafts, exports).
 // Limits per metric from the newest point: open interest and basis are hourly (3h, like the job cadence), funding settles every 8h (12h).
 // Live feeds (deriv()) are fresh by definition; the cached file only counts while inside the limit. STALEM keeps age + source for the 'data stale' labels.

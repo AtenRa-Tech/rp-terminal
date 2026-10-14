@@ -36,5 +36,14 @@ ok(r.vol.built.length&&r.vol.card&&r.vol.card.stale===true&&r.vol.card.read==='�
 ok(r.all.ids.length>5&&!r.all.left.length&&r.all.stale.length===r.all.ids.length&&r.all.stale.every(x=>x.ok),'every card past its limit (clock +20 days) moves to SIGSTALE with date + stale + score null; none left in SIG',r.all);
 ok(r.render.length===r.all.ids.length&&r.render.every(x=>/STALE/.test(x.t)&&/—/.test(x.t)&&/Stale: last data \d{1,2} [A-Z][a-z]{2} \d{4}/.test(x.t)),'every stale card is rendered (visible) with STALE, — and its date',{n:r.render.length,want:r.all.ids.length,bad:r.render.filter(x=>!/Stale: last data/.test(x.t)).slice(0,3)});
 ok(!r.capIds.length,'no stale card is a caption source (SIG empty when every card is stale)',r.capIds)}
+// dataStale() banner reads data/_runs.json last_run, never derivs.json 'updated'
+const ds=await pg.evaluate(()=>{const o={},H=36e5,now=Date.now(),iso=t=>new Date(t).toISOString();const sv={r:DF['_runs'],d:DF['derivs']};
+ DF['derivs']={v:{updated:iso(now)},at:now,src:'live'};DF['_runs']={v:{last_run:iso(now-5*H)},at:now,src:'live'};o.oldRun=dataStale().filter(x=>/^derivs/.test(x));
+ DF['derivs']={v:{updated:iso(now-9*H)},at:now,src:'live'};DF['_runs']={v:{last_run:iso(now-0.5*H)},at:now,src:'live'};o.freshRun=dataStale().filter(x=>/^derivs/.test(x));
+ DF['_runs']={v:{last_run:null},at:now,src:'live'};o.seed=dataStale().filter(x=>/^derivs/.test(x));
+ if(sv.r)DF['_runs']=sv.r;else delete DF['_runs'];if(sv.d)DF['derivs']=sv.d;else delete DF['derivs'];return o});
+ok(ds.oldRun.length===1&&/5\.0h old/.test(ds.oldRun[0]),"dataStale: _runs.json last_run 5h old -> derivs banner, even though derivs.json 'updated' is fresh",ds);
+ok(ds.freshRun.length===0,"dataStale: _runs.json last_run 30 min old -> no derivs banner, even though derivs.json 'updated' is 9h old",ds);
+ok(ds.seed.length===0,"dataStale: _runs.json without last_run (seed) -> no derivs reading invented",ds);
 ok(!errs.length,'no page errors',errs.slice(0,3));
 console.log('FAILS:',F.length,JSON.stringify(F));await b.close();process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(2)});

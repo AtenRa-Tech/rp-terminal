@@ -23,6 +23,18 @@ OUT = os.path.join(ROOT, "data", "derivs.json")
 UA = "rp-terminal-data/1.0 (+https://github.com/AtenRa-Tech/rp-terminal)"
 NOW = dt.datetime.now(dt.timezone.utc)
 NOW_MS = int(NOW.timestamp() * 1000)
+HOUR = 3600_000
+
+def closed_bars(pts, period_ms, now_ms=None):
+    """Keep only bars whose period has fully closed. A bar stamped at t covers [t, t+period_ms);
+    it is closed when now_ms >= t + period_ms, i.e. t < floor(now/period)*period.
+    Returns a new list; empty input stays empty. period_ms is 1h or 1d."""
+    if not pts:
+        return pts
+    now = NOW_MS if now_ms is None else now_ms
+    cut = (now // period_ms) * period_ms  # start of the still-forming bar
+    return [r for r in pts if int(r[0]) < cut]
+
 H = 3600_000
 DAY = 24 * H
 SYM = {"BTC": {"bn": "BTCUSDT", "okx": "BTC-USDT-SWAP", "okx_spot": "BTC-USDT", "bybit": "BTCUSDT", "deribit": "BTC-PERPETUAL"},
@@ -223,6 +235,11 @@ def main():
         A = {}
 
         def put(key, pts, meta, cols, units):
+            # OI and basis: store only CLOSED hours/days (a forming bar is dropped)
+            if pts and key in ("oi_hourly", "basis_hourly"):
+                pts = closed_bars(pts, HOUR)
+            elif pts and key == "oi_daily":
+                pts = closed_bars(pts, DAY)
             if pts:
                 A[key] = dict(meta, columns=cols, units=units, last=pts[-1][0], points=pts)
             elif key in pa:
