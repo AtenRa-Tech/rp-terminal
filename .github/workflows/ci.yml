@@ -11,6 +11,9 @@ on:
     paths-ignore: ['data/**']
   pull_request:
     branches: [main]
+  # merge queue (15 Oct ruling): only the test job runs on merge_group; deploy/smoke/live-lag/rollback skip it
+  merge_group:
+    types: [checks_requested]
   # Not workflow_run: GitHub creates no workflow_run event when "Refresh data" was itself started by GITHUB_TOKEN (the smoke fallback below),
   # so those data commits were never deployed. data.yml dispatches this workflow after every successful data push instead (workflow_dispatch
   # from GITHUB_TOKEN is allowed), whoever started the data run (schedule, person, or this workflow).
@@ -25,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  group: ci-${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && github.ref || 'main' }}
   cancel-in-progress: false
 
 env:
@@ -102,7 +105,7 @@ jobs:
 
   deploy:
     needs: test
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -195,7 +198,7 @@ jobs:
   live-lag:
     # Watchdog item 3: runs after every main CI run, green or not; red with ::error when the live derivs.json is 6h+ behind main
     needs: [test, smoke]
-    if: always() && github.event_name != 'pull_request'
+    if: always() && github.event_name != 'pull_request' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -210,7 +213,7 @@ jobs:
 
   rollback:
     needs: smoke
-    if: failure() && needs.smoke.result == 'failure'
+    if: failure() && needs.smoke.result == 'failure' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       pages: write

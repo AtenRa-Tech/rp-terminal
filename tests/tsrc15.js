@@ -8,18 +8,27 @@ await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcon
 await pg.waitForFunction(()=>{try{return SIG&&SIG.length&&DV&&DVRAW&&MK}catch(e){return false}},{timeout:150000}).catch(()=>{});await new Promise(r=>setTimeout(r,4000));
 const r=await pg.evaluate(()=>{const o={},H=36e5,now=Date.now(),keep=DVRAW;
  o.runs=DF['_runs']?.v?.last_run??null;
- const mk=(fAge,pAge)=>{const x=JSON.parse(JSON.stringify(keep));for(const A of Object.values(x.assets)){const P=A.funding?.points;if(P?.length){const d=now-pAge-P.at(-1)[0];P.forEach(q=>q[0]+=d)}if(A.latest){A.latest.funding_t=now-fAge}}return x};
+ const mk=(fAge)=>{const x=JSON.parse(JSON.stringify(keep));for(const A of Object.values(x.assets)){const P=A.funding?.points;if(P?.length){const d=now-fAge-P.at(-1)[0];P.forEach(q=>q[0]+=d);A.latest={...(A.latest||{}),funding_t:P.at(-1)[0],funding:P.at(-1)[1]}}}return x};
  try{
-  // C2: funding fetched 7h ago, last settled print 12h02m ago -> inside 12h, card stays a reading; _runs.json missing -> dataStale falls back to derivs funding time (no false stale)
-  DVRAW=mk(7*H,12*H+2*6e4);DV=gateDV(DVRAW);let L=staleSweep(derivSignals());o.c2={inSig:L.map(s=>s.id).filter(i=>/^fund/.test(i)),stale:SIGSTALE.filter(s=>/^fund/.test(s.id)).map(s=>s.id),ds:dataStale()};
+  // C2: latest settled print 7h ago -> inside 12h, card stays a reading; _runs.json missing -> dataStale falls back to derivs funding time (no false stale)
+  DVRAW=mk(7*H);DV=gateDV(DVRAW);let L=staleSweep(derivSignals());o.c2={inSig:L.map(s=>s.id).filter(i=>/^fund/.test(i)),stale:SIGSTALE.filter(s=>/^fund/.test(s.id)).map(s=>s.id),ds:dataStale()};
   // C3 still holds: funding 12h10m old -> stale, and the fallback reports it with the 12h limit
-  DVRAW=mk(12*H+10*6e4,12*H+10*6e4);DV=gateDV(DVRAW);L=staleSweep(derivSignals());o.c3={inSig:L.map(s=>s.id).filter(i=>/^fund/.test(i)),ds:dataStale()};
+  DVRAW=mk(12*H+10*6e4);DV=gateDV(DVRAW);L=staleSweep(derivSignals());o.c3={inSig:L.map(s=>s.id).filter(i=>/^fund/.test(i)),ds:dataStale()};
+ // one-entry rule: displayed rate/age/as-of/caption/Data line == latest.funding at latest.funding_t (a settled print)
+  {DVRAW=mk(5*H);const BL=DVRAW.assets.BTC.latest;DVRAW.assets.BTC.funding.points.at(-1)[1]=BL.funding;DVRAW.assets.BTC.funding.points.splice(-1,0,[BL.funding_t-8*H,BL.funding*3]);DV=gateDV(DVRAW);const L=staleSweep(derivSignals()),c=L.find(s=>s.id==='fundBTC'),bf=btcFund(),T=hmU2(BL.funding_t),pc=(BL.funding*100).toFixed(4);
+   const ms=marketStates().find(x=>x.k==='Derivatives');o.one={T,pc,bf,read:c?.read,src:c?.src,freshT:c?.freshT,t:BL.funding_t,why:ms?.why,st:ms?.st,settled:DVRAW.assets.BTC.funding.points.some(p=>p[0]===BL.funding_t&&p[1]===BL.funding)}}
+  // latest not a settled print (time not in funding.points) -> no derivs.json reading
+  {DVRAW=mk(5*H);DVRAW.assets.BTC.latest.funding_t+=37*6e4;DV=gateDV(DVRAW);o.uns={latest:DV.assets.BTC.latest.funding,fl:fundLatest(DVRAW.assets.BTC)}}
  }finally{DVRAW=keep;DV=gateDV(keep)}
  o.glob={src:D.glob?._src??null,btc:D.glob?.market_cap_percentage?.btc??null};o.gtxt=(document.querySelector('#gUpd')?.textContent||'');
  o.today=JSON.stringify(marketStates()).match(/BTC dominance \d[^"]{0,40}/g)||[];
  return o});
+ok(r.one.settled&&r.one.bf&&r.one.bf.f===r.one.bf.f&&Math.abs(r.one.bf.f*100-+r.one.pc)<5e-5&&r.one.bf.t===r.one.t,'one entry: btcFund rate/time == latest.funding/funding_t (settled print)',r.one);
+ok(r.one.read&&r.one.read.startsWith(r.one.pc+'% per 8h (settled '+r.one.T+')')&&r.one.src.endsWith('as of '+r.one.T)&&r.one.freshT===r.one.t,'one entry: card reading, as-of and age come from latest.funding at latest.funding_t',r.one);
+ok(r.one.why&&r.one.why.includes(r.one.pc)&&r.one.why.includes('settled '+r.one.T)&&r.one.st.includes(r.one.pc),'one entry: Today caption/Data line rate and time == latest',r.one);
+ok(r.uns.fl===null&&r.uns.latest==null,'latest that is not a settled print gives no reading',r.uns);
 ok(r.runs==null,'fixture: _runs.json missing',r.runs);
-ok(r.c2.inSig.includes('fundBTC')&&r.c2.inSig.includes('fundETH')&&!r.c2.stale.length,'C2: funding 7h old (print 12h02m) stays a reading/caption source when _runs.json is missing',r.c2);
+ok(r.c2.inSig.includes('fundBTC')&&r.c2.inSig.includes('fundETH')&&!r.c2.stale.length,'C2: settled funding print 7h old stays a reading/caption source when _runs.json is missing',r.c2);
 ok(!r.c2.ds.some(x=>/derivs/.test(x)),'C2: missing _runs.json does not mark fresh funding stale',r.c2.ds);
 ok(!r.c3.inSig.length&&r.c3.ds.some(x=>/derivs\.json funding \(_runs\.json missing\) 12\.\dh old \(limit 12h\)/.test(x)),'C3: funding past 12h still stale with the _runs.json fallback',r.c3);
 ok(!req.some(u=>/coingecko\.com\/api\/v3\/global/.test(u)),'totals/dominance never fetched from CoinGecko /global',req.filter(u=>/global/.test(u)));
