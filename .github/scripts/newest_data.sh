@@ -4,7 +4,7 @@
 set -euo pipefail
 dir=$1
 git fetch -q origin main
-for f in data/derivs.json data/_runs.json; do
+for f in data/derivs.json data/_runs.json data/market.json data/macro.json; do
   if git cat-file -e "FETCH_HEAD:$f" 2>/dev/null; then git show "FETCH_HEAD:$f" > "$dir/$f.new"; python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$dir/$f.new" && mv "$dir/$f.new" "$dir/$f" || rm -f "$dir/$f.new"; fi
 done
 echo "data from main HEAD $(git rev-parse --short FETCH_HEAD) at $(date -u +%FT%TZ)"

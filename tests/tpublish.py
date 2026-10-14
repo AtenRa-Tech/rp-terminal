@@ -8,7 +8,7 @@ def ok(c, n, x=''):
 spec = importlib.util.spec_from_file_location("pp", os.path.join(ROOT, ".github/scripts/publish_path.py")); pp = importlib.util.module_from_spec(spec); spec.loader.exec_module(pp)
 # 1) path selection
 for lab, ch, want in ((["data/derivs.json", "data/_runs.json"], None, "fast"), (["data/derivs.json"], None, "fast"), (["data/_runs.json"], None, "fast"), ([], None, "fast"),
-                      (["data/derivs.json", "data/market.json"], None, "full"), (["data/derivs.json", "index.html"], None, "full"), (["index.html"], None, "full"),
+                      (["data/derivs.json", "data/market.json"], None, "fast"), (["data/market.json", "data/macro.json", "data/_runs.json"], None, "fast"), (["data/market.json", "data/etf.json"], None, "full"), (["data/calendar.json"], None, "full"), (["data/derivs.json", "index.html"], None, "full"), (["index.html"], None, "full"),
                       (["data/etf.json"], None, "full"), ([".github/workflows/ci.yml", "data/_runs.json"], None, "full"), (["qa/card-presence.js"], None, "full")):
     got = pp.select(lab)[0]; ok(got == want, f"path selection {lab or '(no change)'} -> {want}", got)
 # 2) no-regress before deploy, and live never backwards
@@ -61,4 +61,20 @@ ok(pp.pick_good(["2026-10-14T19:00:00Z HEAD"]) == "", "pick: non-sha ignored")
 lg = open(os.path.join(ROOT, ".github/scripts/last_good.sh")).read()
 ok('select(.name=="smoke")' in lg and "success" in lg, "a fast run counts as a good deploy only when its smoke job succeeded (handover runs deployed nothing)")
 ok(all("last_good.sh" in "\n".join(st.get("run", "") for st in pub["jobs"][j]["steps"]) for j in ("gates", "rollback")), "path selection and rollback both use last_good.sh")
+# 5) market/macro fast path
+ok(pp.market_changed(["data/market.json"]) and pp.market_changed(["data/macro.json", "data/derivs.json"]) and not pp.market_changed(["data/derivs.json", "data/_runs.json"]), "market flag set only when market.json/macro.json changed")
+gate = "\n".join(st.get("run", "") for st in pub["jobs"]["gates"]["steps"])
+ok(all(n in gate for n in ("tdollar.js", "tests/tbreadth.py", "qa/pulse-movers.js", "qa/caption-sweep.js")) and "steps.path.outputs.market" in gate, "market/macro gates: tdollar, breadth rebuild, pulse movers, caption sweep", gate[-600:])
+for k, f in (("market_updated", "market.json"), ("macro_updated", "macro.json")):
+    json.dump({"updated": A}, open(S + "/data/" + f, "w")); json.dump({"updated": B}, open(T + "/" + f, "w"))
+os.environ.update(LIVE_MARKET=T + "/market.json", LIVE_MACRO=T + "/macro.json")
+files(B, B, A, A); rc, o = nr("check", S); ok(rc == 1 and "market_updated" in o and "macro_updated" in o, "check: market.json/macro.json older than live -> refuse", o)
+for f in ("market.json", "macro.json"): json.dump({"updated": B}, open(S + "/data/" + f, "w"))
+rc, o = nr("check", S); ok(rc == 0, "check: market/macro same as live -> publish", o)
+json.dump({"updated": B, "last_run": B, "market_updated": "2026-10-14T19:00:00Z", "macro_updated": B}, open(snap, "w"))
+json.dump({"updated": "2026-10-14T18:30:00Z"}, open(T + "/market.json", "w")); files(B, B, B, B)
+rc, o = nr("after", snap); ok(rc == 1 and "market_updated" in o, "after: live market.json 'updated' went backwards -> FAIL", o)
+dd = "\n".join(st.get("run", "") for st in W("data.yml")["jobs"]["refresh"]["steps"])
+ok("publish-derivs.yml" in dd and "gh workflow run ci.yml" not in dd, "data.yml dispatches the fast path (it hands over to full CI itself)")
+ok("market.json" in open(os.path.join(ROOT, ".github/scripts/newest_data.sh")).read(), "newest data at deploy time includes market/macro")
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)

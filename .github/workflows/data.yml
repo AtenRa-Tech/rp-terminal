@@ -20,7 +20,7 @@ on:
 
 permissions:
   contents: write
-  actions: write   # dispatch "CI and deploy" (data_redeploy) after a data push
+  actions: write   # dispatch "Fast publish" after a data push
 
 concurrency:
   group: refresh-data
@@ -133,9 +133,12 @@ jobs:
           done
           echo "push failed"; exit 1
 
-      # Redeploy: CI ignores data-only pushes, and workflow_run never fires for data runs started by GITHUB_TOKEN, so start the deploy here.
-      - name: Redeploy the site with the new data ("CI and deploy", data_redeploy)
+      # FAST publish (15 Oct P0): market/macro/derivs-only data goes through publish-derivs.yml (own concurrency group, data gates only,
+      # < 8 min). It hands over to the full "CI and deploy" itself when anything else (etf.json, calendar.json, code) differs from the last good deploy.
+      - name: Fast publish the new data (publish-derivs.yml)
         if: always() && steps.push.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=true && echo "dispatched CI and deploy (data_redeploy) for $(git rev-parse --short HEAD)"
+        run: |
+          at=$(python3 -c "import json;print(json.load(open('data/market.json')).get('updated') or '')")
+          gh workflow run publish-derivs.yml --repo "$GITHUB_REPOSITORY" --ref main -f derivs_run_at="$at" && echo "dispatched Fast publish for $(git rev-parse --short HEAD), market.json updated $at"
