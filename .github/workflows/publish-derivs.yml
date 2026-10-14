@@ -53,7 +53,10 @@ jobs:
         if: steps.path.outputs.path == 'full'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=true && echo "dispatched CI and deploy (full path)"
+        run: |
+          # code changed since the last good deploy: the full node suites must run (data_redeploy=false), never the data-only redeploy
+          dr=true; [ "${{ steps.path.outputs.code }}" = true ] && dr=false
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=$dr && echo "dispatched CI and deploy (full path, data_redeploy=$dr)"
       - uses: actions/setup-node@v4
         if: steps.path.outputs.path == 'fast'
         with:

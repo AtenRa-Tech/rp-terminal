@@ -77,4 +77,8 @@ rc, o = nr("after", snap); ok(rc == 1 and "market_updated" in o, "after: live ma
 dd = "\n".join(st.get("run", "") for st in W("data.yml")["jobs"]["refresh"]["steps"])
 ok("publish-derivs.yml" in dd and "gh workflow run ci.yml" not in dd, "data.yml dispatches the fast path (it hands over to full CI itself)")
 ok("market.json" in open(os.path.join(ROOT, ".github/scripts/newest_data.sh")).read(), "newest data at deploy time includes market/macro")
+# 6) handover after a code change runs the full suites
+ok(pp.code_changed(["index.html", "data/market.json"]) and not pp.code_changed(["data/etf.json", "data/market.json"]), "code flag: any non-data file")
+hv = "\n".join(st.get("run", "") for st in pub["jobs"]["gates"]["steps"] if "ci.yml" in st.get("run", ""))
+ok("steps.path.outputs.code" in hv and "data_redeploy=$dr" in hv and "dr=false" in hv, "handover dispatches data_redeploy=false when code changed (node suites run)", hv)
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)
