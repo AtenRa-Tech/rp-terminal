@@ -74,6 +74,8 @@ jobs:
         run: set -o pipefail; { node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
       - name: Derivatives run log (blocking) - _runs.json freshness per feed, 24h hourly sample, 95% SLA logic
         run: python3 tests/truns.py
+      - name: Live data watchdog on seed/missing _runs.json (blocking)
+        run: python3 tests/tlivelag.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
         run: python3 tests/tclosed_hours.py
       - name: Fixture consistency (blocking) - no derivs fixture has a latest timestamp newer than its own series beyond the metric limit
@@ -182,6 +184,8 @@ jobs:
       - name: Live data watchdog (fails loudly if live derivs.json is more than 6h behind main)
         run: python3 .github/scripts/live-lag.py
       - name: Derivatives SLA alarm (fails loudly unless derivatives were within limits in >= 95% of hourly samples over 24h; reads data/_runs.json on the live site)
+        # runs even when the watchdog step above fails, so the alarm is never skipped
+        if: always()
         run: |
           curl -sf "${SITE_URL:-https://atenra-tech.github.io/rp-terminal/}data/_runs.json?v=$(date +%s)" -o /tmp/runs-live.json || cp data/_runs.json /tmp/runs-live.json
           python3 scripts/runs_log.py --check 95 /tmp/runs-live.json

@@ -12,13 +12,19 @@ def runs_or_updated(obj_runs, obj_derivs):
 try: main_runs = json.load(open(os.environ.get('MAIN_RUNS', 'data/_runs.json')))
 except Exception: main_runs = None
 main_d = json.load(open(os.environ.get('MAIN_JSON', 'data/derivs.json')))
+live, main, err = None, None, 'unknown error'
 try:
     if os.environ.get('LIVE_JSON'): live_d = json.load(open(os.environ['LIVE_JSON']))
     else: live_d = json.load(urllib.request.urlopen(f"{site}data/derivs.json?v={int(time.time())}", timeout=30))
     try: live_runs = json.load(open(os.environ['LIVE_RUNS'])) if os.environ.get('LIVE_RUNS') else json.load(urllib.request.urlopen(f"{site}data/_runs.json?v={int(time.time())}", timeout=30))
     except Exception: live_runs = None
-    if main_runs and live_runs: main, live = main_runs['last_run'], live_runs['last_run']
-    else: main, live = main_d['updated'], live_d['updated']
+    ml, ll = (main_runs or {}).get('last_run'), (live_runs or {}).get('last_run')
+    if ml and ll: main, live = ml, ll
+    else:
+        # seed _runs.json (last_run null) or missing file on either side: fall back to derivs.json 'updated', and say so
+        why = [f"{n} _runs.json {'missing' if r is None else 'has last_run null (seed)'}" for n, r, v in (('main', main_runs, ml), ('live', live_runs, ll)) if not v]
+        print(f"::warning title=Live data watchdog::{'; '.join(why)}; using derivs.json 'updated' for this check")
+        main, live = main_d['updated'], live_d['updated']
 except Exception as e:
     live = None; err = str(e)
 S = os.environ.get('GITHUB_STEP_SUMMARY'); out = open(S, 'a') if S else sys.stdout
