@@ -80,6 +80,8 @@ jobs:
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpublish.py
       - name: Live data watchdog on seed/missing _runs.json (blocking)
         run: python3 tests/tlivelag.py
+      - name: Stale alarm / live data age per feed limit (blocking) - stale fails, fresh passes
+        run: python3 tests/tdata_age.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
         run: python3 tests/tclosed_hours.py
       - name: Fixture consistency (blocking) - no derivs fixture has a latest timestamp newer than its own series beyond the metric limit
