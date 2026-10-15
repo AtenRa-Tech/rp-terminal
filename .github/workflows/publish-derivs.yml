@@ -53,7 +53,13 @@ jobs:
         if: steps.path.outputs.path == 'full'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=true && echo "dispatched CI and deploy (full path)"
+        # 15 Oct: never succeed silently. This run publishes NOTHING itself; say so as an annotation + job summary, and fail if the handover fails.
+        run: |
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=true || { echo "::error title=Fast publish published nothing::handover to CI and deploy FAILED"; exit 1; }
+          sleep 5; run=$(gh run list --repo "$GITHUB_REPOSITORY" -w ci.yml -e workflow_dispatch -L 1 --json url -q '.[0].url')
+          msg="Nothing published by this run: non-derivs files differ from the last good deploy, so the FULL CI and deploy publishes it ($run). A newer queued CI run may supersede it."
+          echo "::warning title=Fast publish handed over (nothing published here)::$msg"
+          echo "### Fast publish: NOTHING PUBLISHED - handed over to full CI" >> "$GITHUB_STEP_SUMMARY"; echo "$msg" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@v4
         if: steps.path.outputs.path == 'fast'
         with:

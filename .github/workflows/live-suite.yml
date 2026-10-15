@@ -29,6 +29,8 @@ jobs:
           node-version: '20'
       - name: Install test deps
         run: cd tests && npm install --no-audit --no-fund
+      - name: Data age (each feed's own limit from live _runs.json)
+        run: python3 .github/scripts/data_age.py "${SITE_URL}data/_runs.json"
       - name: Smoke
         run: node tests/tsmoke.js "$SITE_URL"
       - name: Export check
