@@ -36,7 +36,7 @@ async function run(b,body){const pg=await b.newPage();await pg.setBypassServiceW
  if(REC)pg.on('response',async res=>{try{const u=res.url(),k=FKEY(u),q=res.request();if(q.method()!=='GET'||BLOCK.test(u)||/derivs\.json/.test(u)||FROZEN.has(k)||res.status()>=300&&res.status()<400)return;const body=await res.buffer();const H0=res.headers(),h={'content-type':H0['content-type']||'application/octet-stream','access-control-allow-origin':'*'};FROZEN.set(k,{status:res.status(),headers:h,body})}catch(e){}});
  await pg.goto(URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});await new Promise(r=>setTimeout(r,15000));
  // wait for the top-5 auto audits to finish so every case is read in the same state (audit timing was a second S1 split source)
- await pg.waitForFunction(()=>{const e=document.getElementById('audSt');return !e||!/running/.test(e.textContent)},{timeout:90000}).catch(()=>{});
+ await pg.waitForFunction(()=>typeof AUDRUN==='undefined'||(!AUDRUN&&(typeof AUDDONE==='undefined'||AUDDONE||!SIG)),{timeout:30000,polling:250}).catch(()=>{});
  let txt='';for(const t of ['today','markets','signals']){await pg.click(`nav button[data-t="${t}"]`);await new Promise(r=>setTimeout(r,4000));txt+=`\n##${t}\n`+await pg.evaluate(()=>document.body.innerText)}
  const sig=txt.split('##signals')[1]||'',L=sig.split('\n'),scores={};for(let i=1;i<L.length;i++){const m=L[i].match(/^(\d{1,3}) ⓘ$/);if(m&&!scores[L[i-1]])scores[L[i-1]]=+m[1]}
  const post=(sig.match(/(\d+) of (\d+) charts are POST NOW/)||[]).slice(1).join('/');
