@@ -1512,7 +1512,7 @@ analytical:[
  F=>`${cap1(F.subj)}: ${F.now}${F.chg?` (${F.chg})`:''}. ${F.pos?cap1(F.pos)+'. ':''}${F.note} Source: ${F.src}.`,
  F=>`${F.now} on ${F.subjL}${F.chg?', '+F.chg:''}, through ${F.date}. ${F.note}`,
  F=>`${cap1(F.subj)} ${F.now}. ${F.chg?cap1(F.chg)+'. ':''}${F.caveat}`,
- F=>`${cap1(F.subj)} (${F.src}): ${F.now}. ${F.since?cap1(F.since)+'. ':''}${F.caveat}`],
+ F=>`${cap1(F.subj)}${String(F.subj).includes(F.src)?'':` (${F.src})`}: ${F.now}. ${F.since?cap1(F.since)+'. ':''}${F.caveat}`],/* subject already names its source (M2: month + FRED, ECB, BOJ, PBoC): do not repeat it */
 ct:[
  F=>`${F.subjS} ${F.now}. ${F.chg?cap1(F.chg)+'. ':''}${F.mood}`,
  F=>`${F.now} on ${F.subjL}${F.chg?', '+F.chg:''}. ${F.mood}`,
