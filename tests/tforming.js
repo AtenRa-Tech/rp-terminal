@@ -5,7 +5,7 @@ const p=require('puppeteer-core');const URL=process.env.URL||'http://localhost:8
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,700):''));if(!c)F.push(n)};
 (async()=>{const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915});
 const errs=[];pg.on('pageerror',e=>errs.push(e.message));
-await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
+await require('./hermetic').hermetic(pg);await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
 await pg.waitForFunction(()=>{try{return SIGD&&SIGD.P&&SIGD.CL&&SIG&&SIG.length>5}catch(e){return false}},{timeout:150000}).catch(()=>{});
 const r=await pg.evaluate(()=>{const o={},DAYm=864e5,today=Math.floor(Date.now()/DAYm)*DAYm;
  // 1. score + POST NOW: append a forming daily bar (today, unfinished) that moves +40% / -40%; nothing may change

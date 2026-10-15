@@ -701,11 +701,11 @@ function timeAxis(ctx,o){const {t0,t1,xOf,xMin,xMax,y,grid}=o,u=o.u||1,fpx=parse
   const lab1=(t,k)=>k==='h'?axHM(t):k==='m'?AXMN[new Date(t).getUTCMonth()]:k==='y'?String(new Date(t).getUTCFullYear()):axDay(t);
   // first step (coarse -> fine) giving minN..maxN labels without collision; else the most labels that fit (collisions beat the minimum)
   const EV=[];// every step tried: count + whether it fitted (logged so a short count can show why)
-  const pickMin=(steps,mk,noTrim)=>{let best=null;for(const [k,n] of steps){const it0=mk(k,n);EV.push({s:k+n,c:it0.length});if(!it0.length||it0.length>maxN+(noTrim?0:2))continue;
+  const pickMin=(steps,mk,noTrim)=>{let best=null;for(const [k,n] of steps){const it0=mk(k,n);EV.push({s:k+n,c:it0.length});if(!it0.length||it0.length>maxN+(noTrim?0:2)){if(it0.length)EV.at(-1).over=true;continue}
     // up to 2 over the maximum: the oldest labels are dropped (a 5.5-year span gets 10 half-year labels instead of 5 years)
     const it=it0.length>maxN?it0.slice(it0.length-maxN):it0;let P=axPlace(ctx,it,xMin,xMax,gap);
     // a label squeezed against a plot edge may collide with its neighbour: try without the edge label(s) before giving up the step
-    if(!P)for(const v of [it.slice(0,-1),it.slice(1),it.slice(1,-1)]){if(v.length<minN)continue;P=axPlace(ctx,v,xMin,xMax,gap);if(P)break}EV.at(-1).fit=!!P;if(!P)continue;if(P.length>=minN)return{k,n,out:P,trim:it0.length-it.length};if(it0.length>maxN)continue;if(!best||P.length>best.out.length)best={k,n,out:P}}
+    if(!P)for(const v of [it.slice(0,-1),it.slice(1),it.slice(1,-1)]){if(v.length<minN)continue;P=axPlace(ctx,v,xMin,xMax,gap);if(P)break}EV.at(-1).fit=!!P&&P.length>=Math.min(minN,it0.length);/* placed fewer than the minimum (edge label clipped/collided) = did not fit */if(!P)continue;if(P.length>=minN)return{k,n,out:P,trim:it0.length-it.length};if(it0.length>maxN)continue;if(!best||P.length>best.out.length)best={k,n,out:P}}
     if(best)return{...best,short:1};for(const [k,n] of steps){const it=mk(k,n);if(it.length)return{k,n,out:axPlace(ctx,it,xMin,xMax,gap,1)||[],dropped:1}}return{k:null,n:0,out:[]}};
   const pick=(steps,mk,limit)=>{let last=null;for(const [k,n] of steps){const it=mk(k,n);last={k,n,it};if(it.length>limit)continue;const P=axPlace(ctx,it,xMin,xMax,gap);if(P)return{k,n,out:P}}return last?{k:last.k,n:last.n,out:axPlace(ctx,last.it,xMin,xMax,gap,1)||[],dropped:1}:{k:null,n:0,out:[]}};
   let r1,r2=[],strong=[],dhShort=0,dhStep=null;
@@ -727,7 +727,7 @@ function timeAxis(ctx,o){const {t0,t1,xOf,xMin,xMax,y,grid}=o,u=o.u||1,fpx=parse
   ctx.fillStyle=o.col;if(row1y!=null)for(const L of r1.out){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,row1y)}
   ctx.fillStyle=o.col2||o.col;for(const L of r2){ctx.textAlign=L.al;ctx.fillText(L.lab,L.x,row2y)}ctx.restore();
   const shortF=cls==='dh'?!!dhShort:!!r1.short,mainN=cls==='dh'?r2.length:r1.out.length,days=Math.ceil(S/864e5);
-  const why=!shortF?null:o.nPts!=null&&o.nPts<minN?`fewer candles than the minimum (${o.nPts} < ${minN})`:cls==='dh'&&days<minN?`fewer days than the minimum (${days} < ${minN})`:'no even step fits ('+EV.map(e=>e.s+':'+e.c+(e.fit===false?' collides':'')).join(', ')+')';
+  const why=!shortF?null:o.nPts!=null&&o.nPts<minN?`fewer candles than the minimum (${o.nPts} < ${minN})`:cls==='dh'&&days<minN?`fewer days than the minimum (${days} < ${minN})`:'no even step fits ('+EV.map(e=>e.s+':'+e.c+(e.over?' over max':e.fit===false?' collides':'')).join(', ')+')';
   axLog({fn:o.fn||'axis',cls,k:cls==='dh'?dhStep:r1.k,n:cls==='dh'?'':r1.n,short:shortF,why,mainN,main:cls==='dh'?'dates':'row1',ev:EV.slice(),nPts:o.nPts??null,minN,maxN,em,desk,cssW:css,labels:r1.out.map(L=>L.lab),ticks:r1.out.map(L=>L.t),boxes:r1.out.map(L=>L.b),row2:{labels:r2.map(L=>L.lab),ticks:r2.map(L=>L.t),boxes:r2.map(L=>L.b),y:row2y},row1y,strong,
     range:axRange(t0,o.rangeEnd??t1,o.intra),last:null,endMode:'none',lastT:t1,t0,dataLast:o.dataLast??t1,intra:!!o.intra,xMax,xMin,gap,fpx,pxPerDay:(xOf(t1)-xOf(t0))/Math.max(1e-9,(t1-t0)/864e5)});return r1.out}
 
