@@ -10,3 +10,4 @@ done
 echo "rollback data from main HEAD $(git rev-parse --short FETCH_HEAD)"
 python3 "$(dirname "$0")/no_regress.py" newest "$dir"
 python3 "$(dirname "$0")/no_regress.py" check "$dir"
+git show FETCH_HEAD:data/derivs.json > "$dir/.main-derivs.json"; python3 "$(dirname "$0")/publish_guard.py" "$dir/data/derivs.json" "$dir/.main-derivs.json"; rm -f "$dir/.main-derivs.json"

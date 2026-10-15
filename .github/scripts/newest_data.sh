@@ -9,3 +9,4 @@ for f in data/derivs.json data/_runs.json data/market.json data/macro.json; do
 done
 echo "data from main HEAD $(git rev-parse --short FETCH_HEAD) at $(date -u +%FT%TZ)"
 python3 "$(dirname "$0")/no_regress.py" check "$dir"
+git show FETCH_HEAD:data/derivs.json > "$dir/.main-derivs.json"; python3 "$(dirname "$0")/publish_guard.py" "$dir/data/derivs.json" "$dir/.main-derivs.json"; rm -f "$dir/.main-derivs.json"

@@ -99,4 +99,24 @@ ix = [i for i, st in enumerate(rj["steps"]) if "rollback_data.sh" in st.get("run
 ok(ix and iy and ix[0] < iy[0], "rollback data step runs before deploy-pages", (ix, iy))
 rbs = open(os.path.join(ROOT, ".github/scripts/rollback_data.sh")).read()
 ok("FETCH_HEAD" in rbs and "no_regress.py\" newest" in rbs.replace('"$(dirname "$0")/no_regress.py" newest', 'no_regress.py" newest') and "check" in rbs, "rollback_data.sh: main HEAD data, then newest-from-live, then never-backwards check")
+# 7) publish guard on the exact derivs.json: test copies (hermetic.js) refused, clean file accepted, open hours / changed history refused
+G = os.path.join(ROOT, ".github/scripts/publish_guard.py"); MAIN = os.path.join(ROOT, "data/derivs.json"); HR = 3600000
+def guard(f, now, main=MAIN):
+    r = subprocess.run([sys.executable, G, f] + ([main] if main else []), env=dict(os.environ, NOW_MS=str(now)), capture_output=True, text=True); return r.returncode, r.stdout + r.stderr
+mj = json.load(open(MAIN)); lastP = max(p[0] for A in mj["assets"].values() for k in ("oi_hourly", "basis_hourly") for p in (A.get(k) or {}).get("points", []))
+now = lastP + 5 * HR + 20 * 60000; top = (now // HR) * HR  # 5h20m after main's newest hourly point
+hj = lambda end: subprocess.run(["node", os.path.join(ROOT, "tests/hermetic.js"), str(now), str(end)], capture_output=True, text=True).stdout.strip()
+f_open, f_closed = hj(top), hj(top - HR)
+ok(f_open.startswith(tempfile.gettempdir()) and f_closed.startswith(tempfile.gettempdir()) and "/data/" not in f_open, "hermetic.js writes only to a temp dir", (f_open, f_closed))
+jo = json.load(open(f_open)); ok(jo.get("_test_only") is True and any(p[-1] == "cf" for p in jo["assets"]["BTC"]["oi_hourly"]["points"]), "hermetic copy stamped _test_only and carried-forward points marked cf")
+rc, o = guard(f_open, now); ok(rc == 1 and "not yet closed" in o and "_test_only" in o, "guard refuses a carried-forward file ending at the OPEN hour", o)
+rc, o = guard(f_closed, now); ok(rc == 1 and "carried-forward" in o, "guard refuses a carried-forward file ending at the last CLOSED hour", o)
+rc, o = guard(MAIN, now); ok(rc == 0, "guard accepts the clean committed derivs.json (closed hours only, identical to main)", o)
+c = json.loads(json.dumps(mj)); c["assets"]["BTC"]["oi_hourly"]["points"].append([top, 1.0, 2.0]); cf_ = T + "/g_open.json"; json.dump(c, open(cf_, "w"))
+rc, o = guard(cf_, now); ok(rc == 1 and "not yet closed" in o, "guard refuses an unmarked point for the open hour", o)
+c = json.loads(json.dumps(mj)); p0 = c["assets"]["ETH"]["basis_hourly"]["points"][-3]; p0[-1] = p0[-1] + 0.001; json.dump(c, open(cf_, "w"))
+rc, o = guard(cf_, now); ok(rc == 1 and "differ from main" in o, "guard refuses a published hour that differs from main (e.g. a newer live copy that rewrote history)", o)
+for wf, job in (("ci.yml", "rollback"), ("publish-derivs.yml", "rollback")):
+    rs = "\n".join(st.get("run", "") for st in W(wf)["jobs"][job]["steps"]); ok("publish_guard" in rs or "rollback_data.sh" in rs, f"{wf} {job} runs the publish guard", rs[-300:])
+ok("publish_guard.py" in open(os.path.join(ROOT, ".github/scripts/newest_data.sh")).read() and "publish_guard.py" in open(os.path.join(ROOT, ".github/scripts/rollback_data.sh")).read(), "full deploy, fast publish (newest_data.sh) and ci rollback (rollback_data.sh) run the publish guard")
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)
