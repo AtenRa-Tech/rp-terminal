@@ -45,23 +45,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          good=$(bash .github/scripts/last_good.sh)
+          # 16 Oct (starvation fix): compare with the TESTED code commit (refs/tags/pages-tested), not the last good deploy; the data path always deploys
+          good=$(bash .github/scripts/tested_sha.sh)
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          if [ -z "$good" ]; then echo "path=full" >> "$GITHUB_OUTPUT"; echo "no previous good deploy found: FULL"; exit 0; fi
-          python3 .github/scripts/publish_path.py "$good" HEAD
-      - name: Not derivs-only - hand over to the full "CI and deploy"
-        if: steps.path.outputs.path == 'full'
+          if [ -z "$good" ]; then echo "path=fast" >> "$GITHUB_OUTPUT"; echo "code=true" >> "$GITHUB_OUTPUT"; echo "::warning::no tested code commit found"; exit 0; fi
+          git fetch -q origin "$good" 2>/dev/null || true; python3 .github/scripts/publish_path.py "$good" HEAD
+      - name: Untested code on main - request a full CI run for it (this run still deploys data with the tested code)
+        if: steps.path.outputs.code == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        # 15 Oct: never succeed silently. This run publishes NOTHING itself; say so as an annotation + job summary, and fail if the handover fails.
         run: |
-          # code changed since the last good deploy: the full node suites must run (data_redeploy=false), never the data-only redeploy
-          dr=true; [ "${{ steps.path.outputs.code }}" = true ] && dr=false
-          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=$dr || { echo "::error title=Fast publish published nothing::handover to CI and deploy FAILED"; exit 1; }
-          sleep 5; run=$(gh run list --repo "$GITHUB_REPOSITORY" -w ci.yml -e workflow_dispatch -L 1 --json url -q '.[0].url')
-          msg="Nothing published by this run: non-derivs files differ from the last good deploy, so the FULL CI and deploy publishes it ($run). A newer queued CI run may supersede it."
-          echo "::warning title=Fast publish handed over (nothing published here)::$msg"
-          echo "### Fast publish: NOTHING PUBLISHED - handed over to full CI" >> "$GITHUB_STEP_SUMMARY"; echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          # only when no CI run of main is already queued or running (the push run usually is): never piles up runs that replace each other
+          busy=$(gh run list --repo "$GITHUB_REPOSITORY" -w ci.yml -b main -L 10 --json status -q '[.[]|select(.status!="completed")]|length' || echo 0)
+          if [ "${busy:-0}" -gt 0 ]; then echo "CI already queued/running on main ($busy): no extra dispatch"; exit 0; fi
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=false && echo "dispatched full CI (suites) for the untested code"
       - uses: actions/setup-node@v4
         if: steps.path.outputs.path == 'fast'
         with:
