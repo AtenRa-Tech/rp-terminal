@@ -34,6 +34,8 @@ async function run(b,mode,record){const pg=await b.newPage();
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
  await run(b,'agree',true);const R={};for(const m of ['agree','split','down','early','pre'])R[m]=await run(b,m,false);await b.close();
  const F=[];const n=Object.keys(R.agree.sc).length;if(n<3)F.push(`only ${n} scores read`);
+ const FRC=JSON.parse(require('fs').readFileSync(require('path').join(__dirname,'../shared/freshness.json'),'utf8')).confidence,FULL=new Set([FRC.fresh_multi_source,FRC.fresh_single_source]);
+ for(const m of Object.keys(R))for(const [k,c] of Object.entries(R[m].cf))if(!FULL.has(c))F.push(`${m}: ${k} scored with confidence ${c}, not a full value (${[...FULL]}) from shared/freshness.json`);
  for(const m of Object.keys(R))for(const k of ['ethbtc','rainbow','hash','fundBTC'])if(R[m].sc[k]==null)F.push(`${m}: required card ${k} not scored`);
  if(R.early.audited)F.push(`early: ${R.early.audited} signals were already audited when scored`);console.log('early case scored with',R.early.audited,'audited;',Object.keys(R.early.sc).length,'scores');
  if(R.pre.audited)F.push(`pre: ${R.pre.audited} signals audited although audit responses were held`);console.log('pre case scored with',R.pre.audited,'audited');

@@ -1045,7 +1045,7 @@ const mi=t=>{const d=new Date(t);return d.getUTCFullYear()*12+d.getUTCMonth()};
 const usdT=b=>'$'+(b/1000).toFixed(2)+'T';
 const fM=(v,sign=1)=>v==null||!isFinite(v)?'–':(v<0?'-':sign?'+':'')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';
 // ONE monthly limit: shared/freshness.json, inlined below (tests/tfresh.js asserts it equals the file); fresh when age <= limit
-const FRESHNESS={"note":"ONE freshness limit for monthly Fed series (M2SL etc.), supervisor ruling 15 Oct: age in days from the month start (last_date = YYYY-MM-01) <= monthly_days is fresh. Read by index.html (inlined as FRESHNESS; tests/tfresh.js asserts equality), scripts/runs_log.py (_runs.json) and tests/tsmoke.js.","monthly_days":100};
+const FRESHNESS={"note":"ONE freshness limit for monthly Fed series (M2SL etc.), supervisor ruling 15 Oct: age in days from the month start (last_date = YYYY-MM-01) <= monthly_days is fresh. Read by index.html (inlined as FRESHNESS; tests/tfresh.js asserts equality), scripts/runs_log.py (_runs.json) and tests/tsmoke.js.","monthly_days":100,"signal_cards":{"note":"ONE limit for stale labels AND data confidence (supervisor 15 Oct): a card is fresh while its last point is within the limit (full confidence), past it the card is stale (no score, no confidence, out of POST NOW). daily: last closed UTC day minus daily_lag_days (one-day step-back); weekly (wrsi): minus weekly_lag_days; settled funding: funding_h hours (= _runs.json funding lim_h).","daily_lag_days":1,"weekly_lag_days":14,"funding_h":12},"confidence":{"fresh_multi_source":100,"fresh_single_source":85}};
 const CAD={Monthly:FRESHNESS.monthly_days,Daily:5,Weekly:12},/* weekly series stale after 12 days (15 Oct ruling) */H10=/^(DEX|DTWEX)/;
 // Daily Fed H.15 series: stale after 3 US business days (Fed holidays skipped). ONE limit, read by the cards and by tests/tsmoke.js.
 const FEDD={ids:['DGS10','DGS2','DFII10','T10Y2Y'],lim:3};
@@ -1246,7 +1246,6 @@ function oppMeta(ms,dir,yrsMax=5){const t=ms.t,a=ms.a;let L=a.length-1;while(L>0
   const shr=share<1?1:Math.round(share),pctTxt=share>=40?`around the middle of its range since ${fromL}`:`in the ${side==='lo'?'bottom':'top'} ${shr}% of readings since ${fromL}`;
   const w=side==='lo'?'lowest':'highest',sinceTxt=sinceStr(R,w);
   return{cur,last,side,share,ext:100-share,z,yrs,from:fromL,startT,pctTxt,since:R.since,sinceTxt,sinceDays:R.since?(last-R.since)/DAY:Infinity,zoneDays,n:win.length}}
-function confLimD(s){const t=s.ms?.t;let st=1;if(t&&t.length>3){const d=[];for(let i=Math.max(1,t.length-11);i<t.length;i++)d.push((t[i]-t[i-1])/DAY);d.sort((a,b)=>a-b);st=Math.max(1,Math.round(d[d.length>>1]))}return 3*st}
 function oppScore(s){const c={},m=s.om;
   if(m){const span=(m.last-m.startT)/DAY,sf=Math.min(1,span/365);c.rar=[clamp(m.ext*sf,0,100),`${m.pctTxt}; ${m.sinceTxt}${sf<1?`; scaled ×${sf.toFixed(2)} because the window is only ${Math.round(span)} days`:''}`];c.str=[clamp(Math.abs(m.z)/3*100,0,100),`${Math.abs(m.z).toFixed(1)}σ (robust) ${m.z>=0?'above':'below'} the median since ${m.from}`];
     const zd=m.zoneDays;c.rec=zd==null?[25,`Not in an extreme zone (outside the ${m.side==='lo'?'bottom':'top'} 20% of readings since ${m.from})`]:zd<=7?[100,zd<1?'Entered its extreme zone with the latest reading':`Entered its extreme zone ${Math.round(zd)} day${Math.round(zd)===1?'':'s'} ago`]:zd<=30?[75,`In its extreme zone for ${Math.round(zd)} days`]:zd<=90?[50,`In its extreme zone for ${Math.round(zd)} days`]:[30,`In its extreme zone for ${Math.round(zd)} days (old news)`]}
@@ -1255,10 +1254,9 @@ function oppScore(s){const c={},m=s.om;
   // P0 15 Oct: data confidence must not depend on WHEN (or whether) the audit finished - a page scored before the audit gives the same score.
   // It comes from the data alone (age, source count); the audit result is shown in the text and badge, never in the number.
   if(s.confFix)c.conf=s.confFix;
-  // Supervisor 15 Oct: confidence is FULL while the input is within its freshness limit and drops only past it (a step, no slide
-  // between refreshes). Limit = 3 periods of the series' own cadence after the last point's open: daily closes 3 days = the last closed
-  // day or one day behind it (#20 + one-day step-back rule); weekly candles 21 days. Macro (confFix) uses each series' own limit.
-  else{const lim=confLimD(s);let v=s.single?70:85;if(age!=null&&age>=lim)v-=30;const au=s.audit?`audit ${s.audit==='ok'?'passed':s.audit==='warn'?'passed with warnings':'failed'}${s.auditTxt?' ('+s.auditTxt+')':''}`:'not audited yet';c.conf=[v,`${s.single?'Single public source':'Two or more sources'}; data ${age!=null?age.toFixed(1)+' days old':'age unknown'}; ${au} (shown, not scored)`]}
+  // Supervisor 15 Oct: ONE limit for stale and confidence (shared/freshness.json signal_cards, applied by staleLimit/staleSweep and fresh()).
+  // A scored card is within its limit by construction (past it, it is stale: no score), so confidence is FULL: 100 multi-source, 85 single-source.
+  else{let v=s.single?FRESHNESS.confidence.fresh_single_source:FRESHNESS.confidence.fresh_multi_source;const au=s.audit?`audit ${s.audit==='ok'?'passed':s.audit==='warn'?'passed with warnings':'failed'}${s.auditTxt?' ('+s.auditTxt+')':''}`:'not audited yet';c.conf=[v,`${s.single?'Single public source':'Two or more sources'}; data ${age!=null?age.toFixed(1)+' days old':'age unknown'}; ${au} (shown, not scored)`]}
   const A=s.asset||'BTC',wi=S.watch.findIndex(w=>w.sym.toUpperCase()===A);
   c.rel=A==='BTC'?[100,'BTC']:A==='ETH'?[90,'ETH']:A==='USD'?[80,'Crypto-wide liquidity']:A==='MACRO'?[75,'Macro backdrop for crypto']:wi>=0?[clamp(85-wi*6,40,85),`${A} is on your watchlist (#${wi+1})`]:[30,`${A} is not on your watchlist`];
   s.opp=c;s.score=Math.round(Object.keys(OW).reduce((q,k)=>q+OW[k]*c[k][0],0));return s.score}
@@ -1348,7 +1346,7 @@ function clusters(){const P=SIGD?.P,out=[],md=macDeltas()||{},I=(l,v,ok)=>({l,v,
 // macro charts as rankable items (lead-lag and composition are context, not ranked)
 function macItems(){const M=MAC.M,out=[];if(!M||!MAC.cards.length)return out;
   const mk=(id,ms,subj,val,uses)=>{const card=MAC.cards.find(c=>c.id===id);if(!card||!ms)return;const om=oppMeta(ms,'abs',Infinity),fr=uses.map(u=>fresh(u,M)),st=fr.filter(x=>x.st).length;
-    const it={kind:'mac',id,title:card.title,card,om,asset:'MACRO',subj,lastT:om.last,confFix:[st?45:85,st?`${st} input series stale`:`All ${uses.length} input series fresh; one public source each (${card.src.split(' · ')[0]})`]};oppScore(it);
+    const it={kind:'mac',id,title:card.title,card,om,asset:'MACRO',subj,lastT:om.last,confFix:[FRESHNESS.confidence.fresh_single_source,`All ${uses.length} input series fresh; one public source each (${card.src.split(' · ')[0]})`]};if(st)return;/* stale input: no score, not ranked (ONE limit) */oppScore(it);
     it.why=`${cap1(subj)} is ${val}, ${om.share>50||om.sinceDays<60?om.pctTxt:om.pctTxt+' and '+om.sinceTxt}.`;out.push(it)};
   try{const G=gm2(M);if(G){const idx=new Map(G.t.map((x,i)=>[mi(x),i])),cc=G.P[0][6]!=null?6:1,yo=G.t.map((x,i)=>{const j=idx.get(mi(x)-12);return j!=null?(G.P[i][cc]/G.P[j][cc]-1)*100:null});mk('btcm2',{t:G.t,a:yo},cc===6?'global M2 growth at constant FX':'global M2 growth',pct(cc===6?G.yoyCC:G.yoy,1)+' YoY',['M2SL','EA_M2_ECB','JP_M2_BOJ','CN_M2_PBOC'])}}catch(e){console.warn('m2 item',e)}
   const dx=ser('DTWEXBGS',M);if(dx)mk('dxy',{t:dx.t,a:dx.v},'the US dollar index (Fed broad)',dx.v.at(-1).toFixed(2),['DTWEXBGS']);
@@ -1687,7 +1685,7 @@ let DVRAW=null,DVAT=0;async function ensureDV(){if(!DVRAW||Date.now()-DVAT>DATA_
 // STALE GATE (hotfix): a metric past its freshness limit is removed from everything (readings, states, clusters, scores, captions, drafts, exports).
 // Limits per metric from the newest point: open interest and basis are hourly (3h, like the job cadence), funding settles every 8h (12h).
 // Live feeds (deriv()) are fresh by definition; the cached file only counts while inside the limit. STALEM keeps age + source for the 'data stale' labels.
-const DVLIM={oi:3,basis:3,funding:12},STALEM={};
+const DVLIM={oi:3,basis:3,funding:FRESHNESS.signal_cards.funding_h},STALEM={};
 // ages: hours+minutes under 48h ('12h10m'), whole days above. A past-limit age is rounded UP, never down to look inside the limit.
 const ageTxt=(h,past,lim)=>{if(h<48){let m=past?Math.ceil(h*60):Math.floor(h*60);if(past&&lim!=null&&m<=lim*60)m=lim*60+1;const hh=Math.floor(m/60),mm=m%60;return hh+'h'+(mm||past?mm+'m':'')}
   let d=past?Math.ceil(h/24):Math.floor(h/24);if(past&&lim!=null&&d*24<=lim)d=Math.floor(lim/24)+1;return d+'d'};
@@ -1738,7 +1736,7 @@ function fundSeries(a,V=DV){const F=V?.assets?.[a]?.funding;if(!F?.points?.lengt
 let SIGSTALE=[];
 // P0 freshness (14 Oct): a card whose feed is past its limit stays VISIBLE in SIGSTALE with its date and 'stale', and is out of SIG (scores, POST NOW, captions).
 // Limits: settled funding prints 12h (DVLIM.funding); weekly cards the last completed week; daily cards the last closed UTC day, one day of publishing lag allowed.
-const SIGLAG={daily:1,weekly:14};
+const SIGLAG={daily:FRESHNESS.signal_cards.daily_lag_days,weekly:FRESHNESS.signal_cards.weekly_lag_days};
 function staleLimit(s,now=Date.now()){const cd=Math.floor(now/DAY)*DAY-DAY;if(s.settled)return{t:now-DVLIM.funding*36e5,lab:`${DVLIM.funding}h limit`};if(s.id==='wrsi')return{t:cd-SIGLAG.weekly*DAY,lab:'last completed week'};return{t:cd-SIGLAG.daily*DAY,lab:'last closed UTC day (one day publishing lag allowed)'}}
 function staleSweep(L,now=Date.now()){const keep=[];for(const k of Object.keys(STALEM))if(/^sig /.test(k))delete STALEM[k];for(const s of L||[]){if(s.stale){if(!SIGSTALE.includes(s))SIGSTALE.push(s);continue}const T=s.closed??s.lastT;if(T==null||!isFinite(T)){keep.push(s);continue}const lim=staleLimit(s,now);
   if(T<lim.t){Object.assign(s,{stale:true,score:null,read:'—',usedDate:new Date(T).toISOString().slice(0,10),staleWhy:`Stale: last data ${dU(T)}${s.settled?' '+hmU(T):''}, past its ${lim.lab}. Not used in readings, scores, POST NOW or captions.`});STALEM['sig '+s.id]={age:(now-T)/36e5,src:String(s.src||'').split(' ')[0]||'feed',t:T,lim:null,limT:lim.lab};SIGSTALE.push(s)}else keep.push(s)}return keep}
@@ -1748,14 +1746,14 @@ function derivSignals(){const out=[];SIGSTALE=[];for(const k of Object.keys(STAL
     if(!(f&&f.t.length>=40)&&STALEM[a+' funding']&&DVRAW){const f2=fundSeries(a,DVRAW);if(f2&&f2.t.length>=40){f=f2;fGated=true}}
     if(f&&f.t.length>=40){const t=f.t,v=f.a,n=v.length,first=dU(t[0]);SIGT['fund'+a]=[`${a} perpetual funding (7-day average)`,`Single venue (${f.src}), about ${Math.round((t[n-1]-t[0])/DAY)} days of history.`];
       (fGated?SIGSTALE:out).push({id:'fund'+a,settled:true/* 8h funding prints are final at settlement time: no forming candle */,asset:a,title:`${a} funding rate · 7-day average`,read:`${v[n-1].toFixed(4)}% per 8h · ${f.src} · since ${first}`,src:`${f.src} perpetual funding (single venue), as of ${hmU2(t[n-1])}`,
-        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(4)+'%/8h'},confFix:[60,`Single venue (${f.src}), ${n+20} funding prints since ${first}`],
+        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(4)+'%/8h'},confFix:[FRESHNESS.confidence.fresh_single_source,`Single venue (${f.src}), ${n+20} funding prints since ${first}`],
         draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(3)+'%',hl:[{v:0,c:TH.mu,l:'0'},{v:.01,c:hexA(TH.mu,.8),l:'0.01% base rate'}],series:[{t:f.raw.map(p=>p[0]),v:f.raw.map(p=>p[1]*100),c:hexA(TH.ac,.35),w:1.2,l:'per 8h print'},{v,c:TH.ac,w:3,l:'7-day average'}]})})}
     if(fGated){const c=SIGSTALE.find(x=>x.id==='fund'+a),T=f.t.at(-1);if(c)Object.assign(c,{stale:true,score:null,read:'—',usedDate:new Date(T).toISOString().slice(0,10),staleWhy:`Stale: last 8h print ${dU(T)} ${hmU(T)} (${staleTxt(a+' funding')}). Not used in readings, scores, POST NOW or captions.`})}
     // OI past its freshness limit (gateDV dropped it): the card is still listed, built from the raw file and marked stale, never a reading
     let oc=oiCapSeries(a),gated=false;if(!(oc&&oc.t.length>=60)&&STALEM[a+' oi']&&DVRAW){const o2=oiCapSeries(a,Date.now(),DVRAW);if(o2&&o2.t.length>=60){oc=o2;gated=true}}
     if(oc&&oc.t.length>=60){const t=oc.t,v=oc.a,n=v.length,L=oc.latest,lbl=oiCapLbl(oc,t[n-1]);SIGT['oicap'+a]=[`${a} open interest ÷ circulating supply`,`${oc.src} open interest (coins) at 00:00 UTC ÷ circulating supply; one venue, so it measures leverage on that venue, not the whole market.`];
       const card={id:'oicap'+a,asset:a,closed:t[n-1],title:`${a} open interest ÷ circulating supply`,read:`${v[n-1].toFixed(3)}% of circulating supply · ${oc.src} perp · since ${dU(t[0])}`,src:lbl,pastTxt:`${lbl}. One venue, so it measures leverage on that venue, not the whole market.`,
-        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(3)+'%'},confFix:[60,`Single venue (${oc.src}); ${lbl}; ${oc.hist}`],
+        msPre:{t,a:v,dir:'abs',fmt:x=>x.toFixed(3)+'%'},confFix:[FRESHNESS.confidence.fresh_single_source,`Single venue (${oc.src}); ${lbl}; ${oc.hist}`],
         draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t,yf:x=>x.toFixed(2)+'%',series:[{v,c:TH.ac,w:3,fill:1,l:'OI (coins) ÷ circulating supply'}],marks:[{t:t[n-1],v:v[n-1],c:TH.tx,l:v[n-1].toFixed(3)+'%'}]})};
       // step-back (ruling 8 Oct): the card names the date used; a reading older than the last closed day is STALE: card.stale=true, kept out of SIG (readings, scores, POST NOW, captions), listed in SIGSTALE
       if(L.stale||gated){Object.assign(card,{stale:true,usedDate:new Date(L.D).toISOString().slice(0,10),wantDate:new Date(L.want).toISOString().slice(0,10),score:null,staleWhy:gated?`Stale: the OI series in derivs.json is past its freshness limit (${staleTxt(a+' oi')}). Not used in readings, scores, POST NOW or captions.`:`Stale: the newest OI value at a 00:00 UTC close is for the ${dU(L.D)} close (date used); the last closed day is ${dU(L.want)}. Not used in readings, scores, POST NOW or captions.`});
