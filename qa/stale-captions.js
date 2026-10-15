@@ -19,7 +19,8 @@ function aged(ms){const f=align(JSON.parse(JSON.stringify(BASE))),now=Date.now()
 function align(f){for(const a of Object.values(f.assets||{})){const L=a.latest||{},end=L.oi_t||lastT(L);if(!end)continue;for(const k of ['oi_hourly','basis_hourly']){if(a[k]&&lastT(a[k]))shift(a[k],Math.floor(end/36e5)*36e5-lastT(a[k]))}}return f}
 // oiOld: hourly OI ends ms ago while latest.oi_t stays fresh -> no 00:00 UTC point for the last closed day -> oicap stale.
 function oiOld(f,ms){const now=Date.now();for(const a of Object.values(f.assets||{}))if(a.oi_hourly)shift(a.oi_hourly,now-ms-lastT(a.oi_hourly));return f}
-function fundAge(f,age){const now=Date.now();for(const a of Object.values(f.assets)){if(a.funding)shift(a.funding,now-age-lastT(a.funding));if(a.latest?.funding_t)a.latest.funding_t=now-age}return f}
+// 15 Oct one-entry rule: latest = the last SETTLED print (same time and rate), age measured on that print
+function fundAge(f,age){const now=Date.now();for(const a of Object.values(f.assets)){const P=a.funding?.points;if(P?.length){shift(a.funding,now-age-P.at(-1)[0]);a.latest={...(a.latest||{}),funding_t:P.at(-1)[0],funding:P.at(-1)[1]}}}return f}
 const FUND=[/funding[^|\n]{0,40}(neutral|positive|negative|elevated|flat)/i,/neutral band/i,/funding[^|\n]{0,25}[-+]?\d+\.\d+ ?%/i];
 const OI=[/\bopen interest[^|\n]{0,30}[-+]?\d/i,/\bOI [-+−]?\d+(\.\d+)?%/];
 const hits=(rows,res)=>{const o=[];for(const [w,t] of rows)for(const re of res){const m=t.match(re);if(m)o.push(w+': "'+m[0]+'"')}return [...new Set(o)]};

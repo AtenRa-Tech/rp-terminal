@@ -73,8 +73,9 @@
   ["\\bconfirmed\\b", "i", null]
  ],
  "sell_off_noun": {
-  "note": "Narrow exception (supervisor ruling 7 Oct 23:52 IST): 'sell-off'/'selloff' is allowed ONLY as a noun naming a market move ('bond sell-off', 'a sell-off', 'the sell-off') or inside a quoted headline with its source. 'sell', 'sell now', 'time to sell', 'selling opportunity', 'Sell off your alts', 'Sell-off incoming, sell now' and every buy call stay banned. Matched phrases are removed before the rule1 check; nothing else is exempted.",
+  "note": "Narrow exception (supervisor ruling 7 Oct 23:52 IST): 'sell-off'/'selloff' is allowed ONLY as a noun naming a market move ('bond sell-off', 'a sell-off', 'the sell-off') or inside a quoted headline with its source. 'sell', 'sell now', 'time to sell', 'selling opportunity', 'Sell off your alts', 'Sell-off incoming, sell now' and every buy call stay banned. Matched phrases are removed before the rule1 check; nothing else is exempted. 15 Oct (P2): the quoted-headline form now also needs its timestamp (same rule as quoted_headline).",
   "noun": ["\\b(?:a|an|the|this|that|its|their|bond|bonds|equity|equities|stock|stocks|market|crypto|tech|treasury|treasuries|global|broad|broader|sharp|recent|latest|overnight|weekend|risk-asset|dollar|yen)\\s+sell-?offs?\\b(?!\\s+(?:your|now|it|them|everything)\\b)", "i"],
-  "headline": ["\"[^\"]{8,}\"\\s*\\((?:[A-Z][\\w.&' -]{1,40})\\)", ""]
- }
+  "headline": ["[\"“][^\"“”\\n]{8,240}[\"”]\\s*\\((?:[A-Z][\\w.&' -]{1,40}),\\s*(?:\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(?::\\d\\d)?Z|\\d{1,2} [A-Z][a-z]{2} \\d{4},? \\d\\d:\\d\\d UTC)\\)", ""]
+ },
+ "quoted_headline": {"note": "P2 (15 Oct): ONLY an exact outlet headline inside quotation marks, credited to its source AND timestamp, e.g. \"Tron Inc. files $200M ATM share offering to sell TRX\" (CoinDesk, 15 Oct 2026 14:05 UTC), is skipped by the banned-word lint. Everything outside the quotes (our own wording) is linted in full; a quote without source+timestamp is linted in full; regional rule always applies.", "re": ["[\"“][^\"“”\\n]{8,240}[\"”]\\s*\\((?:[A-Z][\\w.&' -]{1,40}),\\s*(?:\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d(?::\\d\\d)?Z|\\d{1,2} [A-Z][a-z]{2} \\d{4},? \\d\\d:\\d\\d UTC)\\)", "g"]}
 }

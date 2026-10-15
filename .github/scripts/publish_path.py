@@ -13,6 +13,9 @@ def select(changed):
     if other: return "full", "non-derivs files changed: " + ", ".join(other[:8]) + (" …" if len(other) > 8 else "")
     kind = "market/macro" if set(ch) & MARKET_FILES else "derivs-only"
     return "fast", f"{kind} change: " + ", ".join(sorted(ch))
+def code_changed(changed):
+    """True when anything outside data/ differs: the handover to "CI and deploy" must then run the full node suites (data_redeploy=false)."""
+    return any(f and not f.startswith("data/") for f in changed)
 def market_changed(changed):
     return bool(set(f for f in changed if f) & MARKET_FILES)
 def pick_good(lines):
@@ -31,4 +34,4 @@ if __name__ == "__main__":
     except Exception as e: changed = ["<diff failed: %s>" % e]
     path, why = select(changed)
     print(f"publish path: {path.upper()} ({why}); last good deploy {good[:7]}, head {head[:7]}")
-    if os.environ.get("GITHUB_OUTPUT"): open(os.environ["GITHUB_OUTPUT"], "a").write(f"path={path}\nmarket={'true' if market_changed(changed) else 'false'}\n")
+    if os.environ.get("GITHUB_OUTPUT"): open(os.environ["GITHUB_OUTPUT"], "a").write(f"path={path}\nmarket={'true' if market_changed(changed) else 'false'}\ncode={'true' if code_changed(changed) else 'false'}\n")

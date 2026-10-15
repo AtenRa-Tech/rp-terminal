@@ -27,7 +27,7 @@ const r=await pg.evaluate(async()=>{const o={},DAYm=864e5,day0=Math.floor(Date.n
 
  // #15 insight Data: line, Market-state Derivatives line, insight-fact captions
  const keepDV=DV,keepI=D.ins.bitcoin||null,keepB=btcFund;
- const old={f:1e-4,oi:1e9,src:'Binance',at:Date.now()-45*60000},fresh={f:1e-4,oi:1e9,src:'Binance',at:Date.now()};
+ const old={f:1e-4,ft:Math.floor(Date.now()/288e5)*288e5,oi:1e9,src:'Binance',at:Date.now()-45*60000},fresh={f:1e-4,ft:Math.floor(Date.now()/288e5)*288e5,oi:1e9,src:'Binance',at:Date.now()};
  // force the live-fallback path (no derivs.json funding)
  DV={...DV,assets:{...DV.assets,BTC:{...DV.assets.BTC,latest:{...(DV.assets.BTC?.latest||{}),funding:null,funding_t:null},funding:null}}};
  // (a) insight Data: line + (c) insight pts (the funding fact caption)

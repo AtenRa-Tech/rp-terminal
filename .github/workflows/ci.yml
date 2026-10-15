@@ -11,6 +11,9 @@ on:
     paths-ignore: ['data/**']
   pull_request:
     branches: [main]
+  # merge queue (15 Oct ruling): only the test job runs on merge_group; deploy/smoke/live-lag/rollback skip it
+  merge_group:
+    types: [checks_requested]
   # Not workflow_run: GitHub creates no workflow_run event when "Refresh data" was itself started by GITHUB_TOKEN (the smoke fallback below),
   # so those data commits were never deployed. data.yml dispatches this workflow after every successful data push instead (workflow_dispatch
   # from GITHUB_TOKEN is allowed), whoever started the data run (schedule, person, or this workflow).
@@ -25,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  group: ci-${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && github.ref || 'main' }}
   cancel-in-progress: false
 
 env:
@@ -86,6 +89,10 @@ jobs:
         run: node qa/live-price-score.js http://localhost:8765/index.html
       - name: Stale alarm / live data age per feed limit (blocking) - stale fails, fresh passes
         run: python3 tests/tdata_age.py
+      - name: Pages deploys share ONE group (blocking) - static check over every deploying workflow
+        run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpages.py
+      - name: Three deploys at once (blocking) - live ends on newest tested code + newest data; untested code never ships via a data publish
+        run: python3 tests/tpages_sim.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
         run: python3 tests/tclosed_hours.py
       - name: Fixture consistency (blocking) - no derivs fixture has a latest timestamp newer than its own series beyond the metric limit
@@ -108,8 +115,12 @@ jobs:
         run: bash .github/scripts/gate-summary.sh "${{ inputs.data_redeploy && 'Data redeploy test' || 'Test' }}"
 
   deploy:
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     needs: test
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -120,12 +131,17 @@ jobs:
       url: ${{ steps.dep.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build site folder (app only, no tests)
-        run: mkdir _site && cp -r index.html sw.js manifest.webmanifest icons data _site/ && cp README.md _site/ 2>/dev/null || true
-      - name: Newest derivs from main HEAD at deploy time; refuse to publish if older than live
+        with:
+          fetch-depth: 0
+      # P1 (15 Oct): every deploy = code from a TESTED commit + newest data/ on main (.github/scripts/snapshot.sh). This run's own commit passed
+      # `test` above; a data-only redeploy (suites skipped) ships the code of refs/tags/pages-tested (last commit green on test AND live smoke), never main HEAD's code.
+      - name: Snapshot (tested code + newest data/ from main); refuse if code or data older than live
+        env:
+          DATA_REDEPLOY: ${{ inputs.data_redeploy }}
         run: |
           python3 .github/scripts/no_regress.py snapshot live-before.json
-          bash .github/scripts/newest_data.sh _site
+          if [ "$DATA_REDEPLOY" = true ]; then code=$(bash .github/scripts/tested_sha.sh); else code="$GITHUB_SHA"; fi
+          bash .github/scripts/snapshot.sh _site "$code"
       - uses: actions/upload-artifact@v4
         with:
           name: live-before
@@ -141,7 +157,7 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # only to move refs/tags/pages-tested after a green live smoke
       actions: write
     steps:
       - uses: actions/checkout@v4
@@ -194,6 +210,14 @@ jobs:
           echo "last derivatives run ${last}h ago; feeds past their limit in that run: ${bad}"
           if [ "$last" -ge 1 ] || [ "$bad" -gt 0 ]; then gh workflow run derivs.yml --repo "$GITHUB_REPOSITORY" && echo "dispatched Refresh derivatives"; fi
           if [ "$last" -ge 7 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
+      - name: Promote tested code (refs/tags/pages-tested) - live serves this commit's code and every smoke gate passed
+        if: success() && inputs.data_redeploy != true
+        run: |
+          lc=$(curl -sf "${SITE_URL}build.json?v=$(date +%s)" | python3 -c "import json,sys;print(json.load(sys.stdin)['code_sha'])" || true)
+          [ "$lc" = "$GITHUB_SHA" ] || { echo "live code is ${lc:-unknown}, not $GITHUB_SHA: tag not moved"; exit 0; }
+          git fetch -q origin main --tags || true; cur=$(git rev-parse -q --verify refs/tags/pages-tested || true)
+          if [ -n "$cur" ] && ! git merge-base --is-ancestor "$cur" "$GITHUB_SHA"; then echo "pages-tested $cur is not an ancestor of $GITHUB_SHA: not moved"; exit 0; fi
+          git push -f origin "$GITHUB_SHA:refs/tags/pages-tested" && echo "pages-tested -> $GITHUB_SHA"
       - name: Watchdog - failing smoke lines to the job summary as ::error
         if: failure()
         env:
@@ -203,7 +227,7 @@ jobs:
   live-lag:
     # Watchdog item 3: runs after every main CI run, green or not; red with ::error when the live derivs.json is 6h+ behind main
     needs: [test, smoke]
-    if: always() && github.event_name != 'pull_request'
+    if: always() && github.event_name != 'pull_request' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -217,8 +241,12 @@ jobs:
           python3 scripts/runs_log.py --check 95 /tmp/runs-live.json
 
   rollback:
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     needs: smoke
-    if: failure() && needs.smoke.result == 'failure'
+    if: failure() && needs.smoke.result == 'failure' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -228,24 +256,16 @@ jobs:
     environment:
       name: github-pages
     steps:
-      - name: Find the last commit whose CI run succeeded
-        id: good
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # rollback restores CODE only, to refs/tags/pages-tested (last commit green on test AND live smoke); data/ = newest of main HEAD and live
+      - name: Snapshot of the last tested code + newest data (never backwards)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json headSha -q '.[0].headSha')
-          [ -n "$sha" ] || { echo "::error::no previous good commit"; exit 1; }
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "rolling back to $sha"
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.good.outputs.sha }}
-      # rollback restores CODE only: data/ = newest of main HEAD and live (never backwards), checked before deploy
-      - run: mkdir _site && cp -r index.html manifest.webmanifest icons data _site/ && (cp sw.js _site/ 2>/dev/null || true)
-      - name: Newest data (main HEAD or live, whichever is newer) + never-backwards check
-        # scripts come from main HEAD: the last good commit may predate them
-        run: |
-          git fetch -q origin main && mkdir -p "$RUNNER_TEMP/rb" && for f in rollback_data.sh no_regress.py publish_guard.py; do git show "FETCH_HEAD:.github/scripts/$f" > "$RUNNER_TEMP/rb/$f"; done
-          bash "$RUNNER_TEMP/rb/rollback_data.sh" _site
+          sha=$(bash .github/scripts/tested_sha.sh); [ -n "$sha" ] || { echo "::error::no tested commit"; exit 1; }
+          echo "rolling back code to $sha"; bash .github/scripts/snapshot.sh _site "$sha" --rollback
       - uses: actions/configure-pages@v5
       # own artifact name: the deploy job of this same run already uploaded "github-pages", and deploy-pages refuses when two share a name
       - uses: actions/upload-pages-artifact@v3

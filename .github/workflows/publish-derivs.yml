@@ -55,7 +55,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         # 15 Oct: never succeed silently. This run publishes NOTHING itself; say so as an annotation + job summary, and fail if the handover fails.
         run: |
-          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=true || { echo "::error title=Fast publish published nothing::handover to CI and deploy FAILED"; exit 1; }
+          # code changed since the last good deploy: the full node suites must run (data_redeploy=false), never the data-only redeploy
+          dr=true; [ "${{ steps.path.outputs.code }}" = true ] && dr=false
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f data_redeploy=$dr || { echo "::error title=Fast publish published nothing::handover to CI and deploy FAILED"; exit 1; }
           sleep 5; run=$(gh run list --repo "$GITHUB_REPOSITORY" -w ci.yml -e workflow_dispatch -L 1 --json url -q '.[0].url')
           msg="Nothing published by this run: non-derivs files differ from the last good deploy, so the FULL CI and deploy publishes it ($run). A newer queued CI run may supersede it."
           echo "::warning title=Fast publish handed over (nothing published here)::$msg"
@@ -97,6 +99,10 @@ jobs:
           [ $fail = 0 ] || { grep -h "^FAIL\|::error" g/*.log | head -20; echo "::error title=Fast publish blocked::a data gate failed; nothing published, live keeps the last good files"; exit 1; }
 
   deploy:
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     needs: gates
     if: needs.gates.outputs.path == 'fast'
     runs-on: ubuntu-latest
@@ -112,12 +118,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.gates.outputs.sha }}
-      - name: Build site folder from the gated commit
-        run: mkdir _site && cp -r index.html sw.js manifest.webmanifest icons data _site/ && cp README.md _site/ 2>/dev/null || true
-      - name: Newest derivs from main HEAD at deploy time; refuse if older than live
+          fetch-depth: 0
+      # P1 (15 Oct): code from refs/tags/pages-tested (last commit green on test AND live smoke), never the gated/main commit's code; data/ = newest on main
+      - name: Snapshot (tested code + newest data/ from main); refuse if code or data older than live
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 .github/scripts/no_regress.py snapshot live-before.json
-          bash .github/scripts/newest_data.sh _site
+          code=$(bash .github/scripts/tested_sha.sh); [ -n "$code" ] || { echo "::error::no tested code commit"; exit 1; }
+          bash .github/scripts/snapshot.sh _site "$code"
           # data that arrived after the gates ran gets the two data-only gates again
           cp _site/data/derivs.json data/derivs.json && python3 tests/tclosed_hours.py > closed.log || { cat closed.log; exit 1; }; echo "closed hours OK on deploy-time data"
           # market/macro taken from main HEAD after the gates ran: only publish them if they are the gated files (else keep the gated copy)
@@ -183,6 +192,10 @@ jobs:
         run: curl -s "${SITE_URL}data/_runs.json?v=$(date +%s)" | python3 -c "import json,sys,datetime as d;R=json.load(sys.stdin);p=R.get('publish') or {};s=p.get('derivs_run_at');n=d.datetime.now(d.timezone.utc);print('derivs run',s,'| live verified',n.strftime('%FT%TZ'),'| end-to-end',round((n-d.datetime.fromisoformat(s.replace('Z','+00:00'))).total_seconds()/60,1) if s else '—','min')" | tee -a "$GITHUB_STEP_SUMMARY"
 
   rollback:
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     needs: smoke
     if: failure() && needs.smoke.result == 'failure'
     runs-on: ubuntu-latest
@@ -206,7 +219,12 @@ jobs:
         with:
           ref: ${{ steps.good.outputs.sha }}
       # rollback is the one deploy allowed to put older data back: the newer data just failed live smoke
-      - run: mkdir _site && cp -r index.html manifest.webmanifest icons data _site/ && (cp sw.js _site/ 2>/dev/null || true)
+      # code from refs/tags/pages-tested (fetched from main's scripts); data/ from the last good deploy commit
+      - run: |
+          git fetch -q origin main && git show FETCH_HEAD:.github/scripts/tested_sha.sh > "$RUNNER_TEMP/tested_sha.sh"; git fetch -q origin refs/tags/pages-tested:refs/tags/pages-tested || true
+          code=$(GITHUB_REPOSITORY= bash "$RUNNER_TEMP/tested_sha.sh"); code=${code:-${{ steps.good.outputs.sha }}}; git fetch -q origin "$code" || true
+          mkdir _site && git archive "$code" -- index.html manifest.webmanifest icons $(git cat-file -e "$code:sw.js" 2>/dev/null && echo sw.js) | tar -x -C _site && cp -r data _site/
+          python3 -c "import json,sys;json.dump({'code_sha':sys.argv[1],'data_sha':sys.argv[2]},open('_site/build.json','w'))" "$code" "${{ steps.good.outputs.sha }}"
       - name: Publish guard on the exact derivs.json (no test marks, closed hours only, overlapping hours = main)
         run: |
           git fetch -q origin main && git show FETCH_HEAD:.github/scripts/publish_guard.py > "$RUNNER_TEMP/publish_guard.py" && git show FETCH_HEAD:data/derivs.json > "$RUNNER_TEMP/main-derivs.json"

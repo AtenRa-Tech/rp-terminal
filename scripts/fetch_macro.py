@@ -182,6 +182,18 @@ def monthly_avg(daily):
     return [[k + "-01", round(sum(v) / len(v), 6)] for k, v in sorted(acc.items())]
 
 
+def finalize(prev, out):
+    """15 Oct (#27): 'checked_at' = time of this successful fetch, written EVERY run, so the alarm can tell 'fetch ran' from 'fetch stopped'.
+    'updated' = time the content last changed (kept from prev when nothing changed). Neither is data time: each series keeps its own
+    last_date, and freshness / stale labels use last_date only. Returns (out, content_changed)."""
+    if prev:
+        a = dict(prev); b = dict(out)
+        for k in ("updated", "checked_at"): a.pop(k, None); b.pop(k, None)
+        if json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True):
+            return dict(out, updated=prev.get("updated") or out["updated"]), False
+    return out, True
+
+
 def main():
     prev = {}
     if os.path.exists(OUT):
@@ -375,18 +387,16 @@ def main():
         failed.append({"id": "net_liquidity", "error": "inputs missing; previous copy kept"})
 
     out = {"updated": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "checked_at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
            "stale_threshold_days": STALE_DAYS,
            "failed": failed,
            "series": series,
            "global_m2": global_m2,
            "net_liquidity": net_liq}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    # Only rewrite when content (ignoring 'updated') changed
-    if prev:
-        a = dict(prev); b = dict(out); a.pop("updated", None); b.pop("updated", None)
-        if json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True):
-            print("macro.json: no data change")
-            return
+    out, changed = finalize(prev, out)
+    if not changed:
+        print(f"macro.json: no data change; checked_at={out['checked_at']} (updated stays {out['updated']})")
     write_json(OUT, out)
     print(f"macro.json written: {len(series)} series, failed={[x['id'] for x in failed]}")
     for sid, s in series.items():

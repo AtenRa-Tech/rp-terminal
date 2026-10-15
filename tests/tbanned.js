@@ -34,5 +34,12 @@ ok(r.same===BW.rule1.map(x=>new RegExp(x[0],x[1])).map(x=>x.source+'/'+x.flags).
 ok(r.india.every(Boolean),'app lintBanned: India/INR terms flagged as regional content',r.india);
 ok(r.pass.every(x=>!x[1].length),'app lintBanned: sell-off noun / quoted headline passes',r.pass.filter(x=>x[1].length));
 ok(r.must.every(x=>x[1].length),'app lintBanned: every sell call and buy call flagged',r.must.filter(x=>!x[1].length).map(x=>x[0]));
+const QH=await pg.evaluate(()=>{const ban=t=>lintBanned(t,'',false).filter(x=>/^Banned phrase|^Regional/.test(x));const Q='"Tron Inc. files $200M ATM share offering to sell TRX shares"';
+ return{hl:ban(Q+' (CoinDesk, 15 Oct 2026 14:05 UTC)'),hlIso:ban('$TRX: '+Q+' (CoinDesk, 2026-10-15T14:05Z)'),own:ban('Tron plans to sell $200M of shares.'),ownNext:ban(Q+' (CoinDesk, 15 Oct 2026 14:05 UTC). Time to sell $TRX.'),noTs:ban(Q+' (CoinDesk)'),noSrc:ban(Q),reg:lintBanned(Q.replace('TRX','INR')+' (CoinDesk, 15 Oct 2026 14:05 UTC)','',false).some(x=>/^Regional/.test(x))}});
+ok(!QH.hl.length&&!QH.hlIso.length,'P2 quoted headline credited to source + UTC timestamp (Tron $200M ATM share offering) passes',QH);
+ok(QH.own.length>0,'P2 same word ("sell") in our own wording fails',QH.own);
+ok(QH.ownNext.length>0,'P2 our wording next to a valid quoted headline is still linted in full',QH.ownNext);
+ok(QH.noTs.length>0&&QH.noSrc.length>0,'P2 quote without source AND timestamp is linted in full',QH);
+ok(QH.reg,'P2 regional rule still applies inside a quoted headline',QH);
 ok(!errs.length,'no page errors',errs.slice(0,5));
 await b.close();console.log('\nFAILS:',F.length,JSON.stringify(F));process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});

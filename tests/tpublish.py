@@ -43,9 +43,9 @@ ok(all(n in gate for n in need), "fast gates include all 7 required checks", [n 
 ok("tests/run-all.sh" not in gate, "fast gates do not run the full node suite")
 ok(pub["jobs"]["deploy"]["needs"] == "gates" and pub["jobs"]["smoke"]["needs"] == "deploy" and pub["jobs"]["rollback"]["needs"] == "smoke", "gates -> deploy -> smoke -> rollback")
 dep = "\n".join(st.get("run", "") for st in pub["jobs"]["deploy"]["steps"]); cid = "\n".join(st.get("run", "") for st in ci["jobs"]["deploy"]["steps"])
-ok("newest_data.sh" in dep and "newest_data.sh" in cid, "both deploy paths take newest derivs from main HEAD and run the no-regress check")
-ds = pub["jobs"]["deploy"]["steps"]; iN = [i for i, st in enumerate(ds) if "newest_data.sh" in st.get("run", "")]; iD = [i for i, st in enumerate(ds) if "deploy-pages" in str(st.get("uses", ""))]
-cs_ = ci["jobs"]["deploy"]["steps"]; jN = [i for i, st in enumerate(cs_) if "newest_data.sh" in st.get("run", "")]; jD = [i for i, st in enumerate(cs_) if "deploy-pages" in str(st.get("uses", ""))]
+ok("snapshot.sh" in dep and "snapshot.sh" in cid, "both deploy paths build via snapshot.sh (tested code + newest data/, no-regress + guard)")
+ds = pub["jobs"]["deploy"]["steps"]; iN = [i for i, st in enumerate(ds) if "snapshot.sh" in st.get("run", "")]; iD = [i for i, st in enumerate(ds) if "deploy-pages" in str(st.get("uses", ""))]
+cs_ = ci["jobs"]["deploy"]["steps"]; jN = [i for i, st in enumerate(cs_) if "snapshot.sh" in st.get("run", "")]; jD = [i for i, st in enumerate(cs_) if "deploy-pages" in str(st.get("uses", ""))]
 ok(iN and iD and iN[0] < iD[0] and jN and jD and jN[0] < jD[0], "no-regress runs before deploy-pages in both paths", (iN, iD, jN, jD))
 ok("_runs.json" in dep and "minutes_to_deploy" in dep, "publish timing logged into _runs.json")
 sm = "\n".join(st.get("run", "") for st in pub["jobs"]["smoke"]["steps"]); cs = "\n".join(st.get("run", "") for st in ci["jobs"]["smoke"]["steps"])
@@ -94,8 +94,8 @@ for lab, site_t, live_t in (("live newer than main HEAD", C, Dn), ("main HEAD ne
     rc3, o3 = nr("after", snap)
     ok(rc1 == 0 and rc2 == 0 and rc3 == 0 and all(v == newest for v in vals), f"rollback ({lab}): data = newest of main HEAD and live; live updated/last_run never go backwards", (o1, o2, o3, vals))
 rj = ci["jobs"]["rollback"]; rs = "\n".join(st.get("run", "") for st in rj["steps"])
-ok("rollback_data.sh" in rs and "FETCH_HEAD:.github/scripts" in rs, "ci.yml rollback restores code only and runs rollback_data.sh (scripts from main HEAD)", rs[-400:])
-ix = [i for i, st in enumerate(rj["steps"]) if "rollback_data.sh" in st.get("run", "")]; iy = [i for i, st in enumerate(rj["steps"]) if "deploy-pages" in str(st.get("uses", ""))]
+ok("snapshot.sh" in rs and "--rollback" in rs and "tested_sha.sh" in rs, "ci.yml rollback restores tested code only (pages-tested) via snapshot.sh --rollback", rs[-400:])
+ix = [i for i, st in enumerate(rj["steps"]) if "snapshot.sh" in st.get("run", "")]; iy = [i for i, st in enumerate(rj["steps"]) if "deploy-pages" in str(st.get("uses", ""))]
 ok(ix and iy and ix[0] < iy[0], "rollback data step runs before deploy-pages", (ix, iy))
 rbs = open(os.path.join(ROOT, ".github/scripts/rollback_data.sh")).read()
 ok("FETCH_HEAD" in rbs and "no_regress.py\" newest" in rbs.replace('"$(dirname "$0")/no_regress.py" newest', 'no_regress.py" newest') and "check" in rbs, "rollback_data.sh: main HEAD data, then newest-from-live, then never-backwards check")
@@ -117,6 +117,10 @@ rc, o = guard(cf_, now); ok(rc == 1 and "not yet closed" in o, "guard refuses an
 c = json.loads(json.dumps(mj)); p0 = c["assets"]["ETH"]["basis_hourly"]["points"][-3]; p0[-1] = p0[-1] + 0.001; json.dump(c, open(cf_, "w"))
 rc, o = guard(cf_, now); ok(rc == 1 and "differ from main" in o, "guard refuses a published hour that differs from main (e.g. a newer live copy that rewrote history)", o)
 for wf, job in (("ci.yml", "rollback"), ("publish-derivs.yml", "rollback")):
-    rs = "\n".join(st.get("run", "") for st in W(wf)["jobs"][job]["steps"]); ok("publish_guard" in rs or "rollback_data.sh" in rs, f"{wf} {job} runs the publish guard", rs[-300:])
-ok("publish_guard.py" in open(os.path.join(ROOT, ".github/scripts/newest_data.sh")).read() and "publish_guard.py" in open(os.path.join(ROOT, ".github/scripts/rollback_data.sh")).read(), "full deploy, fast publish (newest_data.sh) and ci rollback (rollback_data.sh) run the publish guard")
+    rs = "\n".join(st.get("run", "") for st in W(wf)["jobs"][job]["steps"]); ok("publish_guard" in rs or "snapshot.sh" in rs, f"{wf} {job} runs the publish guard", rs[-300:])
+ok("publish_guard.py" in open(os.path.join(ROOT, ".github/scripts/snapshot.sh")).read() and "publish_guard.py" in open(os.path.join(ROOT, ".github/scripts/rollback_data.sh")).read(), "every deploy (snapshot.sh) and rollback_data.sh run the publish guard")
+# 8) handover after a code change runs the full suites
+ok(pp.code_changed(["index.html", "data/market.json"]) and not pp.code_changed(["data/etf.json", "data/market.json"]), "code flag: any non-data file")
+hv = "\n".join(st.get("run", "") for st in pub["jobs"]["gates"]["steps"] if "ci.yml" in st.get("run", ""))
+ok("steps.path.outputs.code" in hv and "data_redeploy=$dr" in hv and "dr=false" in hv, "handover dispatches data_redeploy=false when code changed (node suites run)", hv)
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)

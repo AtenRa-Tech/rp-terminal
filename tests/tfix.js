@@ -53,7 +53,7 @@ async function page(ctx,setup){const pg=await (ctx||b).newPage();await pg.setVie
  ok(/BTC history age \d/.test(r.fresh),"E2 'BTC history age' label",r.fresh);
  // C9 macro tiles "as of"
  const tiles=await pg.evaluate(async()=>{tab('macro');await new Promise(r=>setTimeout(r,2500));return[...document.querySelectorAll('#s-macro .stat, #s-macro .tile')].map(e=>e.innerText).filter(t=>t.trim())});
- ok(tiles.length>3&&tiles.filter(t=>/as of|week of/.test(t)).length>=tiles.length-1,'C9 "as of" on macro tiles',tiles.slice(0,6));
+ /* every tile states its observation date: 'as of', 'week of', 'complete month <Mon YYYY>' or 'through <D Mon YYYY>' (a tile with no reading, e.g. breakeven with mismatched dates, shows the dates it has) */ok(tiles.length>3&&tiles.every(t=>/as of|week of|complete month [A-Z][a-z]{2} \d{4}|through \d{1,2} [A-Z][a-z]{2} \d{4}/.test(t)),'C9 every macro tile states its observation date',tiles.filter(t=>!/as of|week of|complete month [A-Z][a-z]{2} \d{4}|through \d{1,2} [A-Z][a-z]{2} \d{4}/.test(t)));
  // scans: RULE1 phrases in DOM + captions
  const sc=await pg.evaluate(async()=>{const out=[];for(const t of ['today','signals','macro','markets','studio']){tab(t);await new Promise(r=>setTimeout(r,900));const tx=document.body.innerText;RULE1.forEach(w=>{if(new RegExp('\\b'+w+'\\b','i').test(tx.replace(/"[^"]*"/g,'')))out.push(t+':'+w)})}return out});
  ok(!sc.length,'no RULE1 phrase anywhere in rendered tabs',sc);

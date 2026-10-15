@@ -3,7 +3,8 @@
 Fails (exit 1, ::error) when live data is past its OWN limit, recomputed against now (not the age written at run time):
   - each derivatives feed in the newest runs[] entry: now - feeds[f].t > feeds[f].lim_h
   - market: now - market.updated > market.limit_h
-  - macro: any series with ok == false
+  - macro: any series with ok == false (judged by each series' last_date)
+  - macro fetch: now - macro_checked.checked_at > macro_checked.limit_h (fetch_macro.py stopped running)
   - last_run older than 90 min (the derivatives refresh itself stopped, e.g. workflows disabled)
 Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (dispatched by the Netlify stale alarm) and the live suite."""
 import json, sys, urllib.request
@@ -34,6 +35,12 @@ def check(d, now):
         if h > mk['limit_h']: bad.append(f'market: {h:.1f}h old > limit {mk["limit_h"]}h')
     for s, v in (d.get('macro') or {}).items():
         if isinstance(v, dict) and v.get('ok') is False: bad.append(f'macro {s}: past its limit ({v.get("limit")})')
+    mc = d.get('macro_checked')
+    if mc is None: bad.append('macro_checked missing (macro fetch time unknown)')
+    elif not mc.get('checked_at') or mc.get('limit_h') is None: bad.append('macro fetch: no checked_at/limit_h')
+    else:
+        h = (now - P(mc['checked_at'])).total_seconds() / 3600
+        if h > mc['limit_h']: bad.append(f'macro fetch: last successful run {h:.1f}h ago > limit {mc["limit_h"]}h')
     return bad
 if __name__ == '__main__':
     a = sys.argv[1:]; now = datetime.now(timezone.utc)
