@@ -24,7 +24,7 @@ const has=(t,res)=>res.map(r=>STRIP(t).match(r)).filter(Boolean).map(m=>m[0]);
 // 15 Oct (supervisor): S1 deterministic - every case replays ONE recorded market fixture (qa/fixtures/market-replay.json.gz); no live network.
 // Re-record with: node qa/stale-derivs2.js URL --record   (only when the app starts fetching a new endpoint)
 const zlib=require('zlib'),REC=process.argv.includes('--record'),FX=path.join(__dirname,'fixtures/market-replay.json.gz');
-const FROZEN=new Map(),FKEY=u=>{try{const x=new (require('url').URL)(u);for(const q of ['x','v','t','_','ts','cb','nocache'])x.searchParams.delete(q);return x.toString()}catch(e){return u}};
+const FROZEN=new Map(),FKEY=u=>{try{const x=new (require('url').URL)(u);for(const q of ['x','v','t','_','ts','cb','nocache'])x.searchParams.delete(q);for(const q of ['endTime','end','to']){const v=+x.searchParams.get(q);if(v>1.7e9&&(v>1e12?v:v*1e3)>Date.now()-3*864e5)x.searchParams.set(q,'NOW')}/* 'now'-based paging (bnDaily endTime=Date.now()) must replay across loads/days */return x.toString()}catch(e){return u}};
 if(!REC)for(const [k,v] of Object.entries(JSON.parse(zlib.gunzipSync(fs.readFileSync(FX)))))FROZEN.set(k,{status:v.s,headers:{'content-type':v.c,'access-control-allow-origin':'*'},body:Buffer.from(v.b,'base64')});
 const ORIGIN=new (require('url').URL)(URL).origin;
 async function run(b,body){const pg=await b.newPage();await pg.setBypassServiceWorker(true);await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);

@@ -6,19 +6,24 @@
 const p=require('puppeteer-core'),U=require('url');
 const URL=process.argv[2]||'http://localhost:8765/index.html';
 const LIVE=/api\.coinbase\.com\/v2\/prices|api\.kraken\.com\/0\/public\/Ticker|ticker\/price\?symbol=BTCUSDT|\/simple\/price\?ids=bitcoin/;
+const AUD=/coinbase\.com\/.*candles|api\.coinbase\.com|kraken\.com/; // audit-only cross-check sources
 const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i;
-const FKEY=u=>{try{const x=new U.URL(u);for(const q of ['x','v','t','_','ts','cb','nocache'])x.searchParams.delete(q);return x.toString()}catch(e){return u}};
+const FKEY=u=>{try{const x=new U.URL(u);for(const q of ['x','v','t','_','ts','cb','nocache'])x.searchParams.delete(q);for(const q of ['endTime','end','to']){const v=+x.searchParams.get(q);if(v>1.7e9&&(v>1e12?v:v*1e3)>Date.now()-3*864e5)x.searchParams.set(q,'NOW')}/* 'now'-based paging (bnDaily endTime=Date.now()) must replay across loads/days */return x.toString()}catch(e){return u}};
 const FROZEN=new Map();
 function livePrice(u,mode){const base=67000,k={coinbase:1,kraken:1.0003,binance:.9998,simple:1.0001};const n=Object.keys(k).find(x=>u.includes(x==='simple'?'simple/price':x));let v=base*k[n];if(mode==='split'&&n==='kraken')v=base*1.03;
  return n==='coinbase'?{data:{amount:String(v)}}:n==='kraken'?{result:{XXBTZUSD:{c:[String(v)]}}}:n==='binance'?{price:String(v)}:{bitcoin:{usd:v}}}
-async function run(b,mode,record){const pg=await b.newPage();await pg.setBypassServiceWorker(true);await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
+async function run(b,mode,record){const pg=await b.newPage();
+ // pre: audit cross-check fetches never settle (not even on the app's 12 s abort), so every score is read before any audit finishes
+ if(mode==='pre')await pg.evaluateOnNewDocument((src,src2)=>{const re=new RegExp(src),re2=new RegExp(src2),f=window.fetch;window.fetch=function(u,o){const s=String(u&&u.url||u);if(re.test(s)||re2.test(s))return new Promise(()=>{});return f.apply(this,arguments)}},LIVE.source,AUD.source);await pg.setBypassServiceWorker(true);await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
  pg.on('request',r=>{const u=r.url();if(BLOCK.test(u))return r.abort();
+  if(mode==='pre'&&(LIVE.test(u)||AUD.test(u)))return; // pre: audit responses held forever -> page is scored before any audit finishes
   if(LIVE.test(u)){if(mode==='down')return r.abort();return r.respond({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(livePrice(u,mode))})}
   const k=FKEY(u);if(FROZEN.has(k)){const f=FROZEN.get(k);return r.respond(f).catch(()=>{})}
   if(!record&&r.method()==='GET'&&!u.startsWith(new U.URL(URL).origin))return r.abort(); r.continue()});
  if(record)pg.on('response',async res=>{try{const u=res.url(),q=res.request();if(q.method()!=='GET'||LIVE.test(u)||res.status()>=300&&res.status()<400)return;const body=await res.buffer();FROZEN.set(FKEY(u),{status:res.status(),headers:{'content-type':res.headers()['content-type']||'application/octet-stream','access-control-allow-origin':'*'},body})}catch(e){}});
  await pg.goto(URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{waitUntil:'networkidle2',timeout:120000});
  await pg.click('nav button[data-t="signals"]');
+ if(mode==='pre'){await pg.waitForFunction(()=>typeof SIG!=='undefined'&&SIG&&SIG.filter(s=>s.score!=null).length>=13,{timeout:90000,polling:200}).catch(()=>{})}else
  // wait until the auto audits of the top 5 have finished (status line no longer says "(running)")
  await pg.waitForFunction(()=>{const e=document.getElementById('audSt');return e&&!/running/.test(e.textContent)&&/of top/.test(e.textContent)},{timeout:120000}).catch(()=>{});
  await new Promise(r=>setTimeout(r,2000));
@@ -27,10 +32,12 @@ async function run(b,mode,record){const pg=await b.newPage();await pg.setBypassS
   const t=document.body.innerText;return{sc,cf,post:(t.match(/(\d+) of (\d+) charts are POST NOW/)||[]).slice(1).join('/'),aud:document.getElementById('audSt')?.textContent||'',audited:EARLY?0:S.filter(s=>s.audit).length}});
  await pg.close();return out}
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
- await run(b,'agree',true);const R={};for(const m of ['agree','split','down','early'])R[m]=await run(b,m,false);await b.close();
+ await run(b,'agree',true);const R={};for(const m of ['agree','split','down','early','pre'])R[m]=await run(b,m,false);await b.close();
  const F=[];const n=Object.keys(R.agree.sc).length;if(n<3)F.push(`only ${n} scores read`);
+ for(const m of Object.keys(R))for(const k of ['ethbtc','rainbow','hash','fundBTC'])if(R[m].sc[k]==null)F.push(`${m}: required card ${k} not scored`);
  if(R.early.audited)F.push(`early: ${R.early.audited} signals were already audited when scored`);console.log('early case scored with',R.early.audited,'audited;',Object.keys(R.early.sc).length,'scores');
- for(const m of ['split','down','early']){for(const k of new Set([...Object.keys(R.agree.sc),...Object.keys(R[m].sc)])){if(R.agree.sc[k]!==R[m].sc[k])F.push(`${m}: score ${k} ${R.agree.sc[k]} vs ${R[m].sc[k]}`);if(R.agree.cf[k]!==R[m].cf[k])F.push(`${m}: confidence ${k} ${R.agree.cf[k]} vs ${R[m].cf[k]}`)}
+ if(R.pre.audited)F.push(`pre: ${R.pre.audited} signals audited although audit responses were held`);console.log('pre case scored with',R.pre.audited,'audited');
+ for(const m of ['split','down','early','pre']){for(const k of new Set([...Object.keys(R.agree.sc),...Object.keys(R[m].sc)])){if(R.agree.sc[k]!==R[m].sc[k])F.push(`${m}: score ${k} ${R.agree.sc[k]} vs ${R[m].sc[k]}`);if(R.agree.cf[k]!==R[m].cf[k])F.push(`${m}: confidence ${k} ${R.agree.cf[k]} vs ${R[m].cf[k]}`)}
   if(R.agree.post!==R[m].post)F.push(`${m}: POST NOW ${R.agree.post} vs ${R[m].post}`)}
  console.log('scores', JSON.stringify(R.agree.sc));console.log('audits agree|split|down:',R.agree.aud,'|',R.split.aud,'|',R.down.aud);
  console.log(F.length?'FAIL\n- '+F.join('\n- '):`PASS ${n} scores identical with agreeing, late (3% off) and missing live prices, and when scored before the audit finished`);process.exit(F.length?1:0)})();
