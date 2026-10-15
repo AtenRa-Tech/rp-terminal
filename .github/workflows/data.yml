@@ -52,7 +52,7 @@ jobs:
             FULL="${{ inputs.full }}"
           elif [ $((10#$H % 6)) -eq 0 ]; then
             FULL=true
-          elif [ "$(python3 -c "import json,datetime as d;u=min(json.load(open('data/'+f))['updated'] for f in ('market.json','macro.json','etf.json'));print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" 2>/dev/null || echo 99)" -ge 6 ]; then
+          elif [ "$(python3 -c "import json,datetime as d;u=min((lambda j:j.get('checked_at') or j['updated'])(json.load(open('data/'+f))) for f in ('market.json','macro.json','etf.json'));print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" 2>/dev/null || echo 99)" -ge 6 ]; then
             FULL=true   # a dropped 0/6/12/18 run must not leave macro/ETF/market a whole cycle behind
           elif [ "$DOW" = "4" ] && { [ "$H" = "21" ] || [ "$H" = "22" ]; }; then
             FULL=true

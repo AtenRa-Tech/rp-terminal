@@ -1,0 +1,24 @@
+name: Stale data alarm
+# Dispatched on main by the Netlify kick function whenever live data is >= 90 min old or unreadable (incl. during a merge-window pause).
+# FAILS (red, like live-lag) when live _runs.json shows any feed past its own limit, so the deploy-failure watch posts it to the room.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: why the alarm fired
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: stale-alarm
+  cancel-in-progress: false
+jobs:
+  alarm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Live data age per feed limit (fails when stale)
+        run: |
+          echo "alarm reason: ${{ inputs.reason }}"
+          python3 .github/scripts/data_age.py "https://atenra-tech.github.io/rp-terminal/data/_runs.json"

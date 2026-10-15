@@ -2,7 +2,7 @@ const p=require('puppeteer-core');const W=ms=>new Promise(r=>setTimeout(r,ms));
 const BAN=[/what are you buying/i,/what'?s your move/i,/everyone'?s watching/i,/are you ready/i,/don'?t miss/i,/\bLFG\b/i,/to the moon/i,/\bNFA\b[\s.!]*$/i,/undefined|NaN/];
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915,deviceScaleFactor:2,isMobile:true,hasTouch:true});
 const e=[];pg.on('pageerror',x=>e.push(x.message));const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);console.log((c?'PASS ':'FAIL ')+m)};
-await pg.goto('http://localhost:8765/index.html');
+await require('./hermetic').hermetic(pg);await pg.goto('http://localhost:8765/index.html');
 await pg.waitForFunction(()=>TAB==='today'&&SIG&&SIG.length&&MAC.items&&MAC.items.length&&NX.cal&&NX.etf,{timeout:90000});await W(6000);
 // wait for auto-audits of top 5 (up to 90s)
 await pg.waitForFunction(()=>typeof AUDDONE!=='undefined'&&AUDDONE,{timeout:120000}).catch(()=>console.log('audits not finished in time'));await W(1500);

@@ -86,6 +86,13 @@ def market_fresh(m, t):
     if not u: return {"ok": False, "why": "market.json missing or no 'updated'", "limit_h": MARKET_LIM_H}
     age = (t - _dt.datetime.fromisoformat(u.replace("Z", "+00:00")).timestamp() * 1000) / H
     return {"ok": age <= MARKET_LIM_H, "updated": u, "age_h": round(age, 2), "limit_h": MARKET_LIM_H}
+MACRO_CHECK_LIM_H = 7  # macro fetch runs every 6h (0/6/12/18 UTC + fallback); alarm when the last successful fetch is older
+def macro_checked(M, t):
+    """When fetch_macro.py last ran OK (checked_at). For the alarm only; never used as data time (series last_date is)."""
+    c = (M or {}).get("checked_at")
+    if not c: return {"ok": False, "why": "macro.json has no checked_at", "limit_h": MACRO_CHECK_LIM_H}
+    age = (t - _dt.datetime.fromisoformat(c.replace("Z", "+00:00")).timestamp() * 1000) / H
+    return {"ok": age <= MACRO_CHECK_LIM_H, "checked_at": c, "age_h": round(age, 2), "limit_h": MACRO_CHECK_LIM_H}
 def macro_fresh(M, t):
     out = {}
     for sid, s in ((M or {}).get("series") or {}).items():
@@ -118,7 +125,7 @@ def record():
     out = {"note": "Written by scripts/runs_log.py after each derivatives run. Freshness per feed from derivs.json latest.*_t (not 'updated'). "
                    "Limits: oi 3h, basis 3h, funding 12h. sla_24h counts a missing hour as not within.",
            "last_run": iso(t), "runs": runs, "hourly": hourly, "sla_24h": sla(hourly, t),
-           "market": mk, "macro": mc}
+           "market": mk, "macro": mc, "macro_checked": macro_checked(load(MACRO, {}), t)}
     tmp = RUNS + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"), allow_nan=False)

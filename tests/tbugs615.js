@@ -5,7 +5,7 @@ const p=require('puppeteer-core');const URL=process.env.URL||'http://localhost:8
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,700):''));if(!c)F.push(n)};
 (async()=>{const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:1280,height:900});
 const errs=[];pg.on('pageerror',e=>errs.push(e.message));
-await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
+await require('./hermetic').hermetic(pg);await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
 await pg.waitForFunction(()=>{try{return typeof loadChart==='function'&&typeof drawCard==='function'&&SIGD&&SIGD.P&&typeof marketStates==='function'}catch(e){return false}},{timeout:150000}).catch(()=>{});
 const r=await pg.evaluate(async()=>{const o={},DAYm=864e5,day0=Math.floor(Date.now()/DAYm)*DAYm,cd=day0-DAYm;
  const mk=(N)=>{const t0=cd-(N-1)*DAYm,t=Array.from({length:N},(_,i)=>t0+i*DAYm);return{t,o:t.map(()=>100),h:t.map(()=>101),l:t.map(()=>99),c:t.map((_,i)=>100+i%40),v:t.map(()=>1e6),src:'Binance',pair:'BTC/USDT',complete:true,pages:N<=1000?1:3}};

@@ -8,7 +8,7 @@ const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&
  const REP_OK=[];ok(typeof rc==='function'&&rc('No capitulation. Above 1.0, no capitulation.')==='no capitulation'&&rc('BTC at $1. ETH at $2.')===null&&B.some(re=>re.test('Mid-range. Noted.'))&&/fails\.push\(\[\.\.\.loc,'blank caption'\]\)/.test(src),"sweep: repeated 2+ word clause, blank caption and 'Noted.' all block",{rc:typeof rc})}
 (async()=>{const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915});
 const errs=[];pg.on('pageerror',e=>errs.push(e.message));
-await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
+await require('./hermetic').hermetic(pg);await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
 await pg.waitForFunction(()=>{try{return SIGD&&SIGD.P&&SIG&&SIG.length>8&&MK&&MK.breadth}catch(e){return false}},{timeout:150000}).catch(()=>{});
 const r=await pg.evaluate(()=>{const o={};const rep=t=>{const c=t.replace(/https?:\/\/\S+/g,' ').split(/[.,;:()]+/).map(x=>x.trim().toLowerCase().replace(/\s+/g,' ')).filter(x=>x.split(' ').length>=2&&/[a-z]/.test(x));const s=new Set();for(const x of c){if(s.has(x))return x;s.add(x)}return null};
  const all=s=>{const Fx=sigFacts(s);return STY.flatMap(([st])=>CAPT[Fx.fam][st].map((fn,i)=>({st,i,t:tidy(fn(Fx))})))};

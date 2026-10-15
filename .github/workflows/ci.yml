@@ -83,6 +83,16 @@ jobs:
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpublish.py
       - name: Live data watchdog on seed/missing _runs.json (blocking)
         run: python3 tests/tlivelag.py
+      - name: Confidence full inside each input's freshness limit, reduced only past it (blocking)
+        run: node qa/conf-limit.js http://localhost:8765/index.html
+      - name: Live price never changes a score (blocking) - agreeing, late (3% off) and missing live BTC give identical scores + data confidence
+        run: node qa/live-price-score.js http://localhost:8765/index.html
+      - name: Stale alarm / live data age per feed limit (blocking) - stale fails, fresh passes
+        run: python3 tests/tdata_age.py
+      - name: Pages deploys share ONE group (blocking) - static check over every deploying workflow
+        run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpages.py
+      - name: Three deploys at once (blocking) - live ends on newest tested code + newest data; untested code never ships via a data publish
+        run: python3 tests/tpages_sim.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
         run: python3 tests/tclosed_hours.py
       - name: Fixture consistency (blocking) - no derivs fixture has a latest timestamp newer than its own series beyond the metric limit
@@ -96,6 +106,7 @@ jobs:
             node qa/stale-conf.js http://localhost:8765/index.html; } 2>&1 | tee "$RUNNER_TEMP/gates/stale-data.log"
       - name: News replay diff (report only)
         continue-on-error: true
+        timeout-minutes: 5   # report-only: a hang here must never eat the 45-min job budget (15 Oct: a820abc CI stuck here)
         run: node qa/news-replay.js run http://localhost:8765/index.html
       - name: Watchdog - failing gate lines to the job summary as ::error
         if: failure()
@@ -104,6 +115,10 @@ jobs:
         run: bash .github/scripts/gate-summary.sh "${{ inputs.data_redeploy && 'Data redeploy test' || 'Test' }}"
 
   deploy:
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     needs: test
     if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
@@ -116,12 +131,17 @@ jobs:
       url: ${{ steps.dep.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build site folder (app only, no tests)
-        run: mkdir _site && cp -r index.html sw.js manifest.webmanifest icons data _site/ && cp README.md _site/ 2>/dev/null || true
-      - name: Newest derivs from main HEAD at deploy time; refuse to publish if older than live
+        with:
+          fetch-depth: 0
+      # P1 (15 Oct): every deploy = code from a TESTED commit + newest data/ on main (.github/scripts/snapshot.sh). This run's own commit passed
+      # `test` above; a data-only redeploy (suites skipped) ships the code of refs/tags/pages-tested (last commit green on test AND live smoke), never main HEAD's code.
+      - name: Snapshot (tested code + newest data/ from main); refuse if code or data older than live
+        env:
+          DATA_REDEPLOY: ${{ inputs.data_redeploy }}
         run: |
           python3 .github/scripts/no_regress.py snapshot live-before.json
-          bash .github/scripts/newest_data.sh _site
+          if [ "$DATA_REDEPLOY" = true ]; then code=$(bash .github/scripts/tested_sha.sh); else code="$GITHUB_SHA"; fi
+          bash .github/scripts/snapshot.sh _site "$code"
       - uses: actions/upload-artifact@v4
         with:
           name: live-before
@@ -137,7 +157,7 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # only to move refs/tags/pages-tested after a green live smoke
       actions: write
     steps:
       - uses: actions/checkout@v4
@@ -170,7 +190,8 @@ jobs:
           set -e
           node qa/stale-derivs.js "$SITE_URL"
           DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js "$SITE_URL"
-          node qa/stale-derivs2.js "$SITE_URL"
+          # interim (supervisor 15 Oct): S1 reports only on the LIVE gate until #29's score fix is live; S2-S6 still block; S1 still blocks in the test job
+          S1_REPORT_ONLY=1 node qa/stale-derivs2.js "$SITE_URL"
           node qa/stale-conf.js "$SITE_URL"
       - name: Axis label minimum on the live site (blocking; failure rolls back)
         run: URL="$SITE_URL" node tests/tqa6.js
@@ -189,6 +210,14 @@ jobs:
           echo "last derivatives run ${last}h ago; feeds past their limit in that run: ${bad}"
           if [ "$last" -ge 1 ] || [ "$bad" -gt 0 ]; then gh workflow run derivs.yml --repo "$GITHUB_REPOSITORY" && echo "dispatched Refresh derivatives"; fi
           if [ "$last" -ge 7 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
+      - name: Promote tested code (refs/tags/pages-tested) - live serves this commit's code and every smoke gate passed
+        if: success() && inputs.data_redeploy != true
+        run: |
+          lc=$(curl -sf "${SITE_URL}build.json?v=$(date +%s)" | python3 -c "import json,sys;print(json.load(sys.stdin)['code_sha'])" || true)
+          [ "$lc" = "$GITHUB_SHA" ] || { echo "live code is ${lc:-unknown}, not $GITHUB_SHA: tag not moved"; exit 0; }
+          git fetch -q origin main --tags || true; cur=$(git rev-parse -q --verify refs/tags/pages-tested || true)
+          if [ -n "$cur" ] && ! git merge-base --is-ancestor "$cur" "$GITHUB_SHA"; then echo "pages-tested $cur is not an ancestor of $GITHUB_SHA: not moved"; exit 0; fi
+          git push -f origin "$GITHUB_SHA:refs/tags/pages-tested" && echo "pages-tested -> $GITHUB_SHA"
       - name: Watchdog - failing smoke lines to the job summary as ::error
         if: failure()
         env:
@@ -212,6 +241,10 @@ jobs:
           python3 scripts/runs_log.py --check 95 /tmp/runs-live.json
 
   rollback:
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     needs: smoke
     if: failure() && needs.smoke.result == 'failure' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
@@ -223,18 +256,16 @@ jobs:
     environment:
       name: github-pages
     steps:
-      - name: Find the last commit whose CI run succeeded
-        id: good
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # rollback restores CODE only, to refs/tags/pages-tested (last commit green on test AND live smoke); data/ = newest of main HEAD and live
+      - name: Snapshot of the last tested code + newest data (never backwards)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json headSha -q '.[0].headSha')
-          [ -n "$sha" ] || { echo "::error::no previous good commit"; exit 1; }
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "rolling back to $sha"
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.good.outputs.sha }}
-      - run: mkdir _site && cp -r index.html manifest.webmanifest icons data _site/ && (cp sw.js _site/ 2>/dev/null || true)
+          sha=$(bash .github/scripts/tested_sha.sh); [ -n "$sha" ] || { echo "::error::no tested commit"; exit 1; }
+          echo "rolling back code to $sha"; bash .github/scripts/snapshot.sh _site "$sha" --rollback
       - uses: actions/configure-pages@v5
       # own artifact name: the deploy job of this same run already uploaded "github-pages", and deploy-pages refuses when two share a name
       - uses: actions/upload-pages-artifact@v3

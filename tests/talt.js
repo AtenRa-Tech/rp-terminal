@@ -2,7 +2,7 @@ const p=require('puppeteer-core');const W=ms=>new Promise(r=>setTimeout(r,ms));
 const BAN=[/what are you buying/i,/what'?s your move/i,/everyone'?s watching/i,/are you ready/i,/don'?t miss/i,/\bLFG\b/i,/to the moon/i,/starts here/i,/altseason (is )?(coming|here|loading)/i,/undefined|NaN/];
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915,deviceScaleFactor:2,isMobile:true,hasTouch:true});
 const e=[];pg.on('pageerror',x=>e.push(x.message));const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);console.log((c?'PASS ':'FAIL ')+m)};
-await pg.goto(process.env.URL||'http://localhost:8765/index.html');
+await require('./hermetic').hermetic(pg);await pg.goto(process.env.URL||'http://localhost:8765/index.html');
 await pg.waitForFunction(()=>TAB==='today'&&SIG&&SIG.length&&MK&&DV&&MAC.items,{timeout:120000});await W(5000);
 // ---- Today
 const FEEDS=await require('./feeds.js')();console.log('feeds:',FEEDS.up?'up':'DOWN',FEEDS.why);if(FEEDS.up){await pg.waitForFunction(()=>D.news.length>0,{timeout:120000}).catch(()=>{});await pg.evaluate(()=>{try{paintToday()}catch(e){}});await W(1500)}
