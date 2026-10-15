@@ -25,3 +25,9 @@ echo "snapshot: code ${code:0:7} + data/ from main ${data:0:7}"
 if [ "$mode" = --rollback ]; then python3 "$here/no_regress.py" newest "$dir"; fi
 python3 "$here/no_regress.py" check "$dir"
 git show "$data:data/derivs.json" > "$dir/.main-derivs.json"; python3 "$here/publish_guard.py" "$dir/data/derivs.json" "$dir/.main-derivs.json"; rm -f "$dir/.main-derivs.json"
+# overlapping hours must also be identical to what LIVE serves now (a published closed hour never changes)
+if [ -n "${LIVE_DERIVS:-}" ]; then cp "$LIVE_DERIVS" "$dir/.live-derivs.json" 2>/dev/null || true; else curl -sf "${SITE_URL:-https://atenra-tech.github.io/rp-terminal/}data/derivs.json?v=$(date +%s)" -o "$dir/.live-derivs.json" || true; fi
+if python3 -c "import json,sys;json.load(open(sys.argv[1]))['assets']" "$dir/.live-derivs.json" 2>/dev/null; then
+  if [ "$mode" = --rollback ]; then echo "rollback: live overlap check skipped (live is the failed deploy)"; else python3 "$here/publish_guard.py" "$dir/data/derivs.json" "$dir/.live-derivs.json"; fi
+else echo "::warning::live derivs.json unreadable: overlap-with-live check skipped (main overlap + no_regress still applied)"; fi
+rm -f "$dir/.live-derivs.json"
