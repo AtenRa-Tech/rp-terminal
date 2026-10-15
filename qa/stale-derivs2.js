@@ -36,6 +36,9 @@ async function run(b,body){const pg=await b.newPage();await pg.setViewport({widt
   for(const b of bs){const box=b.parentElement.parentElement;const title=box.innerText.split('\n')[0];if(!/funding|open interest/i.test(title))continue;b.click();await new Promise(r=>setTimeout(r,700));const m=box.innerText.match(/Data confidence\n[^\n]*\n\t(\d{1,3})/);out[title]=m?+m[1]:null;b.click();await new Promise(r=>setTimeout(r,300))}return out});
  await pg.close();return{txt,scores,post,conf}}
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const R={};
+ // warm-up load (discarded): records every live GET so all measured runs, including "missing", replay identical market data.
+ // Without it the first measured run was the only live one and could see a late/failed exchange price -> audit warn -> S1 diff.
+ await run(b,null);
  for(const [k,f] of [['missing',null],['stale4d',aged(4*24*H)],['inside',aged(2*H+50*60e3)],['past',fundAge(aged(3*H+10*60e3),7*H)],['fund_past',fundAge(aged(30*60e3),12*H+10*60e3)],['mixed',mixed()]])R[k]=await run(b,f);
  await b.close();const fails=[],notes=[];
  const eq=JSON.stringify(R.stale4d.scores)===JSON.stringify(R.missing.scores)&&R.stale4d.post===R.missing.post;

@@ -4,7 +4,7 @@
 const p=require('puppeteer-core');const URL=process.env.URL||'http://localhost:8765/index.html';
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915,deviceScaleFactor:2});
 pg.on('pageerror',e=>console.log('pageerror',e.message));
-await pg.goto(URL,{waitUntil:'domcontentloaded'});await pg.waitForFunction(()=>typeof drawChart==='function'&&typeof tab==='function',{timeout:60000});
+await require('./hermetic').hermetic(pg);await pg.goto(URL,{waitUntil:'domcontentloaded'});await pg.waitForFunction(()=>typeof drawChart==='function'&&typeof tab==='function',{timeout:60000});
 for(const t of ['today','signals','macro','markets','chart','studio','markets']){await pg.evaluate(t=>{try{tab(t)}catch(e){}},t);await new Promise(r=>setTimeout(r,t==='signals'?15000:5000))}
 await pg.evaluate(()=>tab('today'));await new Promise(r=>setTimeout(r,4000));
 const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}catch(e){out[k]={pass:false,err:String(e.stack||e).slice(0,300)}}};

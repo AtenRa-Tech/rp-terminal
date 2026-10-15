@@ -201,6 +201,10 @@ jobs:
           ref: ${{ steps.good.outputs.sha }}
       # rollback is the one deploy allowed to put older data back: the newer data just failed live smoke
       - run: mkdir _site && cp -r index.html manifest.webmanifest icons data _site/ && (cp sw.js _site/ 2>/dev/null || true)
+      - name: Publish guard on the exact derivs.json (no test marks, closed hours only, overlapping hours = main)
+        run: |
+          git fetch -q origin main && git show FETCH_HEAD:.github/scripts/publish_guard.py > "$RUNNER_TEMP/publish_guard.py" && git show FETCH_HEAD:data/derivs.json > "$RUNNER_TEMP/main-derivs.json"
+          python3 "$RUNNER_TEMP/publish_guard.py" _site/data/derivs.json "$RUNNER_TEMP/main-derivs.json"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

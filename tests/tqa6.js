@@ -17,12 +17,12 @@ const judge=(name,a,expectDesk)=>{if(!a){rows.push({name,pass:false,why:'no axis
   if(!okMin){reason=a.why||'(no reason logged)';
     if(/^fewer candles/.test(reason))shortOK=a.nPts!=null&&a.nPts<a.minN;
     else if(/^fewer days/.test(reason))shortOK=dh&&Math.ceil((a.lastT-a.t0)/864e5)<a.minN;
-    else if(/^no even step fits/.test(reason))shortOK=(a.ev||[]).every(e=>e.c<a.minN||e.c>a.maxN+2||e.fit===false);}
+    else if(/^no even step fits/.test(reason))shortOK=(a.ev||[]).every(e=>e.c<a.minN||e.c>a.maxN+2||e.fit===false||(e.over===true&&e.c>a.maxN));/* over: day-marker steps are never trimmed, so above maxN they cannot be used */}
   rows.push({name,cls:a.cls,step:String(a.k)+(a.n??''),n:main,times,min:a.minN,max:a.maxN,short:!okMin,reason,em:+a.em.toFixed(1),labels:a.labels.join(' ')+(a.row2.labels.length?' / '+a.row2.labels.join(' '):''),
     pass:okMax&&(okMin||shortOK)&&noColl&&cls&&oneTime,why:[!okMax&&'over max',!okMin&&!shortOK&&'short without a valid reason',!noColl&&'collision',!cls&&'wrong width class',!oneTime&&'more than one time between day markers'].filter(Boolean).join(',')})};
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
 for(const [w,h] of [[412,915],[1440,900]]){const desk=w>=1000;const pg=await b.newPage();await pg.setViewport({width:w,height:h,deviceScaleFactor:w<500?3:1});pg.on('pageerror',e=>console.log('pageerror',e.message));
-  await pg.goto(URL,{waitUntil:'domcontentloaded'});await pg.waitForFunction(()=>typeof drawChart==='function'&&typeof tab==='function',{timeout:60000});
+  await require('./hermetic').hermetic(pg);await pg.goto(URL,{waitUntil:'domcontentloaded'});await pg.waitForFunction(()=>typeof drawChart==='function'&&typeof tab==='function',{timeout:60000});
   await pg.evaluate(()=>tab('chart'));await new Promise(r=>setTimeout(r,3000));
   const C=await pg.evaluate(async()=>{const out=[];for(const iv of Object.keys(IVMS)){CH.iv=iv;CH.rng=null;await loadChart();if(!CH.d)continue;
       for(const r of Object.keys(RNG)){if(rngN(r)==null){out.push({iv,r,skip:rngWhy(r)||'disabled'});continue}CH.rng=r;applyRng();window.AXLOG=[];drawChartScreen();const a=AXLOG.find(x=>x.fn==='chart');window.AXLOG=null;out.push({iv,r,a})}}

@@ -22,7 +22,7 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 NOW = dt.datetime.now(dt.timezone.utc)
 TODAY = NOW.date()
 MONTHLY_START = "2012-01-01"
-STALE_DAYS = 75
+STALE_DAYS = json.load(open(os.path.join(ROOT, "shared", "freshness.json")))["monthly_days"]  # ONE monthly limit (shared/freshness.json), age <= limit ok
 
 FRED = {
     # id: (title, units, freq)

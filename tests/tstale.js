@@ -4,7 +4,7 @@ const p=require('puppeteer-core');const URL=process.env.URL||'http://localhost:8
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,700):''));if(!c)F.push(n)};
 (async()=>{const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:1280,height:900});
 const errs=[];pg.on('pageerror',e=>errs.push(e.message));
-await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
+await require('./hermetic').hermetic(pg);await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
 await pg.waitForFunction(()=>{try{return SIG&&SIG.length>5&&SIGD&&SIGD.P&&DVRAW&&typeof staleSweep==='function'}catch(e){return false}},{timeout:150000}).catch(()=>{});
 const r=await pg.evaluate(async()=>{const o={},DAYm=864e5,H=36e5;if(typeof staleSweep!=='function')return{missing:true};
  const keepSIG=SIG,keepST=SIGSTALE,keepDVR=DVRAW,keepDV=DV,keepD=SIGD;
