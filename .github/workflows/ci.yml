@@ -80,6 +80,8 @@ jobs:
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpublish.py
       - name: Live data watchdog on seed/missing _runs.json (blocking)
         run: python3 tests/tlivelag.py
+      - name: Live price never changes a score (blocking) - agreeing, late (3% off) and missing live BTC give identical scores + data confidence
+        run: node qa/live-price-score.js http://localhost:8765/index.html
       - name: Stale alarm / live data age per feed limit (blocking) - stale fails, fresh passes
         run: python3 tests/tdata_age.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
@@ -170,7 +172,8 @@ jobs:
           set -e
           node qa/stale-derivs.js "$SITE_URL"
           DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js "$SITE_URL"
-          node qa/stale-derivs2.js "$SITE_URL"
+          # interim (supervisor 15 Oct): S1 reports only on the LIVE gate until #29's score fix is live; S2-S6 still block; S1 still blocks in the test job
+          S1_REPORT_ONLY=1 node qa/stale-derivs2.js "$SITE_URL"
           node qa/stale-conf.js "$SITE_URL"
       - name: Axis label minimum on the live site (blocking; failure rolls back)
         run: URL="$SITE_URL" node tests/tqa6.js
