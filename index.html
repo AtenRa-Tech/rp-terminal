@@ -1246,6 +1246,7 @@ function oppMeta(ms,dir,yrsMax=5){const t=ms.t,a=ms.a;let L=a.length-1;while(L>0
   const shr=share<1?1:Math.round(share),pctTxt=share>=40?`around the middle of its range since ${fromL}`:`in the ${side==='lo'?'bottom':'top'} ${shr}% of readings since ${fromL}`;
   const w=side==='lo'?'lowest':'highest',sinceTxt=sinceStr(R,w);
   return{cur,last,side,share,ext:100-share,z,yrs,from:fromL,startT,pctTxt,since:R.since,sinceTxt,sinceDays:R.since?(last-R.since)/DAY:Infinity,zoneDays,n:win.length}}
+function confLimD(s){const t=s.ms?.t;let st=1;if(t&&t.length>3){const d=[];for(let i=Math.max(1,t.length-11);i<t.length;i++)d.push((t[i]-t[i-1])/DAY);d.sort((a,b)=>a-b);st=Math.max(1,Math.round(d[d.length>>1]))}return 3*st}
 function oppScore(s){const c={},m=s.om;
   if(m){const span=(m.last-m.startT)/DAY,sf=Math.min(1,span/365);c.rar=[clamp(m.ext*sf,0,100),`${m.pctTxt}; ${m.sinceTxt}${sf<1?`; scaled ×${sf.toFixed(2)} because the window is only ${Math.round(span)} days`:''}`];c.str=[clamp(Math.abs(m.z)/3*100,0,100),`${Math.abs(m.z).toFixed(1)}σ (robust) ${m.z>=0?'above':'below'} the median since ${m.from}`];
     const zd=m.zoneDays;c.rec=zd==null?[25,`Not in an extreme zone (outside the ${m.side==='lo'?'bottom':'top'} 20% of readings since ${m.from})`]:zd<=7?[100,zd<1?'Entered its extreme zone with the latest reading':`Entered its extreme zone ${Math.round(zd)} day${Math.round(zd)===1?'':'s'} ago`]:zd<=30?[75,`In its extreme zone for ${Math.round(zd)} days`]:zd<=90?[50,`In its extreme zone for ${Math.round(zd)} days`]:[30,`In its extreme zone for ${Math.round(zd)} days (old news)`]}
@@ -1254,7 +1255,10 @@ function oppScore(s){const c={},m=s.om;
   // P0 15 Oct: data confidence must not depend on WHEN (or whether) the audit finished - a page scored before the audit gives the same score.
   // It comes from the data alone (age, source count); the audit result is shown in the text and badge, never in the number.
   if(s.confFix)c.conf=s.confFix;
-  else{let v=s.single?70:85;if(age!=null&&age>2.5)v-=30;const au=s.audit?`audit ${s.audit==='ok'?'passed':s.audit==='warn'?'passed with warnings':'failed'}${s.auditTxt?' ('+s.auditTxt+')':''}`:'not audited yet';c.conf=[v,`${s.single?'Single public source':'Two or more sources'}; data ${age!=null?age.toFixed(1)+' days old':'age unknown'}; ${au} (shown, not scored)`]}
+  // Supervisor 15 Oct: confidence is FULL while the input is within its freshness limit and drops only past it (a step, no slide
+  // between refreshes). Limit = 3 periods of the series' own cadence after the last point's open: daily closes 3 days = the last closed
+  // day or one day behind it (#20 + one-day step-back rule); weekly candles 21 days. Macro (confFix) uses each series' own limit.
+  else{const lim=confLimD(s);let v=s.single?70:85;if(age!=null&&age>=lim)v-=30;const au=s.audit?`audit ${s.audit==='ok'?'passed':s.audit==='warn'?'passed with warnings':'failed'}${s.auditTxt?' ('+s.auditTxt+')':''}`:'not audited yet';c.conf=[v,`${s.single?'Single public source':'Two or more sources'}; data ${age!=null?age.toFixed(1)+' days old':'age unknown'}; ${au} (shown, not scored)`]}
   const A=s.asset||'BTC',wi=S.watch.findIndex(w=>w.sym.toUpperCase()===A);
   c.rel=A==='BTC'?[100,'BTC']:A==='ETH'?[90,'ETH']:A==='USD'?[80,'Crypto-wide liquidity']:A==='MACRO'?[75,'Macro backdrop for crypto']:wi>=0?[clamp(85-wi*6,40,85),`${A} is on your watchlist (#${wi+1})`]:[30,`${A} is not on your watchlist`];
   s.opp=c;s.score=Math.round(Object.keys(OW).reduce((q,k)=>q+OW[k]*c[k][0],0));return s.score}

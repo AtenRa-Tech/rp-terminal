@@ -80,6 +80,8 @@ jobs:
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpublish.py
       - name: Live data watchdog on seed/missing _runs.json (blocking)
         run: python3 tests/tlivelag.py
+      - name: Confidence full inside each input's freshness limit, reduced only past it (blocking)
+        run: node qa/conf-limit.js http://localhost:8765/index.html
       - name: Live price never changes a score (blocking) - agreeing, late (3% off) and missing live BTC give identical scores + data confidence
         run: node qa/live-price-score.js http://localhost:8765/index.html
       - name: Stale alarm / live data age per feed limit (blocking) - stale fails, fresh passes
