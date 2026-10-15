@@ -5,6 +5,7 @@
 //  C1 stale4d:   whole file 4 days old  -> no funding and no OI readings in any caption/draft/export
 //  C2 late:      file 3h10m old, funding 7h old -> funding captions MUST appear, OI captions must not
 //  C3 fund_past: file 30m old, funding 12h10m old -> no funding readings; OI captions must appear; oicap not stale (hourly OI aligned to latest)
+//  C6 oi_1d:     hourly OI ends 23:00 UTC yesterday (one close back) -> oicap FRESH in SIG, label names that close
 //  C5 oi_old:    file 30m old, latest OI fresh, hourly OI ends 2d16h ago -> SIGSTALE card id oicapBTC/oicapETH stale:true, score null, usedDate<wantDate, out of SIG, no oicap value anywhere
 //  C4 status:    ruling 3 Oct: ages are XhYm under 48h, whole days above; age past limit never rounded into it;
 //                format "Funding: stale, 12h10m old, past 12h limit (OKX)". Also fails any text that says "Xh old (limit Yh)" with X <= Y (contradictory status)
@@ -18,8 +19,8 @@ function aged(ms){const f=align(JSON.parse(JSON.stringify(BASE))),now=Date.now()
 // align (8 Oct ruling a): each asset's hourly series end where its latest block says, so the fixture is internally consistent.
 function align(f){for(const a of Object.values(f.assets||{})){const L=a.latest||{},end=L.oi_t||lastT(L);if(!end)continue;for(const k of ['oi_hourly','basis_hourly']){if(a[k]&&lastT(a[k]))shift(a[k],Math.floor(end/36e5)*36e5-lastT(a[k]))}}return f}
 // oiOld: hourly OI ends ms ago while latest.oi_t stays fresh -> no 00:00 UTC point for the last closed day -> oicap stale.
-function oiOld(f,ms){const now=Date.now();for(const a of Object.values(f.assets||{}))if(a.oi_hourly)shift(a.oi_hourly,now-ms-lastT(a.oi_hourly));return f}
 // 15 Oct one-entry rule: latest = the last SETTLED print (same time and rate), age measured on that print
+function oiOld(f,ms){const now=Date.now();for(const a of Object.values(f.assets||{}))if(a.oi_hourly)shift(a.oi_hourly,now-ms-lastT(a.oi_hourly));return f}
 function fundAge(f,age){const now=Date.now();for(const a of Object.values(f.assets)){const P=a.funding?.points;if(P?.length){shift(a.funding,now-age-P.at(-1)[0]);a.latest={...(a.latest||{}),funding_t:P.at(-1)[0],funding:P.at(-1)[1]}}}return f}
 const FUND=[/funding[^|\n]{0,40}(neutral|positive|negative|elevated|flat)/i,/neutral band/i,/funding[^|\n]{0,25}[-+]?\d+\.\d+ ?%/i];
 const OI=[/\bopen interest[^|\n]{0,30}[-+]?\d/i,/\bOI [-+−]?\d+(\.\d+)?%/];
@@ -42,10 +43,10 @@ async function run(b,body){const p=await b.newPage({viewport:{width:412,height:9
   const sel=document.querySelector('#stType'),rat=document.querySelector('#stRatio');
   for(const ty of ['price','insight','pulse','chart','dd','perf']){sel.value=ty;rat.value='16:9';log=[];try{render8k(drawStudio,1920,1080)}catch(e){}rows.push(['studio '+ty,log.join(' | ')])}
   P.fillText=of;rows.push(['page text',document.body.innerText]);return rows});
- const st=await p.evaluate(()=>({sig:(SIG||[]).map(c=>c.id),stale:typeof SIGSTALE==='undefined'?null:Object.fromEntries((Array.isArray(SIGSTALE)?SIGSTALE.map(c=>[c.id,c]):Object.entries(SIGSTALE)).map(([k,c])=>[k,{stale:c.stale,usedDate:c.usedDate,wantDate:c.wantDate,staleWhy:c.staleWhy,score:c.score}]))}));
+ const st=await p.evaluate(()=>({sigtx:Object.fromEntries((SIG||[]).filter(c=>/^oicap/.test(c.id)).map(c=>[c.id,[c.title,c.read,c.src,c.cap,(typeof SIGT!=='undefined'&&SIGT[c.id]||[]).join(' ')].join(' | ')])),sig:(SIG||[]).map(c=>c.id),stale:typeof SIGSTALE==='undefined'?null:Object.fromEntries((Array.isArray(SIGSTALE)?SIGSTALE.map(c=>[c.id,c]):Object.entries(SIGSTALE)).map(([k,c])=>[k,{stale:c.stale,usedDate:c.usedDate,wantDate:c.wantDate,staleWhy:c.staleWhy,score:c.score}]))}));
  rows.state=st;await p.close();return rows}
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});
- const R={stale4d:await run(b,aged(4*24*H)),late:await run(b,fundAge(aged(3*H+10*60e3),7*H)),fund_past:await run(b,fundAge(aged(30*60e3),12*H+10*60e3)),oi_old:await run(b,oiOld(fundAge(aged(30*60e3),7*H),(2*24+16)*H))};await b.close();
+ const R={stale4d:await run(b,aged(4*24*H)),late:await run(b,fundAge(aged(3*H+10*60e3),7*H)),fund_past:await run(b,fundAge(aged(30*60e3),12*H+10*60e3)),oi_old:await run(b,oiOld(fundAge(aged(30*60e3),7*H),(2*24+16)*H)),oi_1d:await run(b,oiOld(fundAge(aged(30*60e3),7*H),Date.now()-(Math.floor(Date.now()/(24*H))*24*H-H)))};await b.close();
  const cap=rows=>rows.filter(r=>r[0]!=='page text');const fails=[];
  hits(cap(R.stale4d),FUND.concat(OI)).forEach(h=>fails.push('C1 stale4d reading '+h));
  if(!hits(cap(R.late),FUND).length)fails.push('C2 late file: funding 7h old (inside 12h) produced no funding captions');
@@ -60,6 +61,13 @@ async function run(b,body){const p=await b.newPage({viewport:{width:412,height:9
   else{if(s5.stale!==true)fails.push('C5 '+a+' oicap: stale is not true');if(s5.score!==null)fails.push('C5 '+a+' oicap: score '+s5.score+', want null');
    if(!(s5.usedDate&&s5.wantDate&&String(s5.usedDate)<String(s5.wantDate)))fails.push('C5 '+a+' oicap: usedDate '+s5.usedDate+' not before wantDate '+s5.wantDate);if(!s5.staleWhy)fails.push('C5 '+a+' oicap: empty staleWhy')}
   if(R.oi_old.state.sig.includes('oicap'+a))fails.push('C5 oicap'+a+' still in SIG (readings, scores, POST NOW) while stale')}
+ // C6 (15 Oct ruling): hourly OI ends 23:00 UTC yesterday -> newest 00:00 point is one close back -> FRESH, in SIG, label names that close.
+ {const D0=Math.floor(Date.now()/(24*H))*24*H,MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],dm=t=>{const d=new Date(t);return d.getUTCDate()+' '+MO[d.getUTCMonth()]};
+  const want='('+dm(D0-2*24*H),bad='('+dm(D0-24*H)+' close';
+  for(const a of ['BTC','ETH']){const id='oicap'+a,st=R.oi_1d.state;
+   if(!st.sig.includes(id))fails.push('C6 '+id+' one close back: missing from SIG (should be fresh)');
+   else{const tx=st.sigtx[id]||'';if(!tx.includes(want))fails.push('C6 '+id+': label does not name '+want+' close)');if(tx.includes(bad))fails.push('C6 '+id+': label claims '+bad+')')}
+   if(st.stale&&st.stale[id]&&st.stale[id].stale)fails.push('C6 '+id+' one close back marked stale')}}
  hits(cap(R.oi_old),OIC).forEach(h=>fails.push('C5 stale oicap value still in '+h));
  for(const [k,rows] of Object.entries(R))for(const [w,t] of rows)for(const x of (t.match(/(\d+(?:\.\d+)?)h old \(limit (\d+)h\)/g)||[])){const [,a,l]=x.match(/([\d.]+)h old \(limit (\d+)h\)/);if(+a<=+l)fails.push(`C4 ${k} ${w}: contradictory status "${x}"`)}
  const ageH=a=>{let m;if(m=a.match(/^(\d+)d$/))return +m[1]*24;m=a.match(/^(\d+)h(?:(\d+)m)?$/);return m?+m[1]+(+(m[2]||0))/60:NaN};

@@ -1524,7 +1524,7 @@ news:{simple:[
  F=>`${F.titleS} (${F.src}${F.outlets?', also '+F.outlets:''}).\n\n${F.link}`,
  F=>`${F.hit?F.hit+': ':''}${F.titleS}, ${F.src} reports.\n\n${F.link}`],
 analytical:[
- F=>`${F.titleS} (${F.src}, ${F.age} ago).${F.desc1?' '+F.desc1:''}\n\n${F.link}`,
+ F=>`${F.titleS} (${/^"/.test(F.desc1||'')?'':F.src+', '}${F.age} ago).${F.desc1?' '+F.desc1:''}\n\n${F.link}`,/* a quoted summary already credits its source: no repeat */
  F=>`${F.src} reports: ${F.desc1||F.title}${F.outlets?` ${F.outlets} ${F.nOut>1?'have':'has'} it too.`:''}\n\n${F.link}`,
  F=>`${F.titleS}, according to ${F.src}.${F.hit?` Relevant for ${F.hit}.`:''}\n\n${F.link}`,
  F=>`${F.titleS} (${F.src}). ${F.outlets?`Also reported by ${F.outlets}.`:F.mention?`${F.mention} also ${F.nMen>1?'have':'has'} a headline on ${F.mName}; check it is the same story.`:'Single source so far; worth waiting for a second.'}\n\n${F.link}`],
@@ -1626,9 +1626,12 @@ function etfFacts(a){const st=etfStats(NX.etf,a);if(!st||!st.L)return null;const
     mood:L<0&&s7>0?'Red day, green week.':L>0&&s7>0?'Steady bid.':L<0&&s7<0?'Outflows on the day and the week.':'Green day inside a red week.',note:`Net across ${st.d?.funds?.length||'all'} funds.`,src:'Farside',date:d}}
 function nameMentions(n){const nm=distNames(n.title);if(!nm.size)return null;const hits=(D.news||[]).filter(m=>m!==n&&m.src!==n.src&&Math.abs(m.t-n.t)<=24*36e5&&[...distNames(m.title)].some(x=>nm.has(x)));if(!hits.length)return null;
   const k=[...nm].find(x=>hits.some(m=>distNames(m.title).has(x))),orig=(n.title.match(new RegExp('\\b('+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')\\b','i'))||[k])[0];return{name:orig,srcs:[...new Set(hits.map(m=>m.src))]}}
+// P2 fix (15 Oct): the outlet's summary sentence is THEIR wording but is not the headline, so the quoted-headline exception does not cover it.
+// If it trips the banned-word lint it is dropped from every caption (never shown as ours, never exempted); the headline stays.
+function descQ(d1,n){return lintBanned(d1,'',false).some(x=>/^Banned phrase|^Regional/.test(x))?'':d1}
 function newsFacts(n){let CL=null;try{CL=newsClusters().find(c=>c.items.includes(n))}catch(e){}const same=CL?CL.items.filter(m=>m!==n&&m.src!==n.src):D.news.filter(m=>m!==n&&m.src!==n.src&&simT(m.title,n.title)>=.5),srcs=[...new Set(same.map(m=>m.src))],W=S.watch.find(w=>new RegExp('\\b'+w.sym.replace(/[^\w]/g,'')+'\\b','i').test(n.title+' '+n.desc));
   const d1=(t=>t.length<40?'':t.length>170?t.slice(0,170).replace(/\s+\S*$/,'')+'…':t)(splitSent(n.desc||'')[0]||''),T0=n.title.replace(/\s+/g,' ').trim().replace(/^live updates?\s*[:\-–|]\s*/i,'');
-  return{...FDEF,fam:'news',label:'Headline: '+n.title.slice(0,40),title:T0,titleS:T0.replace(/[.!…]+$/,''),src:n.src,link:safeUrl(n.link),outlets:srcs.slice(0,2).join(' and '),nOut:Math.min(2,srcs.length),allSrc:[n.src,...srcs.slice(0,2)].join(', '),desc1:d1&&d1!==n.title&&!rep4(T0+' '+d1)?d1:'',short:T0.length>110?T0.slice(0,107)+'…':T0,hit:W?W.sym.toUpperCase():'',age:ago(n.t),...(()=>{if(srcs.length)return{mention:''};const mm=nameMentions(n);return mm?{mention:mm.srcs.slice(0,2).join(' and '),mName:mm.name,nMen:mm.srcs.length}:{mention:''}})()}}
+  return{...FDEF,fam:'news',label:'Headline: '+n.title.slice(0,40),title:T0,titleS:T0.replace(/[.!…]+$/,''),src:n.src,link:safeUrl(n.link),outlets:srcs.slice(0,2).join(' and '),nOut:Math.min(2,srcs.length),allSrc:[n.src,...srcs.slice(0,2)].join(', '),desc1:d1&&d1!==n.title&&!rep4(T0+' '+d1)?descQ(d1,n):'',short:T0.length>110?T0.slice(0,107)+'…':T0,hit:W?W.sym.toUpperCase():'',age:ago(n.t),...(()=>{if(srcs.length)return{mention:''};const mm=nameMentions(n);return mm?{mention:mm.srcs.slice(0,2).join(' and '),mName:mm.name,nMen:mm.srcs.length}:{mention:''}})()}}
 function mktFacts(ctx){const t=ctx.t,c=ctx.coin||S.watch[0],date=new Date().toLocaleString('en-GB',{timeZone:'UTC',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}).replace('Sept','Sep').replace(',','')+' UTC';
   if(t==='pulse'||t==='heat'){const g=D.glob,f=D.fng.at(-1),ch=g?.market_cap_change_percentage_24h_usd??null;
     return{...FDEF,fam:'market',label:'Market pulse',subj:'Crypto market cap',subjTk:'Total crypto market cap',now:big(g?.total_market_cap?.[S.cur]),chg:ch!=null?`${pct(ch)} in 24h`:'24h change not available',ctx:g?.market_cap_percentage?.btc!=null?`BTC dominance ${g.market_cap_percentage.btc.toFixed(1)}% (CoinPaprika)`:'',ctx2:f?`alternative.me index: ${f.v}, ${f.c}, ${dShort(f.t)}`:'',mood:'',src:g?._src||'CoinPaprika (unavailable)',date}}
@@ -1729,8 +1732,8 @@ function supplyOf(a){const id=a==='BTC'?'bitcoin':'ethereum',m=D.mk?.[id];if(m?.
 // D = the latest closed day that has BOTH inputs (market.json adds a day's market cap after that day closes; look back at most 3 days);
 // OI = the hourly snapshot nearest D's 00:00 UTC close, at most 30 min away. Missing either -> no reading.
 function oiCapLatest(a,now=Date.now(),V=DV){const A=V?.assets?.[a],H=A?.oi_hourly?.points||[],sp=supplyOf(a),D0=Math.floor(now/DAY)*DAY-DAY;
-  for(let k=0;k<8;k++){const D=D0-k*DAY,c=D+DAY;/* any k>0 is stale: listed in SIGSTALE, never a reading */let h=null;for(const p of H)if(Math.abs(p[0]-c)<=30*60000&&p[2]>0&&(!h||Math.abs(p[0]-c)<Math.abs(h[0]-c)))h=p;
-    if(h&&sp?.s>0)return{D,want:D0,oiT:h[0],oiC:h[2],sup:sp.s,sp,v:h[2]/sp.s*100,back:k,stale:k>0}}
+  for(let k=0;k<8;k++){const D=D0-k*DAY,c=D+DAY;/* C6 fix (15 Oct): ONE daily step-back rule (FRESHNESS.signal_cards.daily_lag_days = 1): one close back is fresh; more is stale (SIGSTALE, never a reading) */let h=null;for(const p of H)if(Math.abs(p[0]-c)<=30*60000&&p[2]>0&&(!h||Math.abs(p[0]-c)<Math.abs(h[0]-c)))h=p;
+    if(h&&sp?.s>0)return{D,want:D0,oiT:h[0],oiC:h[2],sup:sp.s,sp,v:h[2]/sp.s*100,back:k,stale:k>FRESHNESS.signal_cards.daily_lag_days}}
   return{D:D0,want:D0,oiC:null,sup:sp?.s??null,v:null,back:null,stale:false}}
 // ONE formula for the whole stored series (ruling 8 Oct): OI in coins ÷ circulating supply (price cancels). Older days: OKX daily OI buckets (16:00 UTC start), oi_coin ÷ supply;
 // latest day: oi_coin at D's 00:00 UTC close ÷ supply. Supply has no dated history (market data gives today's circulating supply), so the label says 'supply as of <fetch date>'.

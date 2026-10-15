@@ -23,11 +23,12 @@ def scenario(order, drop):
     def data(ts): json.dump({"updated": ts}, open(f"{wk}/data/market.json", "w")); json.dump(mac, open(f"{wk}/data/macro.json", "w")); g("add", "-A"); g("commit", "-qm", "data " + ts); g("push", "-q", "origin", "HEAD:main"); return g("rev-parse", "HEAD")
     def code(v): open(f"{wk}/index.html", "w").write(f"<html>{v}</html>"); g("add", "-A"); g("commit", "-qm", "code " + v); g("push", "-q", "origin", "HEAD:main"); return g("rev-parse", "HEAD")
     A = code("A tested"); data("2026-10-15T10:00:00Z"); g("push", "-q", "origin", f"{A}:refs/tags/pages-tested")
-    env = dict(os.environ, LIVE_BUILD=f"{live}/build.json", LIVE_DERIVS=f"{live}/data/derivs.json", LIVE_RUNS=f"{live}/data/_runs.json", LIVE_MARKET=f"{live}/data/market.json", LIVE_MACRO=f"{live}/data/macro.json", GITHUB_REPOSITORY="")
+    env = dict(os.environ, LIVE_BUILD=f"{live}/build.json", LIVE_DERIVS=f"{live}/data/derivs.json", LIVE_RUNS=f"{live}/data/_runs.json", LIVE_MARKET=f"{live}/data/market.json", LIVE_MACRO=f"{live}/data/macro.json", GITHUB_REPOSITORY="", SNAP_RETRY_SLEEP="0")
     def deploy(code_sha, extra=()):
         site = f"{T}/site"; r = sh("bash", ".github/scripts/snapshot.sh", site, code_sha, *extra, cwd=wk, env=env, check=False)
         if r.returncode == 0: shutil.rmtree(live, ignore_errors=True); shutil.copytree(site, live)
         return r
+    os.makedirs(f"{live}/data"); [shutil.copy(f"{wk}/data/{f}", f"{live}/data/{f}") for f in ("derivs.json", "_runs.json", "market.json", "macro.json")]  # live already serves this data
     assert deploy(A).returncode == 0
     C = code("C passed test"); data("2026-10-15T11:00:00Z")   # CI for C is at its deploy job
     U = code("U untested"); D2 = data("2026-10-15T12:00:00Z")  # U: CI still in `test`; newest data after it
