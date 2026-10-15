@@ -1212,7 +1212,7 @@ function sinceStr(R,w){const tie=R.tie?`, matching ${dU(R.tie)}`:'';return R.sin
 // ---------- OPPORTUNITY SCORE (transparent; replaces the old post score)
 // Weights: Rarity 30%, Strength 20%, Data confidence 20%, Recency 15%, Relevance 15%. 70+ = POST NOW.
 const OW={rar:.30,str:.20,conf:.20,rec:.15,rel:.15},OWN={rar:'Rarity',str:'Strength',conf:'Data confidence',rec:'Recency',rel:'Relevance'};
-const OPP_INFO='Opportunity score (0–100) = 30% Rarity (how extreme the reading is within its window: the last 5 years for crypto signals, the full record for macro series; the label names the window start, plus "rarest since") + 20% Strength (robust distance from the 5-year median; 3σ = 100) + 20% Data confidence (audit: second-source agreement and freshness; unaudited data scores on age and source count) + 15% Recency (a new extreme scores higher than an old one) + 15% Relevance (BTC 100, ETH 90, crypto-wide 80, macro 75, your other watchlist coins by rank, others 30). POST NOW = a score of 70 or more AND a rare reading: bottom/top 5% of its window, or the lowest/highest in at least a year. All percentiles and "since" claims use completed closes (daily: last completed UTC day; weekly: last completed Mon–Sun candle).';
+const OPP_INFO='Opportunity score (0–100) = 30% Rarity (how extreme the reading is within its window: the last 5 years for crypto signals, the full record for macro series; the label names the window start, plus "rarest since") + 20% Strength (robust distance from the 5-year median; 3σ = 100) + 20% Data confidence (age and source count of the data; the audit result is shown but never changes the score) + 15% Recency (a new extreme scores higher than an old one) + 15% Relevance (BTC 100, ETH 90, crypto-wide 80, macro 75, your other watchlist coins by rank, others 30). POST NOW = a score of 70 or more AND a rare reading: bottom/top 5% of its window, or the lowest/highest in at least a year. All percentiles and "since" claims use completed closes (daily: last completed UTC day; weekly: last completed Mon–Sun candle).';
 const cap1=x=>x?x[0].toUpperCase()+x.slice(1):'';
 const OPEN=new Set();
 // metric series behind each signal, recomputed from SIGD so the score is generic: {t,a,dir,fmt}
@@ -1251,9 +1251,10 @@ function oppScore(s){const c={},m=s.om;
     const zd=m.zoneDays;c.rec=zd==null?[25,`Not in an extreme zone (outside the ${m.side==='lo'?'bottom':'top'} 20% of readings since ${m.from})`]:zd<=7?[100,zd<1?'Entered its extreme zone with the latest reading':`Entered its extreme zone ${Math.round(zd)} day${Math.round(zd)===1?'':'s'} ago`]:zd<=30?[75,`In its extreme zone for ${Math.round(zd)} days`]:zd<=90?[50,`In its extreme zone for ${Math.round(zd)} days`]:[30,`In its extreme zone for ${Math.round(zd)} days (old news)`]}
   else{c.rar=[35,'Context chart: no single metric to rank'];c.str=[30,'Context chart'];c.rec=[30,'Context chart']}
   const age=s.lastT?(Date.now()-s.lastT)/DAY:null;
-  if(s.audit)c.conf=[{ok:100,warn:70,bad:20}[s.audit],`Audit ${s.audit==='ok'?'passed':s.audit==='warn'?'passed with warnings':'failed'}${s.auditTxt?': '+s.auditTxt:''}`];
-  else if(s.confFix)c.conf=s.confFix;
-  else{let v=s.single?70:85;if(age!=null&&age>2.5)v-=30;c.conf=[v,`Not audited yet${s.single?'; single public source':''}; data ${age!=null?age.toFixed(1)+' days old':'age unknown'}`]}
+  // P0 15 Oct: data confidence must not depend on WHEN (or whether) the audit finished - a page scored before the audit gives the same score.
+  // It comes from the data alone (age, source count); the audit result is shown in the text and badge, never in the number.
+  if(s.confFix)c.conf=s.confFix;
+  else{let v=s.single?70:85;if(age!=null&&age>2.5)v-=30;const au=s.audit?`audit ${s.audit==='ok'?'passed':s.audit==='warn'?'passed with warnings':'failed'}${s.auditTxt?' ('+s.auditTxt+')':''}`:'not audited yet';c.conf=[v,`${s.single?'Single public source':'Two or more sources'}; data ${age!=null?age.toFixed(1)+' days old':'age unknown'}; ${au} (shown, not scored)`]}
   const A=s.asset||'BTC',wi=S.watch.findIndex(w=>w.sym.toUpperCase()===A);
   c.rel=A==='BTC'?[100,'BTC']:A==='ETH'?[90,'ETH']:A==='USD'?[80,'Crypto-wide liquidity']:A==='MACRO'?[75,'Macro backdrop for crypto']:wi>=0?[clamp(85-wi*6,40,85),`${A} is on your watchlist (#${wi+1})`]:[30,`${A} is not on your watchlist`];
   s.opp=c;s.score=Math.round(Object.keys(OW).reduce((q,k)=>q+OW[k]*c[k][0],0));return s.score}

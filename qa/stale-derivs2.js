@@ -21,13 +21,22 @@ const FUND=[/Funding[^\n]{0,40}neutral/i,/neutral band/i,/funding[^\n]{0,30}[-+]
 const OI=[/OI [-+]?\d+(\.\d+)?%/,/open interest[^\n]{0,40}[-+]?\d+(\.\d+)?/i];
 const has=(t,res)=>res.map(r=>STRIP(t).match(r)).filter(Boolean).map(m=>m[0]);
 // cache-busting params (x=, v=, t=, _=, ts=) are ignored when matching frozen responses
+// 15 Oct (supervisor): S1 deterministic - every case replays ONE recorded market fixture (qa/fixtures/market-replay.json.gz); no live network.
+// Re-record with: node qa/stale-derivs2.js URL --record   (only when the app starts fetching a new endpoint)
+const zlib=require('zlib'),REC=process.argv.includes('--record'),FX=path.join(__dirname,'fixtures/market-replay.json.gz');
 const FROZEN=new Map(),FKEY=u=>{try{const x=new (require('url').URL)(u);for(const q of ['x','v','t','_','ts','cb','nocache'])x.searchParams.delete(q);return x.toString()}catch(e){return u}};
-async function run(b,body){const pg=await b.newPage();await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
+if(!REC)for(const [k,v] of Object.entries(JSON.parse(zlib.gunzipSync(fs.readFileSync(FX)))))FROZEN.set(k,{status:v.s,headers:{'content-type':v.c,'access-control-allow-origin':'*'},body:Buffer.from(v.b,'base64')});
+const ORIGIN=new (require('url').URL)(URL).origin;
+async function run(b,body){const pg=await b.newPage();await pg.setBypassServiceWorker(true);await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
  pg.on('request',r=>{const u=r.url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return body==null?r.respond({status:404,body:''}):r.respond({status:200,contentType:'application/json',body:JSON.stringify(body)});
   // repo copy: every other GET is frozen - the first page load records it, later loads replay it, so prices/market data are identical and only derivs.json differs
-  const k=FKEY(u);if(r.method()==='GET'&&FROZEN.has(k)){const f=FROZEN.get(k);return r.respond({status:f.status,headers:f.headers,body:f.body}).catch(()=>{})}r.continue()});
- pg.on('response',async res=>{try{const u=res.url(),k=FKEY(u),q=res.request();if(q.method()!=='GET'||BLOCK.test(u)||/derivs\.json/.test(u)||FROZEN.has(k)||res.status()>=300&&res.status()<400)return;const body=await res.buffer();const H0=res.headers(),h={'content-type':H0['content-type']||'application/octet-stream','access-control-allow-origin':'*'};FROZEN.set(k,{status:res.status(),headers:h,body})}catch(e){}});
+  const k=FKEY(u);if(r.method()==='GET'&&FROZEN.has(k)){const f=FROZEN.get(k);return r.respond({status:f.status,headers:f.headers,body:f.body}).catch(()=>{})}
+  // replay mode: anything not in the fixture and not the app itself (same origin) is aborted - no live network
+  if(!REC&&!u.startsWith(ORIGIN)&&!u.startsWith('data:'))return r.abort();r.continue()});
+ if(REC)pg.on('response',async res=>{try{const u=res.url(),k=FKEY(u),q=res.request();if(q.method()!=='GET'||BLOCK.test(u)||/derivs\.json/.test(u)||FROZEN.has(k)||res.status()>=300&&res.status()<400)return;const body=await res.buffer();const H0=res.headers(),h={'content-type':H0['content-type']||'application/octet-stream','access-control-allow-origin':'*'};FROZEN.set(k,{status:res.status(),headers:h,body})}catch(e){}});
  await pg.goto(URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});await new Promise(r=>setTimeout(r,15000));
+ // wait for the top-5 auto audits to finish so every case is read in the same state (audit timing was a second S1 split source)
+ await pg.waitForFunction(()=>{const e=document.getElementById('audSt');return !e||!/running/.test(e.textContent)},{timeout:90000}).catch(()=>{});
  let txt='';for(const t of ['today','markets','signals']){await pg.click(`nav button[data-t="${t}"]`);await new Promise(r=>setTimeout(r,4000));txt+=`\n##${t}\n`+await pg.evaluate(()=>document.body.innerText)}
  const sig=txt.split('##signals')[1]||'',L=sig.split('\n'),scores={};for(let i=1;i<L.length;i++){const m=L[i].match(/^(\d{1,3}) ⓘ$/);if(m&&!scores[L[i-1]])scores[L[i-1]]=+m[1]}
  const post=(sig.match(/(\d+) of (\d+) charts are POST NOW/)||[]).slice(1).join('/');
@@ -39,6 +48,7 @@ async function run(b,body){const pg=await b.newPage();await pg.setViewport({widt
  // warm-up load (discarded): records every live GET so all measured runs, including "missing", replay identical market data.
  // Without it the first measured run was the only live one and could see a late/failed exchange price -> audit warn -> S1 diff.
  await run(b,null);
+ if(REC){const o={};for(const [k,v] of FROZEN){if(k.startsWith(ORIGIN))continue;o[k]={s:v.status,c:v.headers['content-type'],b:Buffer.from(v.body).toString('base64')}}fs.writeFileSync(FX,zlib.gzipSync(JSON.stringify(o)));console.log('recorded',Object.keys(o).length,'responses to',FX);await b.close();process.exit(0)}
  for(const [k,f] of [['missing',null],['stale4d',aged(4*24*H)],['inside',aged(2*H+50*60e3)],['past',fundAge(aged(3*H+10*60e3),7*H)],['fund_past',fundAge(aged(30*60e3),12*H+10*60e3)],['mixed',mixed()]])R[k]=await run(b,f);
  await b.close();const fails=[],notes=[];
  const eq=JSON.stringify(R.stale4d.scores)===JSON.stringify(R.missing.scores)&&R.stale4d.post===R.missing.post;
