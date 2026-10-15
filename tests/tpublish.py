@@ -77,4 +77,26 @@ rc, o = nr("after", snap); ok(rc == 1 and "market_updated" in o, "after: live ma
 dd = "\n".join(st.get("run", "") for st in W("data.yml")["jobs"]["refresh"]["steps"])
 ok("publish-derivs.yml" in dd and "gh workflow run ci.yml" not in dd, "data.yml dispatches the fast path (it hands over to full CI itself)")
 ok("market.json" in open(os.path.join(ROOT, ".github/scripts/newest_data.sh")).read(), "newest data at deploy time includes market/macro")
+# 6) smoke rollback never makes live updated / last_run go backwards: code from the last good commit, data/ newest of main HEAD and live
+rb = T + "/rb"; os.makedirs(rb + "/data", exist_ok=True)
+C, Dn = "2026-10-14T20:00:00Z", "2026-10-14T21:00:00Z"
+def rbset(site, live):  # site = data/ the rollback starts from (main HEAD copy); live = what is on the site now
+    for k, (f, fld, ev) in (("updated", ("derivs.json", "updated", "LIVE_DERIVS")), ("last_run", ("_runs.json", "last_run", "LIVE_RUNS")), ("m", ("market.json", "updated", "LIVE_MARKET")), ("x", ("macro.json", "updated", "LIVE_MACRO"))):
+        json.dump({fld: site, "src": "head"}, open(f"{rb}/data/{f}", "w")); json.dump({fld: live, "src": "live"}, open({"LIVE_DERIVS": T + "/ld.json", "LIVE_RUNS": T + "/lr.json", "LIVE_MARKET": T + "/market.json", "LIVE_MACRO": T + "/macro.json"}[ev], "w"))
+for lab, site_t, live_t in (("live newer than main HEAD", C, Dn), ("main HEAD newer than live", Dn, C), ("equal", C, C)):
+    rbset(site_t, live_t); json.dump({"updated": live_t, "last_run": live_t, "market_updated": live_t, "macro_updated": live_t}, open(snap, "w"))
+    rc1, o1 = nr("newest", rb); rc2, o2 = nr("check", rb)
+    got = {f: json.load(open(f"{rb}/data/{f}")) for f in ("derivs.json", "_runs.json", "market.json", "macro.json")}
+    newest = max(site_t, live_t); vals = [got["derivs.json"]["updated"], got["_runs.json"]["last_run"], got["market.json"]["updated"], got["macro.json"]["updated"]]
+    # after the rollback deploy, live = this site folder: it must not be older than live before
+    for f, fld in (("derivs.json", "updated"), ("_runs.json", "last_run"), ("market.json", "updated"), ("macro.json", "updated")):
+        json.dump(got[f], open({"derivs.json": T + "/ld.json", "_runs.json": T + "/lr.json", "market.json": T + "/market.json", "macro.json": T + "/macro.json"}[f], "w"))
+    rc3, o3 = nr("after", snap)
+    ok(rc1 == 0 and rc2 == 0 and rc3 == 0 and all(v == newest for v in vals), f"rollback ({lab}): data = newest of main HEAD and live; live updated/last_run never go backwards", (o1, o2, o3, vals))
+rj = ci["jobs"]["rollback"]; rs = "\n".join(st.get("run", "") for st in rj["steps"])
+ok("rollback_data.sh" in rs and "FETCH_HEAD:.github/scripts" in rs, "ci.yml rollback restores code only and runs rollback_data.sh (scripts from main HEAD)", rs[-400:])
+ix = [i for i, st in enumerate(rj["steps"]) if "rollback_data.sh" in st.get("run", "")]; iy = [i for i, st in enumerate(rj["steps"]) if "deploy-pages" in str(st.get("uses", ""))]
+ok(ix and iy and ix[0] < iy[0], "rollback data step runs before deploy-pages", (ix, iy))
+rbs = open(os.path.join(ROOT, ".github/scripts/rollback_data.sh")).read()
+ok("FETCH_HEAD" in rbs and "no_regress.py\" newest" in rbs.replace('"$(dirname "$0")/no_regress.py" newest', 'no_regress.py" newest') and "check" in rbs, "rollback_data.sh: main HEAD data, then newest-from-live, then never-backwards check")
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)

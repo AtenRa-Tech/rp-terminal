@@ -2,6 +2,7 @@
 """Never publish older derivatives than live. Compares derivs.json 'updated', _runs.json 'last_run', market.json and macro.json 'updated' in <site_dir>/data with LIVE.
   no_regress.py check <site_dir>            exit 1 if either is older than live (refuse to publish)
   no_regress.py snapshot <out.json>         save live updated/last_run (before a deploy)
+  no_regress.py newest <site_dir>           replace each tracked data file in <site_dir> with LIVE's copy when live is newer (rollback keeps newest data)
   no_regress.py after <snapshot.json>       exit 1 if live now is older than the snapshot (live went backwards)
 Env: SITE_URL; LIVE_DERIVS / LIVE_RUNS (local files, tests). A missing value on one side is reported, never treated as newer."""
 import datetime as d, json, os, sys, time, urllib.request
@@ -33,6 +34,14 @@ def compare(new, old, what):
     return bad
 if __name__ == "__main__":
     mode, arg = sys.argv[1], sys.argv[2]
+    if mode == "newest":
+        for k, (f, fld, ev) in KEYS.items():
+            dst = os.path.join(arg, "data", f); mine = (ld(dst) or {}).get(fld)
+            j = ld(os.environ.get(ev), None if os.environ.get(ev) else site + "data/" + f); theirs = (j or {}).get(fld)
+            a, b = P(mine), P(theirs)
+            if b and (not a or b > a): json.dump(j, open(dst, "w"), separators=(",", ":")); print(f"newest: {f} from live ({theirs} > {mine})")
+            else: print(f"newest: {f} kept ({mine}; live {theirs})")
+        sys.exit(0)
     if mode == "check":
         new = local(arg); L = live(); bad = compare(new, L, "live")
         print(f"no-regress: publishing {new}; live {L}")

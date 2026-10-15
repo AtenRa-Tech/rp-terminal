@@ -1,0 +1,1 @@
+{"note":"ONE freshness limit for monthly Fed series (M2SL etc.), supervisor ruling 15 Oct: age in days from the month start (last_date = YYYY-MM-01) <= monthly_days is fresh. Read by index.html (inlined as FRESHNESS; tests/tfresh.js asserts equality), scripts/runs_log.py (_runs.json) and tests/tsmoke.js.","monthly_days":100}
