@@ -9,7 +9,13 @@ function aligned(now=Date.now(),endTop=Math.floor(now/H)*H){const x=JSON.parse(f
  return x}
 // writes the test copy to a fresh temp dir and returns its path (never data/)
 function write(now=Date.now(),endTop){const d=fs.mkdtempSync(path.join(os.tmpdir(),'rpt-hermetic-')),f=path.join(d,'derivs.json');fs.writeFileSync(f,JSON.stringify(aligned(now,endTop)));return f}
+// news: the five RSS feeds are served from a recorded snapshot (qa/news-replay), timestamps shifted so the newest item is 30 min old
+const FEEDN={'coindesk.com':'CoinDesk','cointelegraph.com':'Cointelegraph','decrypt.co':'Decrypt','theblock.co':'The Block','bitcoinmagazine.com':'Bitcoin Magazine'};
+function newsBody(url,now=Date.now()){const S=JSON.parse(fs.readFileSync(path.join(__dirname,'../qa/news-replay/2026-10-01T22-33-14-329Z.json'),'utf8')),feed=decodeURIComponent((url.split('rss_url=')[1]||'')),
+ src=Object.entries(FEEDN).find(([k])=>feed.includes(k))?.[1],mx=Math.max(...S.news.map(n=>n.t)),d=now-30*60000-mx,fmt=t=>new Date(t).toISOString().slice(0,19).replace('T',' ');
+ return JSON.stringify({status:'ok',items:S.news.filter(n=>n.src===src).map(n=>({title:n.title,link:n.link,pubDate:fmt(n.t+d),description:n.desc||''}))})}
 async function hermetic(pg){const f=write();await pg.setRequestInterception(true);pg.on('request',r=>{if(r.isInterceptResolutionHandled&&r.isInterceptResolutionHandled())return;
- if(/\/data\/derivs\.json(\?|$)/.test(r.url()))return r.respond({status:200,contentType:'application/json',headers:{'cache-control':'no-store'},body:fs.readFileSync(f,'utf8')});r.continue()})}
-module.exports={hermetic,aligned,write};
+ const u=r.url();if(/\/data\/derivs\.json(\?|$)/.test(u))return r.respond({status:200,contentType:'application/json',headers:{'cache-control':'no-store'},body:fs.readFileSync(f,'utf8')});
+ if(/api\.rss2json\.com/.test(u))return r.respond({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:newsBody(u)});if(/allorigins\.win/.test(u))return r.abort();r.continue()})}
+module.exports={hermetic,aligned,write,newsBody};
 if(require.main===module){const [now,end]=process.argv.slice(2).map(Number);console.log(write(now||Date.now(),end||undefined))}
