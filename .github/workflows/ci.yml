@@ -93,6 +93,7 @@ jobs:
             node qa/stale-conf.js http://localhost:8765/index.html; } 2>&1 | tee "$RUNNER_TEMP/gates/stale-data.log"
       - name: News replay diff (report only)
         continue-on-error: true
+        timeout-minutes: 5   # report-only: a hang here must never eat the 45-min job budget (15 Oct: a820abc CI stuck here)
         run: node qa/news-replay.js run http://localhost:8765/index.html
       - name: Watchdog - failing gate lines to the job summary as ::error
         if: failure()
