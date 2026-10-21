@@ -1,5 +1,6 @@
 // 21 Oct phone P1s (RP's screenshots), at 390x844 and 412x915 phone emulation, several reloads each:
-//  A. the page never lays out wider than the screen (ticker clipped in its strip, no sideways scroll), also with a 6000px ticker injected;
+//  A. the page never lays out wider than the screen (ticker clipped in its strip, no sideways scroll), also with a 6000px ticker injected
+//     and with a long stale note in a Today market-state row (wraps instead of widening body);
 //  B. the bottom tab bar stays on screen after load;
 //  C. reload with every live call failing: BTC, ETH, Liquidity and Derivatives keep the last good reading with its date (never stuck on Loading/No data, never '6d old').
 // URL=... node tests/tphone.js
@@ -19,6 +20,9 @@ for(const [w,h] of [[390,844],[412,915]]){const ctx=await b.createBrowserContext
   if(i===0){// stress: a 6000px ticker (the overflow RP saw) must stay clipped inside its strip
    await pg.evaluate(()=>{document.getElementById('tkIn').textContent='BTC $83,000.00 +1.23% '.repeat(300)});await new Promise(r=>setTimeout(r,300));const l=await layout(pg);
    ok(l.sw<=w&&l.vv===w&&l.sx===0&&l.tk<=w,`${w}px: 6000px ticker text stays clipped, page ${w}px`,l);ok(navOk(l),`${w}px: tab bar on screen with a 6000px ticker`,l)}
+  if(i===0){// stress (21 Oct, seen with 6-day-old derivs): a long stale note in a Today market-state row (.cin .num.mu) must wrap, not widen the page
+   const ins=await pg.evaluate(()=>{const c=document.querySelector('.cin');if(!c)return false;const s=document.createElement('span');s.className='num mu';s.id='tphoneLong';s.textContent='stale: Stale: the OI series in derivs.json is past its freshness limit (stale, 3h51m old, past 3h limit (OKX)). Not used in readings, scores, POST NOW or captions. '.repeat(2);c.appendChild(s);return true});
+   await new Promise(r=>setTimeout(r,300));const l=await layout(pg);ok(ins&&l.sw<=w&&l.bw<=w&&l.sx===0,`${w}px: long stale note in a Today row wraps, page ${w}px`,{ins,...l});await pg.evaluate(()=>document.getElementById('tphoneLong')?.remove())}
   if(i===0){await pg.waitForFunction(()=>{try{return SIG&&SIG.length>5&&marketStates().filter(x=>['BTC','ETH','Liquidity','Derivatives'].includes(x.k)&&!/No data|Stale/.test(x.st)).length===4}catch(e){return false}},{timeout:150000}).catch(()=>{});
    const R=await rows(pg);ok(R.length===4&&R.every(x=>!/No data|Loading/.test(x.st+x.why)),`${w}px first load: BTC, ETH, Liquidity, Derivatives have readings`,R)}
   await pg.close()}
