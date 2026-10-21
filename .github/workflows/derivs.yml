@@ -1,10 +1,8 @@
 name: Refresh derivatives
 
+# 21 Oct: NO schedule. The hourly derivatives refresh is part of data.yml (one combined run + one commit with market).
+# Kept as a manual-only fallback (workflow_dispatch) so ops scripts and run history keep working; shares data.yml's group so it never overlaps.
 on:
-  schedule:
-    # derivatives only (OI, funding, basis): four off-peak chances an hour, because GitHub drops many scheduled runs.
-    # Separate from data.yml (macro / ETF / market) so a slow 6-hourly fetch never queues the hourly derivatives refresh.
-    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +10,7 @@ permissions:
   actions: write   # dispatch "Fast publish (derivs data)" after a data push
 
 concurrency:
-  group: refresh-derivs
+  group: refresh-data
   cancel-in-progress: false
 
 jobs:
@@ -77,7 +75,7 @@ jobs:
           # Instead, start each attempt from the current origin/main and re-apply only the data files this run changed (whole files).
           mine=$(git rev-parse HEAD); msg=$(git log -1 --format=%s "$mine")
           changed=$(git diff --no-renames --name-only "$BASE" "$mine") || { echo "::error::could not list changed files"; exit 1; }
-          for i in 1 2 3; do
+          for i in 1 2 3; do   # bounded: 3 attempts, then red
             if git fetch -q origin main; then
               git reset -q --hard FETCH_HEAD
               while IFS= read -r f; do

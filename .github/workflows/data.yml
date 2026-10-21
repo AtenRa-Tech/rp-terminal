@@ -1,27 +1,31 @@
 name: Refresh data
 
+# 21 Oct (account suspended for excessive automation): ONE data workflow on a slow schedule.
+#  - HOURLY at :17 (off the :00 peak): derivatives (OI, funding, basis) + market in ONE run, ONE commit, ONE push, ONE fast publish.
+#    derivs.yml no longer has a schedule (manual fallback only); the old 4x-an-hour crons on data.yml and derivs.yml are gone.
+#  - DAILY batch at 00:20 UTC (after the 00:00 UTC daily closes): macro (FRED) + ETF flows, plus the hourly set.
+#    BTC history and ETH/BTC have no server-side job: the app reads them from the exchanges in the browser (Coinbase/Binance), so
+#    they follow the 00:00 UTC close on their own. Weekly Thursday 21:00 UTC for the Fed H.4.1 release (WALCL/WDTGAL).
+#  Freshness limits are unchanged (market 2h, OI/basis 3h). GitHub runs crons best-effort; a dropped hour shows as stale in the app,
+#  and ci.yml's smoke fallback dispatches at most one extra run (only when none is queued/running).
 on:
   schedule:
-    # derivatives moved to derivs.yml (own concurrency group). Macro, ETF and market breadth run when the UTC hour is 0/6/12/18,
-    # plus Thursday 21:00 and 22:00 UTC (after the Fed's H.4.1 release at 16:30 ET, so WALCL/WDTGAL land the same day)
-    # Cron syntax checked (valid, UTC); this file is on the default branch (main) and the workflow state is "active".
-    # GitHub runs schedules best-effort (new schedules can take hours to start; runs are delayed or dropped under load),
-    # so ci.yml also dispatches this job when derivs.json is 2h+ old, and the app shows stale-data warnings per file cadence.
-    # four times an hour, off the :00 peak: GitHub drops many scheduled runs (1 Oct 23:00Z - 3 Oct 06:30Z: 8 of 31 hourly runs fired,
-    # gaps up to 7.2h), so four off-peak chances an hour keep derivs.json well under its 3h freshness limit when some are dropped
-    - cron: '7,22,37,52 * * * *'
-    - cron: '0 21 * * 4'
+    - cron: '17 * * * *'    # hourly: derivs + market
+    - cron: '20 0 * * *'    # daily batch: macro + ETF (+ hourly set)
+    - cron: '0 21 * * 4'    # weekly: Fed H.4.1 (macro)
   workflow_dispatch:
     inputs:
       full:
-        description: 'Also run the 6-hourly macro + ETF + market fetch'
+        description: 'Also run the daily macro + ETF batch'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
   actions: write   # dispatch "Fast publish" after a data push
 
+# one data run at a time, never cancelled mid-push; GitHub keeps at most ONE pending run in a group (a newer pending replaces the older),
+# so dropped/late crons or extra dispatches can never pile up into overlapping runs. derivs.yml shares this group.
 concurrency:
   group: refresh-data
   cancel-in-progress: false
@@ -32,7 +36,7 @@ jobs:
     timeout-minutes: 30
     steps:
       # Pushes go over SSH with the repo's write deploy key (secret DATA_DEPLOY_KEY). The main-branch ruleset requires the "test" check
-      # and lets only deploy keys bypass it, so this job can keep committing data hourly; the guard below makes sure that key can only ever change data/.
+      # and lets only deploy keys bypass it, so this job can keep committing data (hourly + daily batch); the guard below makes sure that key can only ever change data/.
       - uses: actions/checkout@v4
         with:
           ssh-key: ${{ secrets.DATA_DEPLOY_KEY }}
@@ -47,35 +51,40 @@ jobs:
       - name: Decide which jobs run
         id: plan
         run: |
-          H=$(date -u +%H); DOW=$(date -u +%u)
+          H=$(date -u +%H); M=$(date -u +%M); DOW=$(date -u +%u)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             FULL="${{ inputs.full }}"
-          elif [ $((10#$H % 6)) -eq 0 ]; then
+          elif [ "${{ github.event.schedule }}" = "20 0 * * *" ] || [ "${{ github.event.schedule }}" = "0 21 * * 4" ]; then
             FULL=true
-          elif [ "$(python3 -c "import json,datetime as d;u=min((lambda j:j.get('checked_at') or j['updated'])(json.load(open('data/'+f))) for f in ('market.json','macro.json','etf.json'));print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" 2>/dev/null || echo 99)" -ge 6 ]; then
-            FULL=true   # a dropped 0/6/12/18 run must not leave macro/ETF/market a whole cycle behind
-          elif [ "$DOW" = "4" ] && { [ "$H" = "21" ] || [ "$H" = "22" ]; }; then
-            FULL=true
+          elif [ "$(python3 -c "import json,datetime as d;u=min((lambda j:j.get('checked_at') or j['updated'])(json.load(open('data/'+f))) for f in ('macro.json','etf.json'));print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" 2>/dev/null || echo 99)" -ge 26 ]; then
+            FULL=true   # the daily batch was dropped or failed: the next hourly run picks it up once (checked_at = fetch time)
           else
             FULL=false
           fi
           echo "full=$FULL" >> "$GITHUB_OUTPUT"
-          echo "UTC hour $H -> full=$FULL"
+          echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL"
 
-      - name: Macro data (every 6h; daily FRED series re-pulled in full each run)
+      - name: Derivatives OI / funding / basis (hourly)
+        continue-on-error: true
+        run: python scripts/fetch_derivs.py
+
+      - name: Market breadth, dominance, TOTAL2/3 (hourly)
+        continue-on-error: true
+        run: python scripts/fetch_market.py
+
+      - name: Macro data (daily batch; daily FRED series re-pulled in full each run)
         if: steps.plan.outputs.full == 'true'
         continue-on-error: true
         run: python scripts/fetch_macro.py
 
-      - name: ETF flows (every 6h)
+      - name: ETF flows (daily batch)
         if: steps.plan.outputs.full == 'true'
         continue-on-error: true
         run: python scripts/fetch_etf.py
 
-      - name: Market breadth, dominance, TOTAL2/3 (every 6h)
-        if: steps.plan.outputs.full == 'true'
-        continue-on-error: true
-        run: python scripts/fetch_market.py
+      - name: Record this run in data/_runs.json (run time, per-feed freshness, rolling 24h hourly sample)
+        if: always()
+        run: python scripts/runs_log.py
 
       - name: Validate JSON before commit
         run: |
@@ -113,7 +122,7 @@ jobs:
           # Instead, start each attempt from the current origin/main and re-apply only the data files this run changed (whole files).
           mine=$(git rev-parse HEAD); msg=$(git log -1 --format=%s "$mine")
           changed=$(git diff --no-renames --name-only "$BASE" "$mine") || { echo "::error::could not list changed files"; exit 1; }
-          for i in 1 2 3; do
+          for i in 1 2 3; do   # bounded: 3 attempts, then the job fails red (no re-dispatch, no retry storm)
             if git fetch -q origin main; then
               git reset -q --hard FETCH_HEAD
               while IFS= read -r f; do
@@ -133,12 +142,12 @@ jobs:
           done
           echo "push failed"; exit 1
 
-      # FAST publish (15 Oct P0): market/macro/derivs-only data goes through publish-derivs.yml (own concurrency group, data gates only,
+      # FAST publish (15 Oct P0): ONE fast publish per data run: market/macro/derivs-only data goes through publish-derivs.yml (own concurrency group, data gates only,
       # < 8 min). It hands over to the full "CI and deploy" itself when anything else (etf.json, calendar.json, code) differs from the last good deploy.
       - name: Fast publish the new data (publish-derivs.yml)
         if: always() && steps.push.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          at=$(python3 -c "import json;print(json.load(open('data/market.json')).get('updated') or '')")
+          at=$(python3 -c "import json;print(json.load(open('data/_runs.json')).get('last_run') or json.load(open('data/market.json')).get('updated') or '')")
           gh workflow run publish-derivs.yml --repo "$GITHUB_REPOSITORY" --ref main -f derivs_run_at="$at" && echo "dispatched Fast publish for $(git rev-parse --short HEAD), market.json updated $at"
