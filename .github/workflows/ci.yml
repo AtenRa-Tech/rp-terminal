@@ -175,7 +175,7 @@ jobs:
         run: bash .github/scripts/gate-summary.sh "${{ inputs.data_redeploy && 'Data redeploy test' || 'Test' }}"
 
   deploy:
-    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and data.yml; a second deploy waits (never cancelled mid-deploy)
     concurrency:
       group: pages
       cancel-in-progress: false
@@ -305,7 +305,7 @@ jobs:
           python3 scripts/runs_log.py --check 95 /tmp/runs-live.json
 
   rollback:
-    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and data.yml; a second deploy waits (never cancelled mid-deploy)
     concurrency:
       group: pages
       cancel-in-progress: false
