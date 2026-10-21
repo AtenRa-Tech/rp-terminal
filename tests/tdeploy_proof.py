@@ -15,14 +15,14 @@ SNAP = open(os.path.join(ROOT, ".github/scripts/snapshot.sh")).read(); TS = open
 ok("set -euo pipefail" in SNAP, "snapshot.sh stops on the first failing check (set -e)")
 ok('no_regress.py" check "$dir"' in SNAP, "snapshot.sh: no_regress check (nothing older than live)")
 ok(re.search(r'publish_guard\.py" "\$dir/data/derivs\.json" "\$dir/\.main-derivs\.json"', SNAP) and re.search(r'publish_guard\.py" "\$dir/data/derivs\.json" "\$dir/\.live-derivs\.json"', SNAP), "snapshot.sh: publish guard vs main AND vs live")
-for wf, job in (("ci.yml", "deploy"), ("publish-derivs.yml", "deploy")):
+for wf, job in (("ci.yml", "deploy"), ("data.yml", "deploy")):
     st = W(wf)["jobs"][job]["steps"]; iS = [i for i, s in enumerate(st) if "snapshot.sh" in s.get("run", "")]; iD = [i for i, s in enumerate(st) if "deploy-pages" in str(s.get("uses", ""))]
     ok(iS and iD and iS[0] < iD[0], f"{wf} {job}: snapshot.sh runs before deploy-pages", (iS, iD))
     after = "\n".join(s.get("run", "") for s in st[iS[0]:iD[0]] if s.get("run")).split("snapshot.sh", 1)[-1] if iS else ""
     ok(not re.search(r"(>\s*|(cp|mv)\s+\S+\s+)_site/data/derivs\.json", after), f"{wf} {job}: nothing rewrites _site/data/derivs.json after the guard", after[:300])
     ok(not re.search(r"cp [^\n]*(index\.html|sw\.js|icons|manifest)[^\n]*_site", after), f"{wf} {job}: no code file copied into _site after snapshot (code = git archive of the tested sha only)")
-pd = "\n".join(s.get("run", "") for s in W("publish-derivs.yml")["jobs"]["deploy"]["steps"])
-ok("no_regress.py check _site" in pd.split("snapshot.sh", 1)[-1], "publish-derivs deploy: no_regress re-checked after the gated market/macro copies")
+pd = "\n".join(s.get("run", "") for s in W("data.yml")["jobs"]["deploy"]["steps"])
+ok("no_regress.py check _site" in pd.split("snapshot.sh", 1)[-1], "data.yml deploy: no_regress re-checked after the gated market/macro copies")
 # ---- static (b)
 ok(re.search(r'code=\$\(bash \.github/scripts/tested_sha\.sh\).*\n.*snapshot\.sh _site "\$code"', pd), "fast publish: snapshot code = tested_sha.sh, nothing else", pd[:400])
 cd = "\n".join(s.get("run", "") for s in W("ci.yml")["jobs"]["deploy"]["steps"])
@@ -32,7 +32,7 @@ ok(re.search(r'git archive "\$code" -- index\.html', SNAP) and re.search(r'git a
 # ---- (c) 16 Oct: live derivs.json unreadable -> HOLD (no skip path)
 ok("overlap-with-live check skipped" not in SNAP and "for i in 1 2 3" in SNAP and "Publish HELD" in SNAP and re.search(r'if \[ -z "\$got" \]; then rm -rf "\$dir";[^\n]*exit 1', SNAP), "snapshot.sh: unreadable live derivs -> 3 tries with backoff, then HOLD (site removed, exit 1); no skip-with-warning path")
 # ---- (d) every completed rollback is a RED, named job naming the restored sha and data time
-for wf in ("ci.yml", "publish-derivs.yml"):
+for wf in ("ci.yml", "data.yml"):
     J = W(wf)["jobs"]; ra = J.get("rollback-alert") or {}; rb = J["rollback"]
     run = "\n".join(st.get("run", "") for st in ra.get("steps", []))
     ok(ra.get("needs") == "rollback" and "needs.rollback.result == 'success'" in str(ra.get("if")) and "always()" in str(ra.get("if")), f"{wf}: rollback-alert runs after every completed rollback", ra.get("if"))

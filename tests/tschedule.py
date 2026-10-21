@@ -16,14 +16,15 @@ for f, cs in crons.items():
     for c in cs:
         m = c.split()[0]; ok("/" not in m and m != "*" and "," not in m, f"{f}: cron '{c}' fires at most once an hour", c)
 ok(crons.get("data.yml") == ["17 * * * *", "20 0 * * *", "0 21 * * 4"], "data.yml: hourly :17 + daily 00:20 UTC batch + weekly Thu 21:00", crons.get("data.yml"))
-ok(not crons.get("derivs.yml"), "derivs.yml has no schedule (merged into data.yml)", crons.get("derivs.yml"))
-tot = sum(per_day(c) for cs in crons.values() for c in cs); ok(tot <= 27, f"scheduled runs/day {tot:.2f} <= 27", tot)
-for f in ("data.yml", "derivs.yml"):
-    cc = W[f]["concurrency"]; ok(cc["group"] == "refresh-data" and cc["cancel-in-progress"] is False, f"{f}: shared refresh-data group, never cancelled mid-push", cc)
+ok("derivs.yml" not in W and "publish-derivs.yml" not in W, "derivs.yml and publish-derivs.yml removed (folded into data.yml)", sorted(W))
+tot = sum(per_day(c) for cs in crons.values() for c in cs); ok(tot <= 27, f"scheduled runs/day {tot:.2f} <= 27 (publishing adds no runs: it is part of the data run)", tot)
+cc = W["data.yml"]["concurrency"]; ok(cc["group"] == "refresh-data" and cc["cancel-in-progress"] is False, "data.yml: refresh-data group, never cancelled mid-push/mid-publish", cc)
+J = W["data.yml"]["jobs"]; ok(J["gates"]["needs"] == "refresh" and "pushed == 'true'" in J["gates"]["if"] and J["deploy"]["concurrency"]["group"] == "pages" and "rollback-alert" in J, "data.yml publishes in the same run (gates -> deploy[pages] -> smoke -> rollback -> rollback-alert), only after a push")
+sm = J["smoke"]["steps"]; ok(any(str(s.get("name", "")).startswith("data-sha ${{ needs.gates.outputs.sha }}") for s in sm) and "data.yml" in open(os.path.join(ROOT, ".github/scripts/last_good.sh")).read(), "smoke names the deployed data sha; last_good.sh reads data.yml runs")
 steps = W["data.yml"]["jobs"]["refresh"]["steps"]; run = "\n".join(s.get("run", "") for s in steps)
 ok("fetch_derivs.py" in run and "fetch_market.py" in run and run.count("git commit") == 2, "data.yml: derivs + market in one run, one commit (re-made once on main in the push loop)")
 ok("git add data/" in run and "git add -A -- data/" in run and "ssh-key" in str(steps[0]), "data.yml: stages only data/, pushes with the deploy key")
-ok(run.count("gh workflow run") == 1 and "publish-derivs.yml" in run, "data.yml: one fast publish dispatch per run")
+ok("gh workflow run" not in run, "data.yml refresh dispatches no other workflow (no per-push publish run)")
 ci = W["ci.yml"]; t = ci["jobs"]["test"]
 ok("if" not in t and "paths" not in str(on(ci).get("pull_request") or {}), "ci.yml test job always runs on PRs (required check never stuck)")
 ts = t["steps"]; sc = [i for i, s in enumerate(ts) if s.get("id") == "scope"]
