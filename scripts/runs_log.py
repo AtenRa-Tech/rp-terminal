@@ -62,7 +62,7 @@ def load(p, dflt):
 # other daily 5 days; monthly = shared/freshness.json monthly_days (100) from month start, age <= limit ok. Reported in _runs.json; they do not change the derivatives SLA ('ok').
 import datetime as _dt
 MARKET = os.path.join(os.path.dirname(DERIVS), "market.json"); MACRO = os.path.join(os.path.dirname(DERIVS), "macro.json")
-MARKET_LIM_H = 2; FEDD = ("DGS10", "DGS2", "DFII10", "T10Y2Y"); FEDD_LIM = 3; FRESHNESS = json.load(open(os.path.join(ROOT, "shared", "freshness.json")))  # ONE monthly limit shared with the app and smoke
+FEDD = ("DGS10", "DGS2", "DFII10", "T10Y2Y"); FEDD_LIM = 3; FRESHNESS = json.load(open(os.path.join(ROOT, "shared", "freshness.json"))); MARKET_LIM_H = FRESHNESS["market_h"]  # ONE monthly limit shared with the app and smoke
 CAD = {"Monthly": FRESHNESS["monthly_days"], "Daily": 5, "Weekly": 12}
 def us_hol(y):
     D = _dt.date
