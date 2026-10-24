@@ -43,7 +43,12 @@ async function run(b,mode,record){const pg=await b.newPage();
  for(const m of Object.keys(R))for(const [k,c] of Object.entries(R[m].cf))if(!FULL.has(c))F.push(`${m}: ${k} scored with confidence ${c}, not a full value (${[...FULL]}) from shared/freshness.json`);
  // 21 Oct: a required card whose source went quiet (no new points for 2+ days) is NOT a failure if it is listed as stale: unscored, shown as —, labelled with its reason
  // and kept out of SIG / POST NOW. A required card that is neither scored nor listed stale is still a failure.
+ // 25 Oct (supervisor): that stale-is-OK rule is for the REAL clock only (main's data/ read on today's date, where a card can honestly be past its limit).
+ // Under the frozen gate (node -r tests/freeze/preload.js: page clock T0, recorded fresh data/derivs) every required card is fresh, so it MUST be scored:
+ // a fresh card that goes unscored (or is wrongly marked stale) fails here.
+ const FROZENCLK=!!process.env.FREEZE_T0;console.log(FROZENCLK?`frozen clock ${new Date(+process.env.FREEZE_T0).toISOString()}: required cards must be scored (stale not accepted)`:'real clock: a required card past its freshness limit may be stale + unscored');
  for(const m of Object.keys(R))for(const k of ['ethbtc','rainbow','hash','fundBTC']){if(R[m].sc[k]!=null)continue;const c=R[m].st[k];
+  if(FROZENCLK){F.push(`${m}: required card ${k} not scored on the frozen clock with fresh recorded data${c?` (listed stale: ${String(c.why).slice(0,80)})`:''}`);continue}
   if(!c){F.push(`${m}: required card ${k} missing (neither scored nor listed stale)`);continue}
   if(!c.stale)F.push(`${m}: ${k} unscored but not marked stale`);if(c.score!=null)F.push(`${m}: stale ${k} has score ${c.score}`);if(c.read!=='—')F.push(`${m}: stale ${k} shows a reading "${c.read}"`);
   if(!/^(Stale|Unavailable)/.test(c.why))F.push(`${m}: stale ${k} has no stale label/reason`);if(c.inSig)F.push(`${m}: stale ${k} is still in SIG`);if(c.post)F.push(`${m}: stale ${k} counts as POST NOW`);
