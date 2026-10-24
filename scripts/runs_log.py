@@ -3,7 +3,7 @@
 
 Freshness here is judged per feed from derivs.json's own per-metric timestamps (latest.*_t), never from the
 file's 'updated' field: a run can rewrite the file while a feed fails and keeps an old copy.
-Limits match the app (DVLIM): open interest 3h, basis 3h, funding 12h.
+Limits match the app (DVLIM): open interest and basis shared/freshness.json derivs_hourly_h (5h), funding 12h.
 
   runs    : last 200 runs  {t, workflow, run_id, feeds:{"BTC oi": {t, age_h, lim_h, ok}, ...}, ok}
   hourly  : one sample per UTC hour for the last 24 hours (the newest run in that hour wins)
@@ -17,7 +17,8 @@ import datetime as dt, json, os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DERIVS = os.path.join(ROOT, "data", "derivs.json")
 RUNS = os.path.join(ROOT, "data", "_runs.json")
-LIM = {"oi": 3.0, "basis": 3.0, "funding": 12.0}
+_FR = json.load(open(os.path.join(ROOT, "shared", "freshness.json")))
+LIM = {"oi": float(_FR["derivs_hourly_h"]), "basis": float(_FR["derivs_hourly_h"]), "funding": 12.0}
 H = 3600_000
 
 
@@ -123,7 +124,7 @@ def record():
     hourly.append({"hour_ms": hr, "hour": iso(hr), "t": iso(t), "ok": ok, "stale": [k for k, v in fd.items() if not v["ok"]]})
     hourly.sort(key=lambda s: s["hour_ms"])
     out = {"note": "Written by scripts/runs_log.py after each derivatives run. Freshness per feed from derivs.json latest.*_t (not 'updated'). "
-                   "Limits: oi 3h, basis 3h, funding 12h. sla_24h counts a missing hour as not within.",
+                   f"Limits: oi {LIM['oi']:g}h, basis {LIM['basis']:g}h, funding 12h. sla_24h counts a missing hour as not within.",
            "last_run": iso(t), "runs": runs, "hourly": hourly, "sla_24h": sla(hourly, t),
            "market": mk, "macro": mc, "macro_checked": macro_checked(load(MACRO, {}), t)}
     tmp = RUNS + ".tmp"

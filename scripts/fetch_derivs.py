@@ -42,6 +42,16 @@ SYM = {"BTC": {"bn": "BTCUSDT", "okx": "BTC-USDT-SWAP", "okx_spot": "BTC-USDT", 
 
 
 
+FRESH = json.load(open(os.path.join(ROOT, "shared", "freshness.json")))
+OI_SETTLE_MS = int(FRESH["oi_settle_h"] * 3600_000)
+
+
+def settled_hours(pts, now_ms=None):
+    """OI hours are stored only once hour start + oi_settle_h (2h) <= fetch time: OKX revises its newest hour, so it is never stored provisional."""
+    now = NOW_MS if now_ms is None else now_ms
+    return [r for r in pts if int(r[0]) + OI_SETTLE_MS <= now]
+
+
 def write_json(path, obj):
     """Atomic write; refuses NaN/Infinity so a bad value can never corrupt the file."""
     s = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
@@ -238,6 +248,8 @@ def main():
             # OI and basis: store only CLOSED hours/days (a forming bar is dropped)
             if pts and key in ("oi_hourly", "basis_hourly"):
                 pts = closed_bars(pts, HOUR)
+                if key == "oi_hourly":
+                    pts = settled_hours(pts)
             elif pts and key == "oi_daily":
                 pts = closed_bars(pts, DAY)
             if pts:

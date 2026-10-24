@@ -50,8 +50,8 @@ export default async () => {
   } catch (e) { console.log("market.json unreadable:", e.message); }
   out.market_age_min = mAge == null || isNaN(mAge) ? null : Math.round(mAge);
   console.log(`market.json age (min): ${out.market_age_min}`);
-  // limits: OI/basis 3h, market 3h (21 Oct ruling) -> backup only at 180 min, and at most one backup data run per 3h
-  if (out.age_min == null || out.age_min >= 180 || out.market_age_min == null || out.market_age_min >= 180) {
+  // limits: OI/basis 5h (DERIVS_LIM_MIN = shared/freshness.json derivs_hourly_h, tests/tlim5.js asserts), market 3h (21 Oct ruling); at most one backup data run per 3h
+  if (out.age_min == null || out.age_min >= DERIVS_LIM_MIN || out.market_age_min == null || out.market_age_min >= 180) {
     console.log("STALE ALARM: derivatives or market >=180 min old or unreadable");
     if (!(await recentRun("data.yml", 180))) { out.data = await dispatch("data.yml"); out.data_reason = "stale backup"; } else console.log("backup data run dispatched <3h ago, skipping");
     // live-suite fails visibly (GitHub emails); at most once per 3h to avoid queue pile-up
@@ -67,4 +67,5 @@ export default async () => {
   console.log(JSON.stringify(out));
   return new Response(JSON.stringify(out), { headers: { "content-type": "application/json" } });
 };
+export const DERIVS_LIM_MIN = 300;   // = 60 * shared/freshness.json derivs_hourly_h
 export const config = { schedule: "47 * * * *" };   // hourly check (was 4x/hour); it dispatches nothing while data is within limits

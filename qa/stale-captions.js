@@ -1,9 +1,9 @@
 // Stale-derivatives caption + export test v2 (Crypto News GOD). Usage: node qa/stale-captions.js [URL]. Exit 1 = block.
-// Ruling 3 Oct: each metric's own limit decides (funding 12h; open interest and basis 3h).
+// Ruling 3 Oct: each metric's own limit decides (funding 12h; open interest and basis 5h from the hour start, 24 Oct).
 // Builds fixtures at run time from fixtures/derivs-stale.json (timestamps shifted relative to now), blocks live derivatives feeds,
 // then generates every caption template (3 styles), the picked caption, Studio draft text and export images (fillText log). Cases:
 //  C1 stale4d:   whole file 4 days old  -> no funding and no OI readings in any caption/draft/export
-//  C2 late:      file 3h10m old, funding 7h old -> funding captions MUST appear, OI captions must not
+//  C2 late:      file 5h10m old, funding 7h old -> funding captions MUST appear, OI captions must not
 //  C3 fund_past: file 30m old, funding 12h10m old -> no funding readings; OI captions must appear; oicap not stale (hourly OI aligned to latest)
 //  C6 oi_1d:     hourly OI ends 23:00 UTC yesterday (one close back) -> oicap FRESH in SIG, label names that close
 //  C5 oi_old:    file 30m old, latest OI fresh, hourly OI ends 2d16h ago -> SIGSTALE card id oicapBTC/oicapETH stale:true, score null, usedDate<wantDate, out of SIG, no oicap value anywhere
@@ -46,11 +46,11 @@ async function run(b,body){const p=await b.newPage({viewport:{width:412,height:9
  const st=await p.evaluate(()=>({sigtx:Object.fromEntries((SIG||[]).filter(c=>/^oicap/.test(c.id)).map(c=>[c.id,[c.title,c.read,c.src,c.cap,(typeof SIGT!=='undefined'&&SIGT[c.id]||[]).join(' ')].join(' | ')])),sig:(SIG||[]).map(c=>c.id),stale:typeof SIGSTALE==='undefined'?null:Object.fromEntries((Array.isArray(SIGSTALE)?SIGSTALE.map(c=>[c.id,c]):Object.entries(SIGSTALE)).map(([k,c])=>[k,{stale:c.stale,usedDate:c.usedDate,wantDate:c.wantDate,staleWhy:c.staleWhy,score:c.score}]))}));
  rows.state=st;await p.close();return rows}
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});
- const R={stale4d:await run(b,aged(4*24*H)),late:await run(b,fundAge(aged(3*H+10*60e3),7*H)),fund_past:await run(b,fundAge(aged(30*60e3),12*H+10*60e3)),oi_old:await run(b,oiOld(fundAge(aged(30*60e3),7*H),(2*24+16)*H)),oi_1d:await run(b,oiOld(fundAge(aged(30*60e3),7*H),Date.now()-(Math.floor(Date.now()/(24*H))*24*H-H)))};await b.close();
+ const R={stale4d:await run(b,aged(4*24*H)),late:await run(b,fundAge(aged(5*H+10*60e3),7*H)),fund_past:await run(b,fundAge(aged(30*60e3),12*H+10*60e3)),oi_old:await run(b,oiOld(fundAge(aged(30*60e3),7*H),(2*24+16)*H)),oi_1d:await run(b,oiOld(fundAge(aged(30*60e3),7*H),Date.now()-(Math.floor(Date.now()/(24*H))*24*H-H)))};await b.close();
  const cap=rows=>rows.filter(r=>r[0]!=='page text');const fails=[];
  hits(cap(R.stale4d),FUND.concat(OI)).forEach(h=>fails.push('C1 stale4d reading '+h));
  if(!hits(cap(R.late),FUND).length)fails.push('C2 late file: funding 7h old (inside 12h) produced no funding captions');
- hits(cap(R.late),OI).forEach(h=>fails.push('C2 late file: OI 3h10m old (past 3h) still in '+h));
+ hits(cap(R.late),OI).forEach(h=>fails.push('C2 late file: OI 5h10m old (past 5h) still in '+h));
  hits(cap(R.fund_past),FUND).forEach(h=>fails.push('C3 funding 12h10m old (past 12h) still in '+h));
  if(!hits(cap(R.fund_past),OI).length)fails.push('C3 fresh OI (30m) produced no OI captions');
  const OIC=[/open interest[^|\n]{0,40}÷ ?(market cap|circulating supply)[^|\n]{0,40}\d/i,/\d\.\d+% of (market cap|circulating supply)/i];

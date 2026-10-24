@@ -122,6 +122,8 @@ jobs:
       - name: Market + macro freshness in _runs.json (blocking)
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tmktfresh.py
+      - name: OI/basis 5h limit from the hour start, 2h settle, missed-run + OKX-revision cases (blocking)
+        run: python3 tests/tlim5.py
       - name: Fast publish path selection + no-regress (blocking)
         if: steps.scope.outputs.full == 'true'
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpublish.py
