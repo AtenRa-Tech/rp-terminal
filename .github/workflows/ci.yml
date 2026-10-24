@@ -95,27 +95,27 @@ jobs:
         run: set -o pipefail; tests/run-all.sh 2>&1 | tee "$RUNNER_TEMP/gates/node-suites.log"
       - name: Known-answer tests (frozen 30 Sep 2026 snapshot, data-golden.json)
         if: steps.scope.outputs.full == 'true'
-        run: set -o pipefail; GOLD=tests/fixtures node tests/tgolden.js 2>&1 | tee "$RUNNER_TEMP/gates/known-answer.log"
+        run: set -o pipefail; GOLD=tests/fixtures node -r ./tests/freeze/preload.js tests/tgolden.js 2>&1 | tee "$RUNNER_TEMP/gates/known-answer.log"
       - name: Caption sweep gate (blocking)
         if: steps.scope.outputs.full == 'true'
-        run: set -o pipefail; node qa/caption-sweep.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/caption-sweep.log"
+        run: set -o pipefail; node -r ./tests/freeze/preload.js qa/caption-sweep.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/caption-sweep.log"
       - name: Pulse movers gate (blocking; 5 fixtures + history fixture, movers and heatmap, Crypto News GOD's qa/pulse-movers.js)
         if: steps.scope.outputs.full == 'true'
-        run: set -o pipefail; node qa/pulse-movers.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/pulse-movers.log"
+        run: set -o pipefail; node -r ./tests/freeze/preload.js qa/pulse-movers.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/pulse-movers.log"
       - name: OI ÷ supply label gate (blocking; Crypto News GOD's qa/oicap-label.js, unchanged)
         if: steps.scope.outputs.full == 'true'
-        run: set -o pipefail; node qa/oicap-label.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/oicap-label.log"
+        run: set -o pipefail; node -r ./tests/freeze/preload.js qa/oicap-label.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/oicap-label.log"
       - name: Card presence gate (blocking; Crypto News GOD's qa/card-presence.js, unchanged) - every known card is in SIG or SIGSTALE with stale:true + staleWhy
         if: steps.scope.outputs.full == 'true'
-        run: set -o pipefail; node qa/card-presence.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/card-presence.log"
+        run: set -o pipefail; node -r ./tests/freeze/preload.js qa/card-presence.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/card-presence.log"
       - name: Sell-off lint gate (blocking; 13 sentences through the app's lintBanned(), qa/selloff-lint.js unchanged)
         if: steps.scope.outputs.full == 'true'
-        run: set -o pipefail; node qa/selloff-lint.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/selloff-lint.log"
+        run: set -o pipefail; node -r ./tests/freeze/preload.js qa/selloff-lint.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/selloff-lint.log"
       - name: Export check gate (blocking, built files; 29 exports need @RPTIME, Data source + as-of, UTC time, no lean words)
         if: steps.scope.outputs.full == 'true'
         working-directory: ${{ runner.temp }}
         # one retry after 90 s only to ride out a CoinGecko/CoinPaprika rate limit; any second failure blocks
-        run: set -o pipefail; { node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
+        run: set -o pipefail; { node -r "$GITHUB_WORKSPACE/tests/freeze/preload.js" "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node -r "$GITHUB_WORKSPACE/tests/freeze/preload.js" "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
       - name: Derivatives run log (blocking) - _runs.json freshness per feed, 24h hourly sample, 95% SLA logic
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/truns.py
@@ -132,10 +132,10 @@ jobs:
         run: python3 tests/tlivelag.py
       - name: Confidence full inside each input's freshness limit, reduced only past it (blocking)
         if: steps.scope.outputs.full == 'true'
-        run: node qa/conf-limit.js http://localhost:8765/index.html
+        run: node -r ./tests/freeze/preload.js qa/conf-limit.js http://localhost:8765/index.html
       - name: Live price never changes a score (blocking) - agreeing, late (3% off) and missing live BTC give identical scores + data confidence
         if: steps.scope.outputs.full == 'true'
-        run: node qa/live-price-score.js http://localhost:8765/index.html
+        run: node -r ./tests/freeze/preload.js qa/live-price-score.js http://localhost:8765/index.html
       - name: Stale alarm / live data age per feed limit (blocking) - stale fails, fresh passes
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tdata_age.py
@@ -161,15 +161,15 @@ jobs:
         if: steps.scope.outputs.full == 'true'
         run: |
           set -eo pipefail
-          { node qa/stale-derivs.js http://localhost:8765/index.html
-            DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js http://localhost:8765/index.html
-            node qa/stale-derivs2.js http://localhost:8765/index.html
-            node qa/stale-conf.js http://localhost:8765/index.html; } 2>&1 | tee "$RUNNER_TEMP/gates/stale-data.log"
+          { node -r ./tests/freeze/preload.js qa/stale-derivs.js http://localhost:8765/index.html
+            DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node -r ./tests/freeze/preload.js qa/stale-captions.js http://localhost:8765/index.html
+            node -r ./tests/freeze/preload.js qa/stale-derivs2.js http://localhost:8765/index.html
+            node -r ./tests/freeze/preload.js qa/stale-conf.js http://localhost:8765/index.html; } 2>&1 | tee "$RUNNER_TEMP/gates/stale-data.log"
       - name: News replay diff (report only)
         if: steps.scope.outputs.full == 'true'
         continue-on-error: true
         timeout-minutes: 5   # report-only: a hang here must never eat the 45-min job budget (15 Oct: a820abc CI stuck here)
-        run: node qa/news-replay.js run http://localhost:8765/index.html
+        run: node -r ./tests/freeze/preload.js qa/news-replay.js run http://localhost:8765/index.html
       - name: Watchdog - failing gate lines to the job summary as ::error
         if: failure()
         env:
