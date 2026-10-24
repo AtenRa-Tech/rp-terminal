@@ -1,9 +1,8 @@
 name: Stale data alarm
-# Runs on its own every 3h on the real clock (Netlify kicker is gone, 24 Oct), plus manual dispatch.
+# Manual dispatch only (25 Oct): the scheduled alarm now runs as the stale-alarm job of every hourly data.yml run (no extra scheduled runs);
+# live-suite.yml repeats the same check daily as a backstop if data.yml stops being scheduled.
 # FAILS (red, like live-lag) when live _runs.json shows any feed past its own limit, so the deploy-failure watch posts it to the room.
 on:
-  schedule:
-    - cron: '47 */3 * * *'   # 8/day, real clock, limits from live _runs.json (OI/basis 5h, market 3h, funding 12h)
   workflow_dispatch:
     inputs:
       reason:

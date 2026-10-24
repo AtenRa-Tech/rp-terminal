@@ -389,3 +389,16 @@ jobs:
           msg="ROLLBACK in $GITHUB_WORKFLOW run $GITHUB_RUN_ID: live restored to code ${RB_CODE:-unknown}, derivs data updated ${RB_DATA:-unknown}. The rollback deploy completed; this job is red so the room is told."
           echo "::error title=ROLLBACK - live restored::$msg"; echo "### ROLLBACK - live restored" >> "$GITHUB_STEP_SUMMARY"; echo "$msg" >> "$GITHUB_STEP_SUMMARY"
           exit 1
+
+  stale-alarm:
+    # 25 Oct: the stale alarm rides on every scheduled data run (hourly) instead of its own 3h cron, so it adds no scheduled runs
+    # (tschedule budget <= 27/day). always(): it must still fire when refresh/gates/deploy failed and live data is ageing.
+    # Real clock + live _runs.json on purpose: its job is to catch live data past its limit.
+    needs: [refresh, gates, deploy, smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Live data age per feed limit (fails when stale)
+        run: python3 .github/scripts/data_age.py "https://atenra-tech.github.io/rp-terminal/data/_runs.json"

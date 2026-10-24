@@ -9,15 +9,23 @@ W = {os.path.basename(f): yaml.safe_load(open(f)) for f in glob.glob(os.path.joi
 on = lambda w: w.get(True) or w.get("on") or {}
 crons = {f: [c["cron"] for c in (on(w).get("schedule") or [])] for f, w in W.items() if isinstance(on(w), dict)}
 def per_day(c):
+    # 25 Oct: counts step (*/3, 0-12/2) and range fields too; '*/3' used to count as 1 hour instead of 8
+    def n(f, size, lo):
+        t = 0
+        for part in f.split(","):
+            r, _, st = part.partition("/"); st = int(st or 1)
+            a, b = (lo, lo + size - 1) if r == "*" else ((int(r.split("-")[0]), int(r.split("-")[1])) if "-" in r else (int(r), int(r) if not st or "/" not in part else lo + size - 1))
+            t += len(range(a, b + 1, st))
+        return t
     m, h, dom, mon, dow = c.split()
-    nm = len(m.split(",")) if m != "*" else 60; nh = 24 if h == "*" else len(h.split(","))
-    return nm * nh / (7 if dow != "*" else 1)
+    return n(m, 60, 0) * n(h, 24, 0) * (n(dow, 7, 0) / 7 if dow != "*" else 1)
 for f, cs in crons.items():
     for c in cs:
         m = c.split()[0]; ok("/" not in m and m != "*" and "," not in m, f"{f}: cron '{c}' fires at most once an hour", c)
 ok(crons.get("data.yml") == ["17 * * * *", "20 0 * * *", "0 21 * * 4"], "data.yml: hourly :17 + daily 00:20 UTC batch + weekly Thu 21:00", crons.get("data.yml"))
 ok("derivs.yml" not in W and "publish-derivs.yml" not in W, "derivs.yml and publish-derivs.yml removed (folded into data.yml)", sorted(W))
-tot = sum(per_day(c) for cs in crons.values() for c in cs); ok(tot <= 27, f"scheduled runs/day {tot:.2f} <= 27 (publishing adds no runs: it is part of the data run)", tot)
+tot = sum(per_day(c) for cs in crons.values() for c in cs); ok(per_day("47 */3 * * *") == 8 and per_day("0 21 * * 4") == 1/7 and per_day("17 * * * *") == 24, "per_day counts */n steps and weekdays", (per_day("47 */3 * * *"), per_day("0 21 * * 4")))
+ok(tot <= 27, f"scheduled runs/day {tot:.2f} <= 27 (publishing adds no runs: it is part of the data run)", tot)
 cc = W["data.yml"]["concurrency"]; ok(cc["group"] == "refresh-data" and cc["cancel-in-progress"] is False, "data.yml: refresh-data group, never cancelled mid-push/mid-publish", cc)
 J = W["data.yml"]["jobs"]; ok(J["gates"]["needs"] == "refresh" and "pushed == 'true'" in J["gates"]["if"] and J["deploy"]["concurrency"]["group"] == "pages" and "rollback-alert" in J, "data.yml publishes in the same run (gates -> deploy[pages] -> smoke -> rollback -> rollback-alert), only after a push")
 sm = J["smoke"]["steps"]; ok(any(str(s.get("name", "")).startswith("data-sha ${{ needs.gates.outputs.sha }}") for s in sm) and "data.yml" in open(os.path.join(ROOT, ".github/scripts/last_good.sh")).read(), "smoke names the deployed data sha; last_good.sh reads data.yml runs")
