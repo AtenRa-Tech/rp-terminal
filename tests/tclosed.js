@@ -37,7 +37,7 @@ const r=await pg.evaluate(async()=>{const OCL=a=>typeof oiCapLatest==='function'
   {const lcd=dS(D),gd=JSON.parse(JSON.stringify(keepMK.global_daily||{points:[]}));const P=(gd.points||[]).filter(r=>String(r[0])<=lcd);const l=P.at(-1)||[lcd,2.9e12,57,10,1.2e12,9e11,1.4e11,'CoinPaprika'];
    P.push([dS(day0),l[1]*1.37,77.777,1.1,l[4],l[5],l[6],'CoinPaprika']);P.push([lcd+'x',l[1],66.666,9,l[4],l[5],l[6],'CoinGecko']);gd.points=P;
    MK={...keepMK,last_close_date:lcd,global_daily:gd};let A=null,txt='';try{A=altCalc()}catch(e){}try{txt=JSON.stringify(todayItems?todayItems():'')+JSON.stringify(A?.L||{})}catch(e){}
-   const G=gdClosed(MK);o.gd={n:G.length,last:G.at(-1)?.[0],lcd,srcs:[...new Set(G.map(r=>r[7]))],domDays:A?.domDays,domSrc:A?.domSrc,want:P.filter(r=>String(r[0])<=lcd&&r[7]==='CoinPaprika').length,leak:/77\.77|66\.66/.test(txt)};MK=keepMK}
+   const G=gdClosed(MK);o.gd={n:G.length,last:G.at(-1)?.[0],lcd,srcs:[...new Set(G.map(r=>r[7]))],domDays:A?.domDays,domSrc:A?.domSrc,want:P.filter(r=>String(r[0])<=lcd&&r[7]==='CoinPaprika').length,leak:/(?<![\d.])(77\.777|66\.666)(?!\d)/.test(txt)}/* 24 Oct: exact injected values only, so unrelated series numbers like 166.664 or 77.7795 don't count as a leak */;MK=keepMK}
   derivSignals();
  }finally{SIGD=keepD;DVRAW=realDV;DV=gateDV(realDV);MK=keepMK}
  return o});
