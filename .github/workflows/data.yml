@@ -6,7 +6,7 @@ name: Refresh data
 #  - DAILY batch at 00:20 UTC (after the 00:00 UTC daily closes): macro (FRED) + ETF flows, plus the hourly set.
 #    BTC history and ETH/BTC have no server-side job: the app reads them from the exchanges in the browser (Coinbase/Binance), so
 #    they follow the 00:00 UTC close on their own. Weekly Thursday 21:00 UTC for the Fed H.4.1 release (WALCL/WDTGAL).
-#  Freshness limits: market 3h (21 Oct supervisor ruling, was 2h; shared/freshness.json market_h), OI/basis 3h. GitHub runs crons best-effort; a dropped hour shows as stale in the app,
+#  Freshness limits: market 3h (21 Oct supervisor ruling, was 2h; shared/freshness.json market_h), OI/basis 5h from the hour start (24 Oct ruling). GitHub runs crons best-effort; a dropped hour shows as stale in the app,
 #  and ci.yml's smoke fallback dispatches at most one extra run (only when none is queued/running).
 on:
   schedule:
