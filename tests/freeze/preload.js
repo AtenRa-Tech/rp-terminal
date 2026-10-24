@@ -38,8 +38,9 @@ process.env.DATA=FZ+'/data';process.on('exit',save);
 /* playwright-core (qa/* gates run by ci.yml outside run-all, 25 Oct): same clock, same data/ snapshot, same replay.
    Every context gets the init script, service workers blocked, and a base route; a test's own route handlers keep priority,
    but their route.continue() goes through the same replay (like the puppeteer continue patch above). */
-let PW=null;try{PW=require('playwright-core')}catch(e){}
-if(PW){const rep=async(route,o)=>{const C=Object.getPrototypeOf(route).continue;const q=route.request(),u=q.url();let x;try{x=new URL(u)}catch(e){return C.call(route,o)}
+/* patch EVERY playwright instance a test loads (it may resolve a different copy than this file does, e.g. a global one) */
+const M=require('module'),PWD=new WeakSet();const ML=M._load;M._load=function(req,...a){const m=ML.call(this,req,...a);if(/^playwright(-core)?$/.test(req)&&m&&!PWD.has(m)){PWD.add(m);patchPW(m)}return m};
+function patchPW(PW){const rep=async(route,o)=>{const C=Object.getPrototypeOf(route).continue;const q=route.request(),u=q.url();let x;try{x=new URL(u)}catch(e){return C.call(route,o)}
    if(!/^https?:/.test(x.protocol))return C.call(route,o);
    if(LOCAL(x.hostname)){const f=dataFile(x);if(f)return route.fulfill({status:200,contentType:'application/json',headers:{'cache-control':'no-store'},body:fs.readFileSync(f)});return C.call(route,o)}
    if(q.method()!=='GET')return route.abort('failed');
