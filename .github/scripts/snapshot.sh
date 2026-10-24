@@ -25,3 +25,16 @@ echo "snapshot: code ${code:0:7} + data/ from main ${data:0:7}"
 if [ "$mode" = --rollback ]; then python3 "$here/no_regress.py" newest "$dir"; fi
 python3 "$here/no_regress.py" check "$dir"
 git show "$data:data/derivs.json" > "$dir/.main-derivs.json"; python3 "$here/publish_guard.py" "$dir/data/derivs.json" "$dir/.main-derivs.json"; rm -f "$dir/.main-derivs.json"
+# overlapping hours must also be identical to what LIVE serves now (a published closed hour never changes).
+# 16 Oct: live derivs.json unreadable -> retry 3x with backoff, then HOLD: publish nothing and fail loudly (the next scheduled run deploys).
+if [ "$mode" = --rollback ]; then echo "rollback: live overlap check skipped (live is the failed deploy)"
+else
+  got=; for i in 1 2 3; do
+    if [ -n "${LIVE_DERIVS:-}" ]; then cp "$LIVE_DERIVS" "$dir/.live-derivs.json" 2>/dev/null || true; else curl -sf --max-time 30 "${SITE_URL:-https://atenra-tech.github.io/rp-terminal/}data/derivs.json?v=$(date +%s)" -o "$dir/.live-derivs.json" || true; fi
+    if python3 -c "import json,sys;json.load(open(sys.argv[1]))['assets']" "$dir/.live-derivs.json" 2>/dev/null; then got=1; break; fi
+    echo "live derivs.json unreadable (attempt $i/3)"; [ $i -lt 3 ] && sleep $(( i * ${SNAP_RETRY_SLEEP:-10} ))
+  done
+  if [ -z "$got" ]; then rm -rf "$dir"; echo "::error title=Publish HELD::live derivs.json unreadable after 3 attempts: overlap-with-live cannot be checked, so NOTHING is published. The next scheduled run will deploy."; exit 1; fi
+  python3 "$here/publish_guard.py" "$dir/data/derivs.json" "$dir/.live-derivs.json"
+fi
+rm -f "$dir/.live-derivs.json"

@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Path selection for a data push. FAST = only data/derivs.json, _runs.json, market.json and/or macro.json changed since the last good deploy AND no code
-(non-data) file differs from that deploy. Anything else = FULL ("CI and deploy"). Usage:
+"""Path selection for a data push. Always FAST since 16 Oct: a data push deploys tested code + newest data (snapshot.sh); code=true when HEAD code differs from the tested commit. Usage:
   publish_path.py <good_sha> <head_sha>   -> prints fast|full and writes path=... to $GITHUB_OUTPUT"""
 import os, subprocess, sys
 FAST_FILES = {"data/derivs.json", "data/_runs.json", "data/market.json", "data/macro.json"}
 MARKET_FILES = {"data/market.json", "data/macro.json"}
 def select(changed):
-    """changed: list of paths that differ between the last good deploy and HEAD."""
+    """P1 (16 Oct, deploy starvation): every data push deploys a SNAPSHOT (code of refs/tags/pages-tested + newest data/ on main), so the data
+    path is always FAST and never waits for full CI. `changed` = paths differing between the TESTED code commit and HEAD; a code difference only
+    sets code=true, which asks for a full CI run of the new code (handover) while this run still publishes the data with the tested code."""
     ch = [f for f in changed if f]
-    if not ch: return "fast", "no file differs from the last good deploy (re-publish the same data)"
-    other = sorted(set(ch) - FAST_FILES)
-    if other: return "full", "non-derivs files changed: " + ", ".join(other[:8]) + (" …" if len(other) > 8 else "")
-    kind = "market/macro" if set(ch) & MARKET_FILES else "derivs-only"
-    return "fast", f"{kind} change: " + ", ".join(sorted(ch))
+    code = sorted(f for f in ch if not f.startswith("data/"))
+    if code: return "fast", "data published with the tested code; untested code differs (" + ", ".join(code[:6]) + (" …" if len(code) > 6 else "") + "): full CI requested for it"
+    return "fast", ("data change: " + ", ".join(sorted(ch))) if ch else "no file differs from the tested code commit (re-publish newest data)"
 def code_changed(changed):
     """True when anything outside data/ differs: the handover to "CI and deploy" must then run the full node suites (data_redeploy=false)."""
     return any(f and not f.startswith("data/") for f in changed)
