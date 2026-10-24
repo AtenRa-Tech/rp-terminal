@@ -51,13 +51,15 @@ async function run(b,body){const pg=await b.newPage();await pg.evaluateOnNewDocu
  // Without it the first measured run was the only live one and could see a late/failed exchange price -> audit warn -> S1 diff.
  await run(b,null);
  if(REC){const o={};for(const [k,v] of FROZEN){if(k.startsWith(ORIGIN))continue;o[k]={s:v.status,c:v.headers['content-type'],b:Buffer.from(v.body).toString('base64')}}fs.writeFileSync(FX,zlib.gzipSync(JSON.stringify(o)));console.log('recorded',Object.keys(o).length,'responses to',FX);await b.close();process.exit(0)}
- for(const [k,f] of [['missing',null],['stale4d',aged(4*24*H)],['inside',aged(2*H+50*60e3)],['past',fundAge(aged(3*H+10*60e3),7*H)],['fund_past',fundAge(aged(30*60e3),12*H+10*60e3)],['mixed',mixed()]])R[k]=await run(b,f);
+ for(const [k,f] of [['missing',null],['stale4d',aged(4*24*H)],['inside',aged(2*H+50*60e3)],['past',fundAge(aged(3*H+10*60e3),7*H)],['fund_past',fundAge(aged(30*60e3),12*H+10*60e3)],['mixed',mixed()],['oi16h',fundAge(aged(16*H),7*H)]])R[k]=await run(b,f);
  await b.close();const fails=[],notes=[];
  const eq=JSON.stringify(R.stale4d.scores)===JSON.stringify(R.missing.scores)&&R.stale4d.post===R.missing.post;
  if(!eq){const diff=Object.keys({...R.stale4d.scores,...R.missing.scores}).filter(k=>R.stale4d.scores[k]!==R.missing.scores[k]).map(k=>`${k}: stale ${R.stale4d.scores[k]??'absent'} vs missing ${R.missing.scores[k]??'absent'}`);(process.env.S1_REPORT_ONLY?notes:fails).push((process.env.S1_REPORT_ONLY?'::warning title=S1 (report only on the live gate until #29 is live)::':'')+`S1 scores differ from "derivs missing" (POST NOW ${R.stale4d.post} vs ${R.missing.post}): ${diff.join('; ')}`)}
  const ins=has(R.inside.txt,FUND.concat(OI));if(!ins.length)fails.push('S2 inside-limit (2h50m) shows no derivatives readings');
  // Ruling 3 Oct: each metric's own limit decides (funding 12h; OI and basis 3h). Late file (3h10m) with funding 7h old:
  const po=has(R.past.txt,OI),pf=has(R.past.txt,FUND);if(po.length)fails.push('S2 past-limit OI (3h10m) still shows: '+[...new Set(po)].join(' | '));if(!pf.length)fails.push('S5 late file: funding 7h old (inside 12h) was hidden');
+ /* 24 Oct ruling: hourly OI uses the 5h limit, so a 16h-old print (e.g. OI ending 23:00 UTC yesterday) is stale and unscored; the one-close step-back is for daily closes (oicap) only */
+ const o16=has(R.oi16h.txt,OI);if(o16.length)fails.push('S7 16h-old hourly OI still shows as a reading: '+[...new Set(o16)].join(' | '));
  const fp=has(R.fund_past.txt,FUND);if(fp.length)fails.push('S5 funding 12h10m old (past 12h) still shows: '+[...new Set(fp)].join(' | '));
  for(const k of ['past','fund_past','mixed','stale4d']){const m=R[k].txt.match(/(\d+(?:\.\d+)?)h old \(limit (\d+)h\)/g)||[];for(const x of m){const [,a,l]=x.match(/([\d.]+)h old \(limit (\d+)h\)/);if(+a<=+l)fails.push(`S6 ${k}: contradictory status "${x}"`)}}
  const mf=has(R.mixed.txt,FUND),mo=has(R.mixed.txt,OI);if(mf.length)fails.push('S3 mixed: stale funding still shown: '+[...new Set(mf)].join(' | '));if(!mo.length)fails.push('S3 mixed: fresh open interest was dropped');

@@ -7,6 +7,10 @@
 const fs=require('fs'),path=require('path'),P=require('puppeteer-core'),crypto=require('crypto');const FZ=path.join(__dirname,'../fixtures/frozen');
 const REC=!!process.env.FREEZE_RECORD;const META=JSON.parse(fs.readFileSync(FZ+'/meta.json','utf8'));const T0=META.T0;
 const IP=fs.existsSync(FZ+'/index.json')?FZ+'/index.json':null;const IDX=IP?JSON.parse(fs.readFileSync(IP,'utf8')):{};
+/* Node-side reads of the repo's data/*.json (tests that seed pages from disk) see the same frozen snapshot as the page */
+{const RD=path.resolve(__dirname,'../../data')+path.sep;const map=f=>{try{const r=path.resolve(String(f));if(r.startsWith(RD)&&/\.json$/.test(r)){const z=path.join(FZ,'data',r.slice(RD.length));if(fs.existsSync(z))return z}}catch(e){}return f};
+ for(const n of ['readFileSync','readFile','existsSync','statSync','createReadStream']){const o=fs[n];fs[n]=function(f,...a){return o.call(this,typeof f==='string'?map(f):f,...a)}}
+ const pr=fs.promises.readFile;fs.promises.readFile=function(f,...a){return pr.call(this,typeof f==='string'?map(f):f,...a)}}
 const {key}=require('./key');const LOCAL=h=>h==='localhost'||h==='127.0.0.1';
 {const RD=Date,r0=RD.now();class ND extends RD{constructor(...a){a.length?super(...a):super(T0+(RD.now()-r0))}static now(){return T0+(RD.now()-r0)}}global.Date=ND}
 const inject=`(()=>{const RD=Date,T0=${T0};class FD extends RD{constructor(...a){a.length?super(...a):super(T0)}static now(){return T0}}window.Date=FD;window.__FROZEN=1})();`;
@@ -24,7 +28,9 @@ const capture=pg=>pg.on('response',async r=>{const u=r.url();let x;try{x=new URL
   fs.mkdirSync(FZ+'/net',{recursive:true});fs.writeFileSync(`${FZ}/net/${h}.body`,body);IDX[k]={h,s:r.status(),ct:r.headers()['content-type']||'',u};dirty=true;save()}catch(e){}});
 const wrap=o=>{if(!o||o.__fz)return o;const np=o.newPage.bind(o);o.newPage=async(...a)=>{const pg=await np(...a);await pg.setBypassServiceWorker(true).catch(()=>{});await pg.evaluateOnNewDocument(inject);if(REC)capture(pg);
   await pg.setRequestInterception(true);const sri=pg.setRequestInterception.bind(pg);pg.setRequestInterception=async v=>sri(true);/* a test turning it off must not bypass the replay */
-  pg.on('request',q=>{if(pg.listenerCount('request')>pg.__fzBase)return;q.continue().catch(()=>{})});pg.__fzBase=pg.listenerCount('request');return pg};
+  pg.on('request',q=>{if(pg.listenerCount('request')>pg.__fzBase)return;q.continue().catch(()=>{})});pg.__fzBase=pg.listenerCount('request');
+  /* service-worker tests opt in with ?sw=1 (tfix F/E5-E6): the worker stays on for that page so the offline reload is real; its own fetches are not replayed, which is fine because the check runs offline */
+  const g0=pg.goto.bind(pg);pg.goto=async(u,...r)=>{if(/[?&]sw=1\b/.test(u))await pg.setBypassServiceWorker(false).catch(()=>{});return g0(u,...r)};return pg};
  if(o.createBrowserContext){const cc=o.createBrowserContext.bind(o);o.createBrowserContext=async(...a)=>wrap(await cc(...a))}
  if(o.createIncognitoBrowserContext){const ci=o.createIncognitoBrowserContext.bind(o);o.createIncognitoBrowserContext=async(...a)=>wrap(await ci(...a))}o.__fz=1;return o};
 const L=P.launch.bind(P);P.launch=async(...a)=>wrap(await L(...a));
