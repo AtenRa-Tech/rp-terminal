@@ -4,7 +4,9 @@
 const p=require('puppeteer-core');const URL=process.env.URL||'http://localhost:8765/index.html';
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,700):''));if(!c)F.push(n)};
 const go=u=>u+(u.includes('?')?'&':'?')+'v='+Date.now();
-const EX=/coinbase\.com|binance\.(com|vision)/;
+// 24 Oct: blockchain.com's market-price is blocked too. The app deliberately uses a blockchain.com series when it is as new as
+// the stored exchange closes (index.html, 'it lags a day' rule), so whether load 2 hit the saved-copy path depended on blockchain.com's lag that day.
+const EX=/coinbase\.com|binance\.(com|vision)|blockchain\.info\/charts\/market-price/;
 (async()=>{const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const ctx=await b.createBrowserContext();
  let pg=await ctx.newPage();await pg.goto(go(URL),{waitUntil:'domcontentloaded',timeout:90000});
  await pg.waitForFunction(()=>{try{return SIG&&SIG.length>5&&localStorage.rp_sigd&&SIGD?.P?.t?.length&&SIGD?.EB?.t?.length}catch(e){return false}},{timeout:180000}).catch(()=>{});
