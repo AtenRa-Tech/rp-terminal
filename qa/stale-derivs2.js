@@ -27,7 +27,9 @@ const zlib=require('zlib'),REC=process.argv.includes('--record'),FX=path.join(__
 const FROZEN=new Map(),FKEY=u=>{try{const x=new (require('url').URL)(u);for(const q of ['x','v','t','_','ts','cb','nocache'])x.searchParams.delete(q);for(const q of ['endTime','end','to']){const v=+x.searchParams.get(q);if(v>1.7e9&&(v>1e12?v:v*1e3)>Date.now()-3*864e5)x.searchParams.set(q,'NOW')}/* 'now'-based paging (bnDaily endTime=Date.now()) must replay across loads/days */return x.toString()}catch(e){return u}};
 if(!REC)for(const [k,v] of Object.entries(JSON.parse(zlib.gunzipSync(fs.readFileSync(FX)))))FROZEN.set(k,{status:v.s,headers:{'content-type':v.c,'access-control-allow-origin':'*'},body:Buffer.from(v.b,'base64')});
 const ORIGIN=new (require('url').URL)(URL).origin;
-async function run(b,body){const pg=await b.newPage();await pg.setBypassServiceWorker(true);await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
+// 24 Oct: each case starts with an empty on-device store. Since 21 Oct the app keeps the last settled funding print in localStorage
+// (shown labelled 'saved copy from this device'); a shared browser profile let an earlier case's fresh print leak into S3/S5 (test isolation, not an app bug).
+async function run(b,body){const pg=await b.newPage();await pg.evaluateOnNewDocument(()=>{try{localStorage.clear()}catch(e){}});await pg.setBypassServiceWorker(true);await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
  pg.on('request',r=>{const u=r.url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return body==null?r.respond({status:404,body:''}):r.respond({status:200,contentType:'application/json',body:JSON.stringify(body)});
   // repo copy: every other GET is frozen - the first page load records it, later loads replay it, so prices/market data are identical and only derivs.json differs
   const k=FKEY(u);if(r.method()==='GET'&&FROZEN.has(k)){const f=FROZEN.get(k);return r.respond({status:f.status,headers:f.headers,body:f.body}).catch(()=>{})}

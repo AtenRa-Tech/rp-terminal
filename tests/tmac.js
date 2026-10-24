@@ -1,5 +1,5 @@
 const p=require('puppeteer-core');const W=ms=>new Promise(r=>setTimeout(r,ms));(async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915,deviceScaleFactor:2,isMobile:true,hasTouch:true});const e=[];pg.on('pageerror',x=>e.push(x.message));pg.on('console',m=>{if(m.type()==='error'||m.type()==='warning')e.push('console: '+m.text().slice(0,200))});
-await pg.goto('http://localhost:8765/index.html');await W(5000);
+await pg.goto(process.env.URL||'http://localhost:8765/index.html');await W(5000);
 await pg.evaluate(()=>tab('macro'));await W(15000);
 const info=await pg.evaluate(()=>({nav:[...document.querySelectorAll('nav button')].map(b=>b.textContent+' w='+Math.round(b.getBoundingClientRect().width)+' ov='+(b.scrollWidth>b.clientWidth)),tiles:[...document.querySelectorAll('#macTiles .stat')].map(x=>x.innerText.replace(/\n/g,' | ')),health:document.querySelector('#macHealth').textContent,cards:MAC.cards.map(c=>c.id+': '+c.read),ll:MAC.ll&&MAC.ll.ll.map(x=>x.lag+'m r='+(x.r==null?'-':x.r.toFixed(3))+' n='+x.n),band:MAC.ll&&MAC.ll.band,btcsrc:MAC.btc&&MAC.btc.src,canv:document.querySelectorAll('[data-mg]').length}));
 console.log(JSON.stringify(info,null,1));
