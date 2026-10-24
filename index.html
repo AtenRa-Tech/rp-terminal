@@ -35,13 +35,15 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--tx);font:13px/1.35 var(--ui)}
 body{padding-bottom:calc(66px + env(safe-area-inset-bottom))}
+/* phone P1 (21 Oct): nothing may widen the page past the screen (a wide ticker made a 412px phone lay out 982px, so the page slid sideways and the fixed tab bar fell off-screen) */
+html{overflow-x:hidden;max-width:100%}body{overflow-x:clip;max-width:100vw;position:relative}nav{max-width:100vw;box-sizing:border-box}
 .num,.stat .v,.row .r,.row .nm,#ticker,#gUpd,#cc,table.cor{font-family:var(--mono);font-variant-numeric:tabular-nums}
 header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:2px solid var(--ac);padding:8px 10px;display:flex;align-items:center;gap:8px}
 .brand{font:700 14px var(--mono);letter-spacing:.08em;display:flex;align-items:center;gap:6px}.brand b{background:var(--ac);color:var(--onac);padding:2px 6px}.brand span{color:var(--ac)}
 .sp{flex:1}
 .pill{background:var(--bg);border:1px solid var(--bd);color:var(--ac);border-radius:var(--r2);padding:5px 10px;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.04em}
 .pill.on{background:var(--ac);color:var(--onac);border-color:var(--ac)}
-#ticker{overflow:hidden;white-space:nowrap;border-bottom:1px solid var(--ln);background:var(--bg);font-size:12px}#ticker b{color:var(--ac)}
+#ticker{overflow:hidden;white-space:nowrap;width:100%;max-width:100vw;box-sizing:border-box;contain:paint;border-bottom:1px solid var(--ln);background:var(--bg);font-size:12px}#ticker b{color:var(--ac)}
 #ticker div{display:inline-block;padding:6px 0;animation:tk 40s linear infinite}
 #ticker span{margin:0 14px}
 @keyframes tk{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -144,7 +146,7 @@ nav button{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis
 .msh{display:flex;align-items:center;gap:8px;min-width:0}.msh b{font-size:13px}.ms .msh b{min-width:84px}.msw{font-size:13px;color:var(--tx2);margin-top:3px;line-height:1.4}
 .rule{display:none;font-size:12.5px;color:var(--mu);margin-top:5px;line-height:1.4}.rule.on{display:block}.b-nd{background:color-mix(in srgb,var(--mu) 15%,transparent);color:var(--mu)}
 .rk{font:700 11px var(--mono);color:var(--ac);min-width:14px}.rt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rec .btn.sm{white-space:nowrap}
-.sbx{display:none;margin-top:8px}.sbx.on{display:block}.sbt td,.sbt th{padding:4px 5px;vertical-align:top}.cin{display:flex;gap:8px;font-size:12px;padding:3px 0;align-items:baseline}.cin .num{white-space:nowrap}
+.sbx{display:none;margin-top:8px}.sbx.on{display:block}.sbt td,.sbt th{padding:4px 5px;vertical-align:top}.cin{display:flex;flex-wrap:wrap;gap:0 8px;max-width:100%;font-size:12px;padding:3px 0;align-items:baseline}.cin .num{white-space:nowrap}.cin .num.mu{white-space:normal;overflow-wrap:anywhere;min-width:0;max-width:100%}
 .capS{border:1px solid var(--ln);border-radius:var(--r);padding:10px;margin-bottom:10px}.capS textarea{min-height:118px;margin-top:6px}.lint{font-size:12.5px;margin-top:4px}
 .flash{animation:fl 1.8s ease}@keyframes fl{0%,45%{box-shadow:0 0 0 2px var(--ac)}100%{box-shadow:0 0 0 0 transparent}}
 
@@ -607,20 +609,47 @@ async function cbDaily(sym,days){const m=sym.match(/^([A-Z0-9]+?)(USDT|BTC)$/);i
   if(!rows.length)throw new Error('Coinbase empty');rows.sort((a,b)=>a[0]-b[0]);return{t:rows.map(x=>x[0]*1000),v:rows.map(x=>+x[4]),src:'Coinbase'}}
 async function bnDaily(sym,pages=1){try{return await bnDaily0(sym,pages)}catch(e){const r=await cbDaily(sym,Math.min(pages*1000,3000));(D.fb.sig||(D.fb.sig=[])).push({fail:'Binance spot',use:'Coinbase',what:sym+' daily closes'});return r}}
 async function bnDaily0(sym,pages=1){let out=[],end=Date.now();for(let p=0;p<pages;p++){const r=await first(()=>J(`https://data-api.binance.vision/api/v3/klines?symbol=${sym}&interval=1d&limit=1000&endTime=${end}`,600000),()=>J(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=1000&endTime=${end}`,600000));if(!r.length)break;out=r.concat(out);end=r[0][0]-1;if(r.length<1000)break}if(!out.length)throw new Error('Binance empty '+sym);return{t:out.map(x=>+x[0]),v:out.map(x=>+x[4]),src:'Binance'}}
+// BTC long history (21 Oct): Coinbase BTC-USD daily candles are primary, Binance BTCUSDT klines cross-check them, and blockchain.com fills only the years before
+// the exchange history starts. blockchain.com stamps day D with the price at D 00:00 UTC, i.e. the CLOSE of D-1, so its points move back one day (bcShift) before
+// they are spliced by close date. The splice is used only if the overlapping closes match within 0.1% (median); every point carries its own source.
+const BTC_OVL=0.1;
+function bcShift(vals){return{t:vals.map(p=>p.x*1000-DAY),v:vals.map(p=>p.y),src:'blockchain.com'}}
+function ovlDiff(a,b){if(!a||!b)return null;const m=new Map(b.t.map((t,i)=>[t,b.v[i]])),d=[];a.t.forEach((t,i)=>{const x=m.get(t);if(x>0&&a.v[i]>0)d.push(Math.abs(a.v[i]/x-1)*100)});if(!d.length)return null;d.sort((x,y)=>x-y);return{n:d.length,med:d[d.length>>1],max:d.at(-1)}}
+function spliceHist(pri,bc,xc){if(!pri&&!bc)throw new Error('no BTC history');const out={t:[],v:[],source:[],src:pri?pri.src:'blockchain.com',checks:{}};
+  if(xc&&pri&&xc.src!==pri.src){const o=ovlDiff(pri,xc);out.checks[xc.src]=o?{...o,ok:o.med<=BTC_OVL}:null}
+  let ok=!!bc;if(bc&&pri){const o=ovlDiff(bc,pri);out.checks['blockchain.com']=o?{...o,ok:o.med<=BTC_OVL}:null;ok=!!o&&o.med<=BTC_OVL}
+  if(bc&&pri&&!ok)out.backfill='rejected: blockchain.com closes differ from '+pri.src+' by more than '+BTC_OVL+'% (median) on overlapping dates';
+  const t0=pri?pri.t[0]:Infinity;if(ok)bc.t.forEach((t,i)=>{if(t<t0&&bc.v[i]>0){out.t.push(t);out.v.push(bc.v[i]);out.source.push('blockchain.com')}});
+  if(pri)pri.t.forEach((t,i)=>{out.t.push(t);out.v.push(pri.v[i]);out.source.push(pri.src)});
+  if(!pri){out.t=bc.t.slice();out.v=bc.v.slice();out.source=bc.t.map(()=>'blockchain.com')}return out}
+async function cbDailyAll(sym){const m=sym.match(/^([A-Z0-9]+?)(USDT|BTC)$/),prod=m[1]+'-'+(m[2]==='USDT'?'USD':'BTC'),end=Math.floor(Date.now()/DAY)*86400,W=[];for(let k=0;k<14;k++)W.push(end-k*300*86400);
+  const R=await Promise.allSettled(W.map(e=>J(`https://api.exchange.coinbase.com/products/${prod}/candles?granularity=86400&start=${new Date((e-300*86400)*1000).toISOString()}&end=${new Date(e*1000).toISOString()}`,600000,20000)));
+  if(R[0].status!=='fulfilled')throw new Error('Coinbase newest page failed');const seen=new Map();for(let k=0;k<R.length;k++){if(R[k].status!=='fulfilled')break;/* a gap would break the series: stop at the first failed page */(R[k].value||[]).forEach(x=>seen.set(x[0],x));if(!(R[k].value||[]).length)break}
+  const rows=[...seen.values()].sort((a,b)=>a[0]-b[0]);if(rows.length<300)throw new Error('Coinbase short');return{t:rows.map(x=>x[0]*1000),v:rows.map(x=>+x[4]),src:'Coinbase'}}
+// a source that never answers (a hung request ignores its abort) counts as failed after 45 s, so the history never waits forever (reload P1, 21 Oct)
+const capT=(pr,ms=45000)=>Promise.race([pr,new Promise((_,j)=>setTimeout(()=>j(new Error('timeout')),ms))]);
+async function btcHist(){const [cb,bn,bc]=await Promise.allSettled([capT(cbDailyAll('BTCUSDT')),capT(bnDaily0('BTCUSDT',4)),capT(J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000,20000))]);
+  const g=x=>x.status==='fulfilled'?x.value:null,C=g(cb),B=g(bn),BC=g(bc)?bcShift(g(bc).values.filter(p=>p.y>0)):null;
+  // primary: Coinbase; if Coinbase failed, Binance; the other exchange is the cross-check
+  const pri=C||B,xc=C?B:null;const h=spliceHist(pri,BC,xc);if(h.t.length<2000)throw new Error('BTC history too short');return h}
 async function loadSigData(){
   const [px,hr,eb,pg,bt,st,cb,ce,cl]=await Promise.allSettled([
-    first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>await bnDaily('BTCUSDT',4)),
+    btcHist(),
     J('https://api.blockchain.info/charts/hash-rate?timespan=3years&format=json&cors=true&sampled=false',3600000),
     bnDaily('ETHBTC',2),bnDaily('PAXGUSDT',2),bnDaily('BTCUSDT',2),
     J('https://stablecoins.llama.fi/stablecoincharts/all',3600000),bnDaily('BTCUSDT',4),bnDaily('ETHUSDT',4),bnDaily('LINKUSDT',3)]);
-  const g=x=>x.status==='fulfilled'?x.value:null;const P0=g(px),P=P0?{...closed(P0),src:P0.src}:null;const fs=D.fb.sig||(D.fb.sig=[]);
-  if(P0&&P0.src!=='blockchain.com')fs.push({fail:'blockchain.com',use:P0.src,what:'BTC price history'});if(!P0)fs.push({fail:'blockchain.com, Binance and Coinbase',use:null,what:'BTC price history'});if(!g(hr))fs.push({fail:'blockchain.com',use:null,what:'hashrate'});
+  const g=x=>x.status==='fulfilled'?x.value:null;const P0=g(px),P=P0?{...closed(P0),src:P0.src,checks:P0.checks,backfill:P0.backfill}:null;const fs=D.fb.sig||(D.fb.sig=[]);
+  if(P0&&P0.src!=='Coinbase')fs.push({fail:'Coinbase',use:P0.src,what:'BTC price history'});if(P0?.backfill)fs.push({fail:'blockchain.com backfill',use:null,what:P0.backfill});if(!P0)fs.push({fail:'Coinbase, Binance and blockchain.com',use:null,what:'BTC price history'});if(!g(hr))fs.push({fail:'blockchain.com',use:null,what:'hashrate'});
   let stv=g(st)?{t:g(st).map(p=>+p.date*1000),v:g(st).map(p=>p.totalCirculatingUSD.peggedUSD),src:'DefiLlama'}:null;if(!stv){try{const mk=await ensureMK();if(mk?.stablecoins?.points?.length){stv={t:mk.stablecoins.points.map(p=>ymd(p[0])),v:mk.stablecoins.points.map(p=>p[1]),src:'market.json'};fs.push({fail:'DefiLlama',use:'market.json',what:'stablecoin supply'})}else fs.push({fail:'DefiLlama',use:null,what:'stablecoin supply'})}catch(e){}}// RULE 2: completed UTC days only; live prices appear only on tiles labelled "live HH:MM UTC"
-  const H=g(hr);return{P,H:H?closed({t:H.values.map(p=>p.x*1000),v:H.values.map(p=>p.y)}):null,EB:(g(ce)&&g(cb))?closed(alignR(g(ce),g(cb))):closed(g(eb)),PG:closed(g(pg)),BT:closed(g(bt)),ST:stv?{...closed(stv),src:stv.src}:null,CL:{BTC:closed(g(cb)),ETH:closed(g(ce)),LINK:closed(g(cl))}}}
+  const H=g(hr);return{P,H:H?closed({t:H.values.map(p=>p.x*1000),v:H.values.map(p=>p.y)}):null,EB:ebX(g(ce),g(cb),g(eb),fs),PG:closed(g(pg)),BT:closed(g(bt)),ST:stv?{...closed(stv),src:stv.src}:null,CL:{BTC:closed(g(cb)),ETH:closed(g(ce)),LINK:closed(g(cl))}}}
+// ETH/BTC (21 Oct): primary = ETH-USD ÷ BTC-USD daily closes; the direct ETHBTC pair cross-checks it on overlapping close dates (same 0.1% median rule as BTC history).
+// Each close keeps its own date (t = the UTC day it closed). A failed cross-check is reported, never hidden; the reading still uses the primary closes.
+function ebX(ce,cb,eb,fs){const pri=(ce&&cb)?alignR(ce,cb):null,P=pri?{...pri,src:pri.src||((ce.src||'')+' ETH/BTC').trim()}:eb;if(!P)return null;const o={...closed(P),checks:{}};
+  if(pri&&eb){const d=ovlDiff(pri,eb);o.checks[eb.src+' ETHBTC']=d?{...d,ok:d.med<=BTC_OVL}:null;if(d&&d.med>BTC_OVL&&fs)fs.push({fail:'ETH/BTC cross-check',use:null,what:`ETH/BTC closes differ from ${eb.src} ETHBTC by ${d.med.toFixed(2)}% (median, ${d.n} closes), over the ${BTC_OVL}% limit`})}return o}
 // #24 partial source recovery: each dataset that came back fresh replaces the old one; only a failed dataset keeps its previous copy
 // (before: a failed long-term BTC source threw away every fresh coin history too)
-function mergeSig(nd,old){if(!old)return nd;const o={...nd};for(const k of ['P','H','EB','PG','BT','ST'])if(!o[k]&&old[k])o[k]={...old[k],kept:true};o.CL={...(old.CL||{})};for(const k in (nd.CL||{}))if(nd.CL[k])o.CL[k]=nd.CL[k];return o}
-function closed(s){if(!s||!s.t)return s||null;let n=s.t.length;while(n&&s.t[n-1]+DAY>Date.now())n--;return n===s.t.length?s:{...s,t:s.t.slice(0,n),v:s.v.slice(0,n)}}
+function mergeSig(nd,old){if(!old)return nd;const o={...nd};for(const k of ['P','H','EB','PG','BT','ST'])if(!o[k]&&old[k])o[k]={...old[k],kept:true};/* 21 Oct: both exchanges failed and only blockchain.com answered (it lags a day): the stored exchange closes are newer, so the card uses them, marked stale */if(o.P&&old.P?.t?.length&&o.P.src==='blockchain.com'&&old.P.src!=='blockchain.com'&&old.P.t.at(-1)>o.P.t.at(-1))o.P={...old.P,kept:true};o.CL={};for(const k in (old.CL||{}))if(old.CL[k])o.CL[k]={...old.CL[k],kept:true};for(const k in (nd.CL||{}))if(nd.CL[k])o.CL[k]=nd.CL[k];return o}
+function closed(s){if(!s||!s.t)return s||null;let n=s.t.length;while(n&&s.t[n-1]+DAY>Date.now())n--;return n===s.t.length?s:{...s,t:s.t.slice(0,n),v:s.v.slice(0,n),...(s.source?{source:s.source.slice(0,n)}:{})}}
 // forming-candle rule: readings, scores and POST NOW use the last CLOSED daily candle, whatever the caller passes in
 function closedSet(d){if(!d)return d;const o={...d};for(const k of ['P','H','EB','PG','BT','ST'])if(o[k]?.t)o[k]=closed(o[k]);if(d.CL){o.CL={};for(const k in d.CL)o.CL[k]=d.CL[k]?.t?closed(d.CL[k]):d.CL[k]}return o}
 // completed Mon–Sun weekly candles from completed daily closes: a week exists once its Sunday close exists; close = Sunday's close; t = the Sunday
@@ -846,7 +875,7 @@ function buildSignals(d){d=closedSet(d);const out=[],P=d.P,PB=d.CL?.BTC?.v?.leng
      draw:(c,X,Y,W,H,u)=>plot(c,X,Y,W,H,u,{t:s.t,yf:usdB,series:[{v:s.v,c:TH.up,w:3.2,fill:1,l:'Stablecoin supply'},{t:bs.t,v:bs.v.map(x=>x*k),c:TH.ac,w:2.2,l:'BTC (scaled)'}]})}})}
   // E-exports: each card names only its own source plus the as-of date of its data
   try{const thru=x=>x&&x.t?.length?', completed UTC days through '+dU(x.t.at(-1)):'',cbF=(D.fb.sig||[]).some(f=>/BTCUSDT/.test(f.what||'')&&f.use==='Coinbase'),bS=(PB?.src?exN(PB)+' '+exP(PB,'BTC'):cbF?'Coinbase BTC-USD':'Binance BTCUSDT')+' daily closes';
-   const pS=P?(P.src==='blockchain.com'?'blockchain.com BTC daily price':(P.src||'Binance')+' BTC daily closes')+thru(P):'',bb=PB?(PB===P?pS:bS+thru(PB)):'';
+   const pS=P?(P.src==='blockchain.com'?'blockchain.com BTC daily price (shifted to close date)':(P.src||'Binance')+' BTC daily closes'+(P.source&&P.source[0]==='blockchain.com'?`, blockchain.com before ${dU(P.t[P.source.indexOf(P.src)])}`:''))+thru(P):'',bb=PB?(PB===P?pS:bS+thru(PB)):'';
    const M={pi:pS,rainbow:pS,halv:pS,mayer:bb,'2y':bb,dd:bb,gold:d.PG&&d.BT?exR({pair:[d.PG.src,d.BT.src]},'PAXG','BTC')+' daily closes'+thru(alignR(d.BT,d.PG)):''};
    out.forEach(s=>{if(!s.src&&M[s.id])s.dsrc=M[s.id]})}catch(e){console.warn('dsrc',e)}
   return out.sort((a,b)=>b.score-a.score)}
@@ -1046,7 +1075,7 @@ const mi=t=>{const d=new Date(t);return d.getUTCFullYear()*12+d.getUTCMonth()};
 const usdT=b=>'$'+(b/1000).toFixed(2)+'T';
 const fM=(v,sign=1)=>v==null||!isFinite(v)?'–':(v<0?'-':sign?'+':'')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';
 // ONE monthly limit: shared/freshness.json, inlined below (tests/tfresh.js asserts it equals the file); fresh when age <= limit
-const FRESHNESS={"note":"ONE freshness limit for monthly Fed series (M2SL etc.), supervisor ruling 15 Oct: age in days from the month start (last_date = YYYY-MM-01) <= monthly_days is fresh. Read by index.html (inlined as FRESHNESS; tests/tfresh.js asserts equality), scripts/runs_log.py (_runs.json) and tests/tsmoke.js.","monthly_days":100,"signal_cards":{"note":"ONE limit for stale labels AND data confidence (supervisor 15 Oct): a card is fresh while its last point is within the limit (full confidence), past it the card is stale (no score, no confidence, out of POST NOW). daily: last closed UTC day minus daily_lag_days (one-day step-back); weekly (wrsi): minus weekly_lag_days; settled funding: funding_h hours (= _runs.json funding lim_h).","daily_lag_days":1,"weekly_lag_days":14,"funding_h":12},"confidence":{"fresh_multi_source":100,"fresh_single_source":85}};
+const FRESHNESS={"note":"ONE freshness limit for monthly Fed series (M2SL etc.), supervisor ruling 15 Oct: age in days from the month start (last_date = YYYY-MM-01) <= monthly_days is fresh. Read by index.html (inlined as FRESHNESS; tests/tfresh.js asserts equality), scripts/runs_log.py (_runs.json) and tests/tsmoke.js.","monthly_days":100,"signal_cards":{"note":"ONE limit for stale labels AND data confidence (supervisor 15 Oct): a card is fresh while its last point is within the limit (full confidence), past it the card is stale (no score, no confidence, out of POST NOW). daily: last closed UTC day minus daily_lag_days (one-day step-back); weekly (wrsi): minus weekly_lag_days; settled funding: funding_h hours (= _runs.json funding lim_h).","daily_lag_days":1,"weekly_lag_days":14,"funding_h":12},"confidence":{"fresh_multi_source":100,"fresh_single_source":85},"market_h":3,"market_note":"market.json (breadth, dominance, TOTAL2/3) freshness limit in hours. 21 Oct supervisor ruling: 3h, the same as OI/basis, with the hourly :17 data job. Read by index.html (inlined FRESHNESS -> DLIM.market) and scripts/runs_log.py (_runs.json market.limit_h, which data_age.py / the stale alarm read).","derivs_hourly_h":5,"derivs_hourly_note":"ONE limit for open interest and basis (supervisor 24 Oct): age measured from the newest stored hour's START; hourly :17 job stores an OI hour only once start+2h <= fetch, so a fresh write is 2h17m old and one missed run reaches 4h17m (fresh); past 5h is stale. Read by index.html (DVLIM), scripts/runs_log.py (LIM), ops/netlify/kick.mjs (backup threshold) and tests/tlim5.js.","oi_settle_h":2};
 // every M2 mention names its month and source, e.g. 'M2 (Aug 2026, FRED)' (15 Oct ruling); never 'current'/'latest'
 const M2SRC='FRED, ECB, BOJ, PBoC';
 const CAD={Monthly:FRESHNESS.monthly_days,Daily:5,Weekly:12},/* weekly series stale after 12 days (15 Oct ruling) */H10=/^(DEX|DTWEX)/;
@@ -1068,7 +1097,7 @@ const back=(S2,days)=>{const t=S2.t.at(-1)-days*DAY;let i=S2.t.length-1;while(i>
 function gm2(M=MAC.M){const g=M?.global_m2;if(!g?.points?.length)return null;const P=g.points,t=P.map(p=>ymd(p[0])),L=P.length-1,byM=new Map(t.map((x,i)=>[mi(x),i]));
   const at=k=>byM.get(mi(t[L])-k);const iM=at(1),iY=at(12);return{g,P,t,L,tot:P[L][1],mom:iM!=null?(P[L][1]/P[iM][1]-1)*100:null,yoy:iY!=null?(P[L][1]/P[iY][1]-1)*100:null,totCC:P[L][6],yoyCC:iY!=null&&P[L][6]!=null?(P[L][6]/P[iY][6]-1)*100:null,last:t[L]}}
 async function macBTC(){if(MAC.btc&&Date.now()-MAC.btc.at<3600000)return MAC.btc;let P=SIGD?.P;
-  if(!P||P.t.length<2000)P=await first(async()=>{const r=await J('https://api.blockchain.info/charts/market-price?timespan=all&format=json&cors=true&sampled=false',3600000);const v=r.values.filter(p=>p.y>0);if(v.length<2000)throw 0;return{t:v.map(p=>p.x*1000),v:v.map(p=>p.y),src:'blockchain.com'}},async()=>await bnDaily('BTCUSDT',4));
+  if(!P||P.t.length<2000)P=await btcHist();
   const now=new Date(),curM=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1),acc=new Map();
   P.t.forEach((t,i)=>{const d=new Date(t),k=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);if(k>=curM)return;const a=acc.get(k)||[0,0];a[0]+=P.v[i];a[1]++;acc.set(k,a)});
   const mt=[...acc.keys()].sort((a,b)=>a-b).filter(k=>acc.get(k)[1]>=20);return MAC.btc={d:P,m:{t:mt,v:mt.map(k=>acc.get(k)[0]/acc.get(k)[1])},src:P.src,at:Date.now()}}
@@ -1139,7 +1168,7 @@ function macHealth(M,src){const ids=Object.keys(M.series||{}),st=ids.filter(id=>
 async function renderMacro(force){const box=$('#macList'),y0=scrollY;
   if(!MAC.M||force){if(!MAC.M)box.innerHTML='<div class="card mu">Loading macro data…</div>';try{const r=await dataFile('macro',force);MAC.M=r.v;MAC.src=r.src}catch(e){box.innerHTML='<div class="card mu">Could not load data/macro.json and there is no cached copy yet. Tap ↻ to retry.</div>';return}
     try{await macBTC()}catch(e){MAC.btc=null}}
-  const M=MAC.M;$('#macTiles').innerHTML=macTiles(M);$('#macHealth').textContent=macHealth(M,MAC.src);paintForces();if(!NX.etf)dataFile('etf').then(r=>{NX.etf=r.v;paintForces()}).catch(()=>{});if(!SIGD)ensureSig().then(paintForces);
+  const M=MAC.M;$('#macTiles').innerHTML=macTiles(M);$('#macHealth').textContent=macHealth(M,MAC.src);paintForces();if(!NX.etf)dataFile('etf').then(r=>{NX.etf=r.v;paintForces()}).catch(()=>{});if(!SIG)ensureSig().then(paintForces);
   MAC.cards=buildMacro(M,MAC.btc);if(force)MAC.items=null;if(!MAC.items)MAC.items=macItems();macCaps();const ctl=s=>s.ctl==='lag'?`<div class="chips" style="margin-top:8px">${[0,30,60,90].map(d=>`<button class="pill ${MAC.lag===d?'on':''}" data-mlag="${d}">M2 +${d}d</button>`).join('')}</div>`:s.ctl==='chg'?`<div class="chips" style="margin-top:8px">${['mom','yoy'].map(d=>`<button class="pill ${MAC.chg===d?'on':''}" data-mchg="${d}">${d.toUpperCase()} changes</button>`).join('')}</div>`:s.ctl==='inv'?`<div class="chips" style="margin-top:8px"><button class="pill ${MAC.inv?'on':''}" data-minv="1">Inverted dollar</button><button class="pill ${MAC.inv?'':'on'}" data-minv="0">Dollar</button></div>`:'';
   box.innerHTML=MAC.cards.map((s,i)=>{const stl=(s.uses||[]).filter(id=>fresh(id,M).st);return`<div class="card sig" data-mcard="${s.id}"><h3><span style="color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px">${esc(s.title)}</span>${stl.length?`<span class="bias b-dn" title="${esc(stl.join(', '))}">⚠️ stale</span>`:''}<span class="sp"></span></h3>
    <div class="mu" style="font-size:12px;margin:-2px 0 6px">As of ${macAsOf(s)}</div><canvas class="cv" data-mg="${i}"></canvas><div class="mu" data-mr="${i}" style="margin:8px 0;font-size:13px">${esc(s.read)}</div>${s.note?`<small class="note" style="margin:0 0 8px;display:block">${esc(s.note)}</small>`:''}${ctl(s)}
@@ -1266,14 +1295,25 @@ function oppScore(s){const c={},m=s.om;
 function sbHTML(s){const c=s.opp;if(!c)return'';return`<table class="cor sbt"><tr><th style="text-align:left">Part</th><th>Score</th><th>Weight</th><th>Adds</th></tr>${Object.keys(OW).map(k=>`<tr><td style="text-align:left">${OWN[k]}<div class="mu" style="font-size:12px;line-height:1.35">${esc(c[k][1])}</div></td><td>${Math.round(c[k][0])}</td><td>${OW[k]*100}%</td><td><b>${(OW[k]*c[k][0]).toFixed(1)}</b></td></tr>`).join('')}<tr><td style="text-align:left"><b>Opportunity score</b></td><td></td><td></td><td><b>${s.score}</b></td></tr></table><small class="note">${OPP_INFO}</small>`}
 const SIGT={pi:['the Pi Cycle Top ratio (111DMA ÷ 2×350DMA)','Ratio of the 111-day MA to twice the 350-day MA, daily closes.'],mayer:["BTC's Mayer Multiple (price ÷ 200DMA)",'Price divided by its 200-day moving average, daily closes.'],'2y':['BTC against its 2-year moving average','The 2-year MA is the average of the last 730 daily closes.'],rainbow:['BTC on the log-regression rainbow','Fair value here is a model fitted in the app, not a measured price.'],dd:["BTC's drawdown from its all-time high",'Measured on daily closes.'],wrsi:["BTC's weekly RSI",'14-week RSI on completed Mon–Sun candles.'],ethbtc:['ETH/BTC','Binance ETHBTC daily closes.'],gold:['BTC priced in gold','Gold via PAX Gold (1 PAXG = 1 oz).'],linkbtc:['LINK against BTC over 30 days','LINK/BTC ratio from Binance daily closes.'],hash:['the hashrate 30D/60D ratio','Below 1.0 is miner capitulation on the Hash Ribbons.'],halv:['BTC in this halving cycle','Halving cycles are a small sample: four so far.'],stable:['stablecoin supply growth','All USD-pegged stablecoins, DefiLlama, completed UTC days.']};
 function sigSubj(s){return/^rv/.test(s.id)?`${s.asset} ${s.n}-day volatility (${s.ex||'Binance'} closes)`:(SIGT[s.id]||[s.title])[0]}
-function prepSig(s){const d=closedSet(SIGD);s.kind='sig';s.fbIn=d?.P?.src==='Coinbase'&&!/^rv|ethbtc|gold|linkbtc|stable|hash/.test(s.id);if(s.id==='stable')s.asset='USD';if(s.id==='linkbtc')s.asset='LINK';if(s.id==='ethbtc')s.asset='ETH';
+function prepSig(s){const d=closedSet(SIGD);s.kind='sig';s.fbIn=d?.P?.src!=='Coinbase'&&d?.P?.src!=null&&!/^rv|ethbtc|gold|linkbtc|stable|hash/.test(s.id);if(s.id==='stable')s.asset='USD';if(s.id==='linkbtc')s.asset='LINK';if(s.id==='ethbtc')s.asset='ETH';
   try{s.ms=s.msPre||msFor(s,d)}catch(e){s.ms=null}if(s.ms){s.om=oppMeta(s.ms,s.ms.dir,s.msPre||s.id==='ethbtc'?Infinity:5);s.fmt=s.ms.fmt;s.lastT=s.om.last;if(s.readF)s.read=s.readF(s.om)}else s.lastT=d.P?d.P.t.at(-1):null;
   s.single=/rainbow|hash|stable/.test(s.id);s.srcS=(s.src||'').split(',')[0].replace(/ daily closes.*/,'')||(/hash/.test(s.id)?'blockchain.com':s.id==='stable'?'DefiLlama':s.id==='ethbtc'?exN(d.EB):s.id==='gold'?exN(d.PG):(d.P?.src||'blockchain.com'));
   oppScore(s);s.why=s.om?`${cap1(sigSubj(s))} is ${s.fmt(s.om.cur)}, ${s.om.share>50||s.om.sinceDays<60?s.om.pctTxt:s.om.pctTxt+' and '+s.om.sinceTxt}.`:s.read+'.';
   try{s.cap=capFirst({kind:'sig',id:s.id},s)}catch(e){}}
+// reload P1 (21 Oct): the last good price histories are saved on this device. A reload whose live calls fail (or are slow) shows that saved copy with its own
+// close dates instead of "Loading…/No data"; the normal freshness limits still apply, so a saved copy past its limit shows as stale, never as a current reading.
+const SIGKEY='rp_sigd';
+function sigdSave(d){try{if(!d)return;const o={at:Date.now(),CL:{}},pk=x=>x&&x.t?.length?{t:x.t,v:x.v.map(y=>+(+y).toPrecision(8)),src:x.src,pair:x.pair,...(x.source?{s0:x.source[0],s1:x.source.at(-1),cut:x.source.indexOf(x.source.at(-1))}:{}),at:x.savedAt||Date.now()}:null;
+  for(const k of ['P','H','EB','PG','BT','ST'])if(d[k]&&!d[k].kept)o[k]=pk(d[k]);else if(d[k]?.kept)o[k]=pk(d[k]);for(const k in (d.CL||{}))if(d.CL[k])o.CL[k]=pk(d.CL[k]);localStorage[SIGKEY]=JSON.stringify(o)}catch(e){try{localStorage.removeItem(SIGKEY)}catch(e2){}}}
+function sigdLoad(){try{const o=JSON.parse(localStorage[SIGKEY]||'null');if(!o)return null;const up=x=>x&&x.t?.length?{t:x.t,v:x.v,src:x.src,...(x.pair?{pair:x.pair}:{}),...(x.s0?{source:x.t.map((_,i)=>i<x.cut?x.s0:x.s1)}:{}),kept:true,savedAt:x.at||o.at}:null;
+  const d={CL:{}};for(const k of ['P','H','EB','PG','BT','ST'])d[k]=up(o[k]);for(const k in (o.CL||{}))d.CL[k]=up(o.CL[k]);return d}catch(e){return null}}
+const FUNDKEY='rp_fund';
+function fundSave(F){try{if(F&&F.f!=null&&F.t)localStorage[FUNDKEY]=JSON.stringify({f:F.f,t:F.t,src:F.src})}catch(e){}}
+function fundSaved(){try{const F=JSON.parse(localStorage[FUNDKEY]||'null');return F&&F.f!=null&&isFinite(F.f)&&F.t?F:null}catch(e){return null}}
+try{if(!SIGD){const sv=sigdLoad();if(sv)SIGD=sv}}catch(e){}
 let SIGP=null,SIGDAY=null;const utcDay=()=>Math.floor(Date.now()/DAY);
 function ensureSig(force){if(SIGDAY!==utcDay())force=true;if(SIG&&!force)return Promise.resolve(SIG);if(SIGP&&!force)return SIGP;SIGDAY=utcDay();
-  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=closedSet(await loadSigData());SIGD=mergeSig(nd,SIGD)}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG=staleSweep(SIG);sigUnavail(SIG,SIGD);SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
+  SIGP=(async()=>{try{const dj=Promise.allSettled([ensureDV(),ensureMK()]);{const nd=closedSet(await loadSigData());SIGD=mergeSig(nd,SIGD);sigdSave(SIGD)}SIG=buildSignals(SIGD);await dj;try{SIG.push(...derivSignals())}catch(e){console.warn('deriv sig',e)}}catch(e){SIG=SIG||[]}SIG.forEach(s=>{try{prepSig(s)}catch(e){console.warn('prep',s.id,e)}});SIG=staleSweep(SIG);sigUnavail(SIG,SIGD);SIG.sort((a,b)=>b.score-a.score);AUDDONE=false;SIGP=null;return SIG})();return SIGP}
 
 // ---------- TODAY briefing
 // Market state chips: each names the metric, its direction and the figure (no lean words). Rules are shown on tap.
@@ -1295,14 +1335,19 @@ const etfStale=()=>{try{if(!NX.etf?.last_date)return false;const lt=ymd(NX.etf.l
 const etf7=()=>{if(!NX.etf||etfStale())return null;try{const m=etfComb(NX.etf),k=[...m.keys()].sort();return k.length<7?null:k.slice(-7).reduce((s,x)=>s+m.get(x),0)}catch(e){return null}};
 function macDeltas(){const M=MAC.M;if(!M)return null;const o={};try{const G=gm2(M);o.yoy=G?.yoyCC??null;o.yoyUSD=G?.yoy;o.m2m=G?mU(G.t.at(-1)):'';const dx=ser('DTWEXBGS',M);if(dx){const j=back(dx,91);o.dxy=dx.v.at(-1);o.dxy3=(o.dxy/dx.v[j]-1)*100}
   const ry=ser('DFII10',M);if(ry){const j=back(ry,91);o.ry=ry.v.at(-1);o.ry3=(o.ry-ry.v[j])*100}}catch(e){}return o}
+// a Today row whose last close is past the daily limit (last closed UTC day, one day of publishing lag) shows as stale with NO reading (21 Oct: ETH/BTC kept its 15 Oct close)
+function rowStale(T,now=Date.now()){return T==null||!isFinite(T)||T<Math.floor(now/DAY)*DAY-DAY-SIGLAG.daily*DAY}
+const keptTxt=x=>x?.kept?`; saved copy from this device, live sources did not answer${x.savedAt?' (saved '+dU(x.savedAt)+' '+hmU(x.savedAt)+')':''}`:'';
 function marketStates(){const out=[],P=SIGD?.P;
-  const trend=(k,t,v,src)=>{const N=v.length;if(N<220)return{k,st:'No data',why:'Not enough price history',rule:RULE.trend};const m=sma(v,200)[N-1],i30=back({t,v},30),c30=(v[N-1]/v[i30]-1)*100,gap=(v[N-1]/m-1)*100,st=`${gap>=0?'Above':'Below'} 200DMA, ${pct(c30,1)} 30d`;
+  const trend=(k,t,v,src,ser)=>{const N=v.length;if(N<220)return{k,st:'No data',why:'Not enough price history',rule:RULE.trend};if(ser?.kept)return{k,st:'Stale',stale:1,kept:1,why:`Stale: live sources did not answer; last stored daily close ${usdK(v[N-1])} on ${dU(t[N-1])} (${src})`,rule:RULE.trend};if(rowStale(t[N-1]))return{k,st:'Stale',stale:1,why:`Stale: last close ${dU(t[N-1])} (${src}), past its last closed UTC day limit; no reading is shown${keptTxt(ser)}`,rule:RULE.trend};const m=sma(v,200)[N-1],i30=back({t,v},30),c30=(v[N-1]/v[i30]-1)*100,gap=(v[N-1]/m-1)*100,st=`${gap>=0?'Above':'Below'} 200DMA, ${pct(c30,1)} 30d`;
     return{k,st,why:`${usdK(v[N-1])} close ${dShort(t[N-1])} is ${Math.abs(gap).toFixed(1)}% ${gap>=0?'above':'below'} its 200-day MA; ${pct(c30,1)} in 30 days (${src})`,rule:RULE.trend}};
-  const CB=SIGD?.CL?.BTC;out.push(CB?trend('BTC',CB.t,CB.v,exN(CB)+' closes'):P?trend('BTC',P.t,P.v,P.src||'daily'):{k:'BTC',st:'No data',why:SIGD?'Price history unavailable: Binance, blockchain.com and Coinbase did not answer':'Loading price history…',rule:RULE.trend});
-  const E=SIGD?.CL?.ETH;out.push(E?trend('ETH',E.t,E.v,exN(E)+' closes'):{k:'ETH',st:'No data',why:SIGD?'Price history unavailable: Binance and Coinbase did not answer':'Loading price history…',rule:RULE.trend});
+  const CB=SIGD?.CL?.BTC;out.push(CB?trend('BTC',CB.t,CB.v,exN(CB)+' closes'+keptTxt(CB),CB):P?trend('BTC',P.t,P.v,(P.src||'daily')+keptTxt(P),P):{k:'BTC',st:'No data',why:SIGD?'Price history unavailable: Binance, blockchain.com and Coinbase did not answer':'Loading price history…',rule:RULE.trend});
+  const E=SIGD?.CL?.ETH;out.push(E?trend('ETH',E.t,E.v,exN(E)+' closes'+keptTxt(E),E):{k:'ETH',st:'No data',why:SIGD?'Price history unavailable: Binance and Coinbase did not answer':'Loading price history…',rule:RULE.trend});
   const EB=SIGD?.EB,dom=D.glob?.market_cap_percentage?.btc;
   const AL=(()=>{try{return MK?altCalc()?.L:null}catch(e){return null}})();
-  if(AL&&AL.eb!=null&&AL.eb30!=null){const c=AL.eb30;out.push({k:'Alts',st:`ETH/BTC ${c>5?'up':c<-5?'down':'flat'}, ${pct(c,1)} 30d`,why:`ETH/BTC ${AL.eb.toFixed(4)} (close ${dShort(dIso(AL.d))}), ${pct(c,1)} in 30 days${dom?`; BTC dominance ${dom.toFixed(1)}% (CoinPaprika snapshot)`:''}`,rule:RULE.alts})}
+  const ebT=AL&&AL.eb!=null?dIso(AL.d):EB?.t?.at(-1);
+  if(ebT!=null&&isFinite(ebT)&&rowStale(ebT))out.push({k:'Alts',st:'Stale',stale:1,why:`ETH/BTC stale: last close ${dU(ebT)}, past its last closed UTC day limit; no reading is shown${dom?`; BTC dominance ${dom.toFixed(1)}% (CoinPaprika snapshot)`:''}`,rule:RULE.alts});
+  else if(AL&&AL.eb!=null&&AL.eb30!=null){const c=AL.eb30;out.push({k:'Alts',st:`ETH/BTC ${c>5?'up':c<-5?'down':'flat'}, ${pct(c,1)} 30d`,why:`ETH/BTC ${AL.eb.toFixed(4)} (close ${dShort(dIso(AL.d))}), ${pct(c,1)} in 30 days${dom?`; BTC dominance ${dom.toFixed(1)}% (CoinPaprika snapshot)`:''}`,rule:RULE.alts})}
   else if(EB&&EB.v.length>31){const N=EB.v.length,c=(EB.v[N-1]/EB.v[back(EB,30)]-1)*100;out.push({k:'Alts',st:`ETH/BTC ${c>5?'up':c<-5?'down':'flat'}, ${pct(c,1)} 30d`,why:`ETH/BTC ${EB.v[N-1].toFixed(4)} (close ${dShort(EB.t[N-1])}), ${pct(c,1)} in 30 days${dom?`; BTC dominance ${dom.toFixed(1)}% (CoinPaprika snapshot)`:''}`,rule:RULE.alts})}
   else out.push({k:'Alts',st:'No data',why:SIGD?`ETH/BTC history unavailable (market.json and exchanges did not answer)${dom?`; BTC dominance ${dom.toFixed(1)}% (CoinPaprika)`:''}`:dom?`BTC dominance ${dom.toFixed(1)}%; ETH/BTC history loading`:'Loading…',rule:RULE.alts});
   /* #19: each macro input is optional. A missing series (e.g. DFII10) never breaks the chip; the score counts only the inputs present and names the missing ones. */
@@ -1314,7 +1359,7 @@ function marketStates(){const out=[],P=SIGD?.P;
     const n=3-miss.length,st=hv('ry3')?`Real yield ${md.ry3>=0?'rising':'falling'}, ${md.ry3>=0?'+':'−'}${Math.abs(Math.round(md.ry3))}bp 3M`:hv('dxy3')?`Dollar ${md.dxy3>=0?'rising':'falling'}, ${pct(md.dxy3,1)} 3M`:`Global M2 ${pct(md.yoy,1)} YoY`;
     out.push({k:'Macro',st,partial:miss.length?miss:null,why:`${pr.join('; ')}. Score ${sc>=0?'+':''}${sc} from ${n} of 3 inputs${miss.length?` (missing: ${miss.join(', ')})`:''}`,rule:RULE.macro})}
   else out.push({k:'Macro',st:'No data',why:MAC.fail?'macro.json unavailable (offline and no saved copy)':MAC.M?'Dollar index, 10Y real yield and constant-FX global M2 are all missing from macro.json':'Loading macro.json…',rule:RULE.macro});
-  const BF=btcFund();if(BF){const f=BF.f*100,o=oiChg('BTC',7);out.push({k:'Derivatives',st:`${fundSt(f)}, ${f<0?'−':''}${Math.abs(f).toFixed(4)}%/8h`,why:`BTC funding ${f.toFixed(4)}% per 8h (${BF.src})${o?`; OI ${pct(o.ch,1)} in 7 days in BTC terms (${o.src})`:''}`,rule:RULE.deriv})}
+  let BF=btcFund();if(BF)fundSave(BF);else{const F=fundSaved();if(F&&Date.now()-F.t<=DVLIM.funding*36e5)BF={...F,src:F.src+'; saved copy from this device, live sources did not answer'}}if(BF){const f=BF.f*100,o=oiChg('BTC',7);out.push({k:'Derivatives',st:`${fundSt(f)}, ${f<0?'−':''}${Math.abs(f).toFixed(4)}%/8h`,why:`BTC funding ${f.toFixed(4)}% per 8h (${BF.src})${o?`; OI ${pct(o.ch,1)} in 7 days in BTC terms (${o.src})`:''}`,rule:RULE.deriv})}
   else if(STALEM['BTC funding'])out.push({k:'Derivatives',st:'Funding: '+staleTxt('BTC funding'),stale:1,why:`Live funding feeds (Binance, OKX) did not answer and the cached derivs.json funding is ${ageTxt(STALEM['BTC funding'].age,1,DVLIM.funding)} old, past its ${DVLIM.funding}h limit, so no reading is shown`,rule:RULE.deriv});
   else out.push({k:'Derivatives',st:'No data',why:Object.keys(D.ins).length?'Funding unavailable from Binance and OKX right now':'Loading funding…',rule:RULE.deriv});
   const s3=st30(),e7=etf7();if(s3!=null||e7!=null){const st=e7!=null?`ETF flows ${e7>=0?'positive':'negative'}, ${fM(e7,1)} 7d`:`Stablecoins ${s3>=0?'rising':'falling'}, ${pct(s3,1)} 30d`;
@@ -1382,8 +1427,8 @@ function freshLine(){const p=[];let stale=0;
   const fb=fbList(),ss=Object.entries(SRCST),bad=ss.filter(([,v])=>!v.ok).map(([k])=>k),noBTC=D.mk.bitcoin?.current_price==null&&S.watch.some(w=>w.id==='bitcoin');
   const sl=ss.length?`<span id="srcSt">sources: ${ss.map(([k,v])=>`${esc(k)} ${v.ok?'✓':'✗'}`).join(', ')}</span>`:'';const allOK=!fb.length&&!bad.length&&!noBTC&&ss.length;
   return`${noBTC?'<span class="dn">BTC price missing (no live source answered)</span> · ':''}${fb.length?`<span class="dn">fallback in use: ${esc(fb.join('; '))}</span>${stale?` · <span class="dn">${stale} stale</span>`:''}`:stale?`<span class="dn">${stale} stale</span>`:allOK?'<span class="up">Sources OK</span>':bad.length?`<span class="dn">failed: ${esc(bad.join(', '))}</span>`:''}${sl?' · '+sl:''} · ${p.join(' · ')}`}
-// E8: stale warnings by job cadence: derivs.json hourly (limit 3h); market.json hourly via the Netlify timer (limit 2h, 15 Oct ruling); etf.json is only rewritten when Farside adds a day (limit 30h, plus the trading-day check on its last date); macro per series via fresh(); calendar 8 days
-const DLIM={derivs:3,market:2,etf:30,calendar:24*8};
+// E8: stale warnings by job cadence: derivs.json hourly (limit 5h, FRESHNESS.derivs_hourly_h); market.json hourly via the Netlify timer (limit 2h, 15 Oct ruling); etf.json is only rewritten when Farside adds a day (limit 30h, plus the trading-day check on its last date); macro per series via fresh(); calendar 8 days
+const DLIM={derivs:3,market:FRESHNESS.market_h,etf:30,calendar:24*8};
 // Freshness of derivs comes from data/_runs.json last_run (written by scripts/runs_log.py), never from derivs.json 'updated'.
 function dataStale(){const o=[];for(const[n,h]of Object.entries(DLIM)){let u;
   if(n==='derivs'){u=DF['_runs']?.v?.last_run;if(!u){const ft=derivsFundT();if(ft==null)continue;const age=(Date.now()-ft)/36e5;if(age>DVLIM.funding)o.push(`derivs.json funding (_runs.json missing) ${age<48?age.toFixed(1)+'h':(age/24).toFixed(1)+'d'} old (limit ${DVLIM.funding}h)`);continue}} // C2: _runs.json missing/unreadable -> fall back to the funding time inside derivs.json, 12h limit; a missing log never hides fresh data
@@ -1524,7 +1569,7 @@ news:{simple:[
  F=>`${F.titleS} (${F.src}${F.outlets?', also '+F.outlets:''}).\n\n${F.link}`,
  F=>`${F.hit?F.hit+': ':''}${F.titleS}, ${F.src} reports.\n\n${F.link}`],
 analytical:[
- F=>`${F.titleS} (${F.src}, ${F.age} ago).${F.desc1?' '+F.desc1:''}\n\n${F.link}`,
+ F=>`${F.titleS} (${/^"/.test(F.desc1||'')?'':F.src+', '}${F.age} ago).${F.desc1?' '+F.desc1:''}\n\n${F.link}`,/* a quoted summary already credits its source: no repeat */
  F=>`${F.src} reports: ${F.desc1||F.title}${F.outlets?` ${F.outlets} ${F.nOut>1?'have':'has'} it too.`:''}\n\n${F.link}`,
  F=>`${F.titleS}, according to ${F.src}.${F.hit?` Relevant for ${F.hit}.`:''}\n\n${F.link}`,
  F=>`${F.titleS} (${F.src}). ${F.outlets?`Also reported by ${F.outlets}.`:F.mention?`${F.mention} also ${F.nMen>1?'have':'has'} a headline on ${F.mName}; check it is the same story.`:'Single source so far; worth waiting for a second.'}\n\n${F.link}`],
@@ -1626,9 +1671,12 @@ function etfFacts(a){const st=etfStats(NX.etf,a);if(!st||!st.L)return null;const
     mood:L<0&&s7>0?'Red day, green week.':L>0&&s7>0?'Steady bid.':L<0&&s7<0?'Outflows on the day and the week.':'Green day inside a red week.',note:`Net across ${st.d?.funds?.length||'all'} funds.`,src:'Farside',date:d}}
 function nameMentions(n){const nm=distNames(n.title);if(!nm.size)return null;const hits=(D.news||[]).filter(m=>m!==n&&m.src!==n.src&&Math.abs(m.t-n.t)<=24*36e5&&[...distNames(m.title)].some(x=>nm.has(x)));if(!hits.length)return null;
   const k=[...nm].find(x=>hits.some(m=>distNames(m.title).has(x))),orig=(n.title.match(new RegExp('\\b('+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')\\b','i'))||[k])[0];return{name:orig,srcs:[...new Set(hits.map(m=>m.src))]}}
+// P2 fix (15 Oct): the outlet's summary sentence is THEIR wording but is not the headline, so the quoted-headline exception does not cover it.
+// If it trips the banned-word lint it is dropped from every caption (never shown as ours, never exempted); the headline stays.
+function descQ(d1,n){return lintBanned(d1,'',false).some(x=>/^Banned phrase|^Regional/.test(x))?'':d1}
 function newsFacts(n){let CL=null;try{CL=newsClusters().find(c=>c.items.includes(n))}catch(e){}const same=CL?CL.items.filter(m=>m!==n&&m.src!==n.src):D.news.filter(m=>m!==n&&m.src!==n.src&&simT(m.title,n.title)>=.5),srcs=[...new Set(same.map(m=>m.src))],W=S.watch.find(w=>new RegExp('\\b'+w.sym.replace(/[^\w]/g,'')+'\\b','i').test(n.title+' '+n.desc));
   const d1=(t=>t.length<40?'':t.length>170?t.slice(0,170).replace(/\s+\S*$/,'')+'…':t)(splitSent(n.desc||'')[0]||''),T0=n.title.replace(/\s+/g,' ').trim().replace(/^live updates?\s*[:\-–|]\s*/i,'');
-  return{...FDEF,fam:'news',label:'Headline: '+n.title.slice(0,40),title:T0,titleS:T0.replace(/[.!…]+$/,''),src:n.src,link:safeUrl(n.link),outlets:srcs.slice(0,2).join(' and '),nOut:Math.min(2,srcs.length),allSrc:[n.src,...srcs.slice(0,2)].join(', '),desc1:d1&&d1!==n.title&&!rep4(T0+' '+d1)?d1:'',short:T0.length>110?T0.slice(0,107)+'…':T0,hit:W?W.sym.toUpperCase():'',age:ago(n.t),...(()=>{if(srcs.length)return{mention:''};const mm=nameMentions(n);return mm?{mention:mm.srcs.slice(0,2).join(' and '),mName:mm.name,nMen:mm.srcs.length}:{mention:''}})()}}
+  return{...FDEF,fam:'news',label:'Headline: '+n.title.slice(0,40),title:T0,titleS:T0.replace(/[.!…]+$/,''),src:n.src,link:safeUrl(n.link),outlets:srcs.slice(0,2).join(' and '),nOut:Math.min(2,srcs.length),allSrc:[n.src,...srcs.slice(0,2)].join(', '),desc1:d1&&d1!==n.title&&!rep4(T0+' '+d1)?descQ(d1,n):'',short:T0.length>110?T0.slice(0,107)+'…':T0,hit:W?W.sym.toUpperCase():'',age:ago(n.t),...(()=>{if(srcs.length)return{mention:''};const mm=nameMentions(n);return mm?{mention:mm.srcs.slice(0,2).join(' and '),mName:mm.name,nMen:mm.srcs.length}:{mention:''}})()}}
 function mktFacts(ctx){const t=ctx.t,c=ctx.coin||S.watch[0],date=new Date().toLocaleString('en-GB',{timeZone:'UTC',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false}).replace('Sept','Sep').replace(',','')+' UTC';
   if(t==='pulse'||t==='heat'){const g=D.glob,f=D.fng.at(-1),ch=g?.market_cap_change_percentage_24h_usd??null;
     return{...FDEF,fam:'market',label:'Market pulse',subj:'Crypto market cap',subjTk:'Total crypto market cap',now:big(g?.total_market_cap?.[S.cur]),chg:ch!=null?`${pct(ch)} in 24h`:'24h change not available',ctx:g?.market_cap_percentage?.btc!=null?`BTC dominance ${g.market_cap_percentage.btc.toFixed(1)}% (CoinPaprika)`:'',ctx2:f?`alternative.me index: ${f.v}, ${f.c}, ${dShort(f.t)}`:'',mood:'',src:g?._src||'CoinPaprika (unavailable)',date}}
@@ -1691,9 +1739,9 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-thc]
 let DV=null,MK=null,CAPF=null;
 let DVRAW=null,DVAT=0;async function ensureDV(){if(!DVRAW||Date.now()-DVAT>DATA_TTL){try{DVRAW=(await dataFile('derivs')).v;DVAT=Date.now()}catch(e){}}try{await dataFile('_runs')}catch(e){}if(DVRAW)DV=gateDV(DVRAW);return DV}
 // STALE GATE (hotfix): a metric past its freshness limit is removed from everything (readings, states, clusters, scores, captions, drafts, exports).
-// Limits per metric from the newest point: open interest and basis are hourly (3h, like the job cadence), funding settles every 8h (12h).
+// Limits per metric from the newest point: open interest and basis are hourly (FRESHNESS.derivs_hourly_h = 5h from the hour start, 24 Oct ruling), funding settles every 8h (12h).
 // Live feeds (deriv()) are fresh by definition; the cached file only counts while inside the limit. STALEM keeps age + source for the 'data stale' labels.
-const DVLIM={oi:3,basis:3,funding:FRESHNESS.signal_cards.funding_h},STALEM={};
+const DVLIM={oi:FRESHNESS.derivs_hourly_h,basis:FRESHNESS.derivs_hourly_h,funding:FRESHNESS.signal_cards.funding_h},STALEM={};
 // ages: hours+minutes under 48h ('12h10m'), whole days above. A past-limit age is rounded UP, never down to look inside the limit.
 const ageTxt=(h,past,lim)=>{if(h<48){let m=past?Math.ceil(h*60):Math.floor(h*60);if(past&&lim!=null&&m<=lim*60)m=lim*60+1;const hh=Math.floor(m/60),mm=m%60;return hh+'h'+(mm||past?mm+'m':'')}
   let d=past?Math.ceil(h/24):Math.floor(h/24);if(past&&lim!=null&&d*24<=lim)d=Math.floor(lim/24)+1;return d+'d'};
@@ -1729,8 +1777,8 @@ function supplyOf(a){const id=a==='BTC'?'bitcoin':'ethereum',m=D.mk?.[id];if(m?.
 // D = the latest closed day that has BOTH inputs (market.json adds a day's market cap after that day closes; look back at most 3 days);
 // OI = the hourly snapshot nearest D's 00:00 UTC close, at most 30 min away. Missing either -> no reading.
 function oiCapLatest(a,now=Date.now(),V=DV){const A=V?.assets?.[a],H=A?.oi_hourly?.points||[],sp=supplyOf(a),D0=Math.floor(now/DAY)*DAY-DAY;
-  for(let k=0;k<8;k++){const D=D0-k*DAY,c=D+DAY;/* any k>0 is stale: listed in SIGSTALE, never a reading */let h=null;for(const p of H)if(Math.abs(p[0]-c)<=30*60000&&p[2]>0&&(!h||Math.abs(p[0]-c)<Math.abs(h[0]-c)))h=p;
-    if(h&&sp?.s>0)return{D,want:D0,oiT:h[0],oiC:h[2],sup:sp.s,sp,v:h[2]/sp.s*100,back:k,stale:k>0}}
+  for(let k=0;k<8;k++){const D=D0-k*DAY,c=D+DAY;/* C6 fix (15 Oct): ONE daily step-back rule (FRESHNESS.signal_cards.daily_lag_days = 1): one close back is fresh; more is stale (SIGSTALE, never a reading) */let h=null;for(const p of H)if(Math.abs(p[0]-c)<=30*60000&&p[2]>0&&(!h||Math.abs(p[0]-c)<Math.abs(h[0]-c)))h=p;
+    if(h&&sp?.s>0)return{D,want:D0,oiT:h[0],oiC:h[2],sup:sp.s,sp,v:h[2]/sp.s*100,back:k,stale:k>FRESHNESS.signal_cards.daily_lag_days}}
   return{D:D0,want:D0,oiC:null,sup:sp?.s??null,v:null,back:null,stale:false}}
 // ONE formula for the whole stored series (ruling 8 Oct): OI in coins ÷ circulating supply (price cancels). Older days: OKX daily OI buckets (16:00 UTC start), oi_coin ÷ supply;
 // latest day: oi_coin at D's 00:00 UTC close ÷ supply. Supply has no dated history (market data gives today's circulating supply), so the label says 'supply as of <fetch date>'.
@@ -1746,7 +1794,15 @@ let SIGSTALE=[];
 // Limits: settled funding prints 12h (DVLIM.funding); weekly cards the last completed week; daily cards the last closed UTC day, one day of publishing lag allowed.
 const SIGLAG={daily:FRESHNESS.signal_cards.daily_lag_days,weekly:FRESHNESS.signal_cards.weekly_lag_days};
 function staleLimit(s,now=Date.now()){const cd=Math.floor(now/DAY)*DAY-DAY;if(s.settled)return{t:now-DVLIM.funding*36e5,lab:`${DVLIM.funding}h limit`};if(s.id==='wrsi')return{t:cd-SIGLAG.weekly*DAY,lab:'last completed week'};return{t:cd-SIGLAG.daily*DAY,lab:'last closed UTC day (one day publishing lag allowed)'}}
-function staleSweep(L,now=Date.now()){const keep=[];for(const k of Object.keys(STALEM))if(/^sig /.test(k))delete STALEM[k];for(const s of L||[]){if(s.stale){if(!SIGSTALE.includes(s))SIGSTALE.push(s);continue}const T=s.closed??s.freshT??s.lastT;if(T==null||!isFinite(T)){keep.push(s);continue}const lim=staleLimit(s,now);
+// 21 Oct (approved): when the live fetches for a card's daily closes fail (Coinbase AND Binance for BTC history / ETH/BTC), the card falls back to the last
+// daily closes stored on this device: it shows that stored close with its date and is marked STALE (unscored, out of POST NOW), never blank. Source used: the
+// on-device copy (rp_sigd); there is no data/ fallback because no server-side job fetches exchange closes.
+function sigSer(s,d=SIGD){if(!d)return null;const id=String(s.id||''),C=d.CL||{};if(/^rv/.test(id))return C[s.asset]||null;if(id==='linkbtc')return C.LINK||null;if(id==='ethbtc')return d.EB||null;if(id==='gold')return d.PG?.kept?d.PG:d.BT?.kept?d.BT:d.PG||null;
+  if(id==='stable')return d.ST||null;if(id==='hash')return d.H||null;if(['mayer','2y','dd'].includes(id))return C.BTC?.v?.length>800?C.BTC:d.P||null;if(['pi','rainbow','halv','wrsi'].includes(id))return d.P||null;return null}
+function keptStale(s,now=Date.now()){const K=sigSer(s);if(!K?.kept||!K.t?.length)return false;const T=K.t.at(-1),V=K.v.at(-1);
+  Object.assign(s,{stale:true,kept:true,score:null,read:'—',usedDate:new Date(T).toISOString().slice(0,10),keptClose:{t:T,v:V,src:K.src||null},staleWhy:`Stale: live sources did not answer; last stored daily close ${usdK(+V)} on ${dU(T)} (${K.src||'saved'}, saved copy from this device${K.savedAt?' '+dU(K.savedAt)+' '+hmU(K.savedAt):''}). Not used in readings, scores, POST NOW or captions.`});
+  if(/ethbtc|linkbtc/.test(s.id))s.staleWhy=s.staleWhy.replace(usdK(+V),(+V).toFixed(5)+' BTC');STALEM['sig '+s.id]={age:(now-T)/36e5,src:K.src||'saved',t:T,lim:null,limT:'live fetch failed (saved copy)'};return true}
+function staleSweep(L,now=Date.now()){const keep=[];for(const k of Object.keys(STALEM))if(/^sig /.test(k))delete STALEM[k];for(const s of L||[]){if(s.stale){if(!SIGSTALE.includes(s))SIGSTALE.push(s);continue}if(keptStale(s,now)){SIGSTALE.push(s);continue}const T=s.closed??s.freshT??s.lastT;if(T==null||!isFinite(T)){keep.push(s);continue}const lim=staleLimit(s,now);
   if(T<lim.t){Object.assign(s,{stale:true,score:null,read:'—',usedDate:new Date(T).toISOString().slice(0,10),staleWhy:`Stale: last data ${dU(T)}${s.settled?' '+hmU(T):''}, past its ${lim.lab}. Not used in readings, scores, POST NOW or captions.`});STALEM['sig '+s.id]={age:(now-T)/36e5,src:String(s.src||'').split(' ')[0]||'feed',t:T,lim:null,limT:lim.lab};SIGSTALE.push(s)}else keep.push(s)}return keep}
 // #27 follow-up (approved 15 Oct): ETH/BTC and BTC-in-gold are always listed. If every source failed (or the card could not be built) the card stays in SIGSTALE as '—' UNAVAILABLE with the reason: not dropped silently, not shown as 0, no score.
 const SIGREQ=[{id:'ethbtc',title:'ETH/BTC ratio',asset:'ETH',need:d=>d?.EB?.v?.length,what:'ETH/BTC daily closes',srcs:'Binance ETHBTC, Coinbase ETH-BTC and Binance/Coinbase ETH and BTC USD pairs'},{id:'gold',title:'Bitcoin priced in gold',asset:'BTC',need:d=>d?.PG?.v?.length&&d?.BT?.v?.length,what:'PAXG and BTC daily closes',srcs:'Binance and Coinbase PAXG/BTC'}];

@@ -7,6 +7,6 @@ trap '' HUP
 while [ "$(date +%s)" -lt "$DL" ]; do sleep 15; done
 if [ "$T" = --test ]; then echo "$(date -u +%FT%H:%M:%SZ) TIMER-TEST fired (pid $$, no gh calls)" >> $LOG; exit 0; fi
 [ -f "$ST" ] || exit 0
-ok=1; for x in data.yml derivs.yml; do for i in 1 2 3; do gh workflow enable $x -R $R && break; sleep 20; done || ok=0; gh workflow run $x -R $R || ok=0; done
+ok=1; for x in data.yml; do for i in 1 2 3; do gh workflow enable $x -R $R && break; sleep 20; done || ok=0; gh workflow run $x -R $R || ok=0; done
 [ $ok = 1 ] && rm -f "$ST"
-L="$(date -u +%FT%H:%MZ) RESUMED by 30-min timer: data.yml + derivs.yml enabled and dispatched (ok=$ok)"; echo "$L" >> $LOG; echo "Merge window #$PR: $L" >> $POSTS
+L="$(date -u +%FT%H:%MZ) RESUMED by 30-min timer: data.yml enabled and dispatched (ok=$ok)"; echo "$L" >> $LOG; echo "Merge window #$PR: $L" >> $POSTS

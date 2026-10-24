@@ -17,7 +17,7 @@ async function page(ctx,setup){const pg=await (ctx||b).newPage();await pg.setVie
   o.fund=fundSt(-0.0011);const BF=btcFund();o.bf=BF?.src;const ms=marketStates();o.der=ms.find(x=>x.k==='Derivatives')?.why;o.rows=ms.map(x=>x.k+': '+x.why);
   const cl=(typeof clusters==='function'?clusters():[]);o.clF=JSON.stringify(cl).match(/\d\.\d{4}%\/8h · [^"]+/)?.[0];
   o.post=[todayItems().filter(postNow).length,(document.getElementById('postCnt')?.innerText||'')];
-  o.hash=SIG.find(s=>s.id==='hash');o.hash=o.hash?o.hash.read:'';
+  o.hash=SIG.find(s=>s.id==='hash');{const hs=(SIGSTALE||[]).find(s=>s.id==='hash');o.hashStale=hs?{stale:hs.stale,score:hs.score,read:hs.read,why:hs.staleWhy||''}:null}o.hash=o.hash?o.hash.read:'';
   const dd=SIG.find(s=>s.id==='dd');o.dd=dd?.read;const eb=SIG.find(s=>s.id==='ethbtc');o.eb=eb?.why+' | '+eb?.read;
   const C=curveInfo(MAC.M);o.curve=[C.lastInv&&new Date(C.lastInv).toISOString().slice(0,10),C.lastInvEnd&&new Date(C.lastInvEnd).toISOString().slice(0,10),C.state];
   o.m2=m2YoyTxt(gm2(MAC.M));o.m2cap=(MAC.cards.find(c=>c.id==='btcm2')||{}).cap||'';o.m2f=(()=>{try{return macFacts(MAC.cards.find(c=>c.id==='btcm2')).chg}catch(e){return'ERR'}})();
@@ -36,7 +36,9 @@ async function page(ctx,setup){const pg=await (ctx||b).newPage();await pg.setVie
  ok(/derivs\.json/.test(r.bf||'')&&(r.der||'').includes(r.bf),'funding: one source (derivs.json, labelled) on Today chip',[r.bf,r.der]);
  ok(!r.clF||/derivs\.json/.test(r.clF),'funding: clusters use the same labelled source',r.clF);
  ok(r.post[1].includes(String(r.post[0]))||r.post[0]===0,'POST NOW count line matches postNow() count',r.post);
- ok(/7-day avg/.test(r.hash),"hashrate chart labelled '7-day avg'");
+ // 21 Oct: blockchain.com hashrate may go quiet (no new points for 2+ days); then the card is stale + unscored + labelled, which is correct, not a failure
+ if(r.hashStale&&!r.hash)ok(r.hashStale.stale&&r.hashStale.score==null&&r.hashStale.read==='—'&&/^Stale/.test(r.hashStale.why),"hashrate card stale (source quiet): unscored, '—', labelled",r.hashStale);
+ else ok(/7-day avg/.test(r.hash),"hashrate chart labelled '7-day avg'");
  ok(/^\d+\.\d% below the daily-close ATH of \$124,659/.test(r.dd||''),'E11 drawdown read has no double negative',r.dd);
  ok(/((bottom|top) \d+% of readings|around the middle of its range) since \w+ 2017/.test(r.eb)&&!/of the last 5 years/.test(r.eb),'ETH/BTC read names its real window',r.eb);
  ok(r.curve[0]==='2022-07-06'&&r.curve[1]==='2024-08-26'&&r.curve[2]===1,'N4 curve: last ≥5-day inversion 6 Jul 2022 – 26 Aug 2024',r.curve);
