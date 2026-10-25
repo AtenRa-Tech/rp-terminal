@@ -1,4 +1,6 @@
 // Stale gate: data confidence + chip label (RP X). Usage: node qa/stale-conf.js [URL]. Exit 1 = block.
+// 25 Oct: fixture ages are measured from the page's clock: under the frozen gate the page clock is the constant T0 (FREEZE_T0) while Node's clock advances, so building ages from Node's Date.now() made a 12h10m-old case look <12h after ~10 min of run time.
+const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 // Same fixture as stale-derivs2 (timestamps shifted relative to now), live derivatives feeds blocked.
 // C1 Today "data confidence" with a 4-day-old derivs.json is lower than with a 10-minute-old one
 // C2 Derivatives chip reads "Funding: stale, <age> old, past 12h limit (<source>)" and gives no reading; with fresh data it gives a reading
@@ -8,8 +10,8 @@ const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/derivs-stale.json')));const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i,H=36e5;
 function lastT(o){let m=0;(function w(x){if(Array.isArray(x)){if(typeof x[0]==='number'&&x[0]>1.7e12)m=Math.max(m,x[0]);x.forEach(w)}else if(x&&typeof x==='object')for(const[k,v]of Object.entries(x)){if((k==='last'||/_t$/.test(k))&&typeof v==='number')m=Math.max(m,v);w(v)}})(o);return m}
 function shift(o,d){if(Array.isArray(o)){if(typeof o[0]==='number'&&o[0]>1.7e12)o[0]+=d;o.forEach(x=>shift(x,d))}else if(o&&typeof o==='object')for(const k of Object.keys(o)){if((k==='last'||/_t$/.test(k))&&typeof o[k]==='number'&&o[k]>1.7e12)o[k]+=d;else shift(o[k],d)}return o}
-function aged(ms){const f=JSON.parse(JSON.stringify(BASE)),now=Date.now();shift(f,now-ms-lastT(BASE));f.updated=new Date(now-ms).toISOString();return f}
-async function run(b,body){const pg=await b.newPage();await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
+function aged(ms){const f=JSON.parse(JSON.stringify(BASE)),now=PAGE_NOW();shift(f,now-ms-lastT(BASE));f.updated=new Date(now-ms).toISOString();return f}
+async function run(b,body){const pg=await b.newPage();/* each case starts from an empty localStorage: the app keeps the last good reading across reloads (phone P1), so a fresh case must not leak into the stale one */await pg.evaluateOnNewDocument(()=>{try{localStorage.clear()}catch(e){}});await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
  pg.on('request',r=>{const u=r.url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return r.respond({status:200,contentType:'application/json',body:JSON.stringify(body)});r.continue()});
  await pg.goto(URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{waitUntil:'networkidle2',timeout:60000});await pg.waitForFunction(()=>typeof tab==='function',{timeout:60000});
  await pg.evaluate(()=>tab('signals'));await new Promise(r=>setTimeout(r,9000));await pg.evaluate(()=>tab('today'));await new Promise(r=>setTimeout(r,6000));

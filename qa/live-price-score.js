@@ -33,14 +33,26 @@ async function run(b,mode,record){const pg=await b.newPage();
  await new Promise(r=>setTimeout(r,2000));
  if(mode==='early')await pg.evaluate(()=>{window.__early=1});
  const out=await pg.evaluate(()=>{const S=(typeof SIG!=='undefined'&&SIG)||[];const sc={},cf={};const EARLY=window.__early;for(const s0 of S){let s=s0;if(EARLY&&typeof oppScore==='function'){s=Object.assign({},s0);delete s.audit;delete s.auditTxt;delete s.auditWhy;oppScore(s)}if(s.score!=null)sc[s.id]=s.score;(window.__rd||(window.__rd={}))[s.id]={read:s.read,closed:s.closed??s.lastT};if(s.opp?.conf)cf[s.id]=s.opp.conf[0]}
-  const t=document.body.innerText;return{sc,cf,post:(t.match(/(\d+) of (\d+) charts are POST NOW/)||[]).slice(1).join('/'),aud:document.getElementById('audSt')?.textContent||'',audited:EARLY?0:S.filter(s=>s.audit).length,rd:window.__rd||{}}});
+  const st={};for(const c of ((typeof SIGSTALE!=='undefined'&&SIGSTALE)||[])){const el=document.querySelector('[data-id="'+c.id+'"]');st[c.id]={stale:!!c.stale,score:c.score??null,read:c.read,why:c.staleWhy||'',inSig:S.includes(c),post:typeof postNow==='function'?!!postNow(c):false,label:el?/stale|unavailable/i.test(el.innerText):null}}
+  const t=document.body.innerText;return{st,sc,cf,post:(t.match(/(\d+) of (\d+) charts are POST NOW/)||[]).slice(1).join('/'),aud:document.getElementById('audSt')?.textContent||'',audited:EARLY?0:S.filter(s=>s.audit).length,rd:window.__rd||{}}});
  await pg.close();return out}
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
  await run(b,'agree',true);const R={};for(const m of ['agree','split','down','early','pre','forming'])R[m]=await run(b,m,false);await b.close();
  const F=[];const n=Object.keys(R.agree.sc).length;if(n<3)F.push(`only ${n} scores read`);
  const FRC=JSON.parse(require('fs').readFileSync(require('path').join(__dirname,'../shared/freshness.json'),'utf8')).confidence,FULL=new Set([FRC.fresh_multi_source,FRC.fresh_single_source]);
  for(const m of Object.keys(R))for(const [k,c] of Object.entries(R[m].cf))if(!FULL.has(c))F.push(`${m}: ${k} scored with confidence ${c}, not a full value (${[...FULL]}) from shared/freshness.json`);
- for(const m of Object.keys(R))for(const k of ['ethbtc','rainbow','hash','fundBTC'])if(R[m].sc[k]==null)F.push(`${m}: required card ${k} not scored`);
+ // 21 Oct: a required card whose source went quiet (no new points for 2+ days) is NOT a failure if it is listed as stale: unscored, shown as —, labelled with its reason
+ // and kept out of SIG / POST NOW. A required card that is neither scored nor listed stale is still a failure.
+ // 25 Oct (supervisor): that stale-is-OK rule is for the REAL clock only (main's data/ read on today's date, where a card can honestly be past its limit).
+ // Under the frozen gate (node -r tests/freeze/preload.js: page clock T0, recorded fresh data/derivs) every required card is fresh, so it MUST be scored:
+ // a fresh card that goes unscored (or is wrongly marked stale) fails here.
+ const FROZENCLK=!!process.env.FREEZE_T0;console.log(FROZENCLK?`frozen clock ${new Date(+process.env.FREEZE_T0).toISOString()}: required cards must be scored (stale not accepted)`:'real clock: a required card past its freshness limit may be stale + unscored');
+ for(const m of Object.keys(R))for(const k of ['ethbtc','rainbow','hash','fundBTC']){if(R[m].sc[k]!=null)continue;const c=R[m].st[k];
+  if(FROZENCLK){F.push(`${m}: required card ${k} not scored on the frozen clock with fresh recorded data${c?` (listed stale: ${String(c.why).slice(0,80)})`:''}`);continue}
+  if(!c){F.push(`${m}: required card ${k} missing (neither scored nor listed stale)`);continue}
+  if(!c.stale)F.push(`${m}: ${k} unscored but not marked stale`);if(c.score!=null)F.push(`${m}: stale ${k} has score ${c.score}`);if(c.read!=='—')F.push(`${m}: stale ${k} shows a reading "${c.read}"`);
+  if(!/^(Stale|Unavailable)/.test(c.why))F.push(`${m}: stale ${k} has no stale label/reason`);if(c.inSig)F.push(`${m}: stale ${k} is still in SIG`);if(c.post)F.push(`${m}: stale ${k} counts as POST NOW`);
+  if(m==='agree')console.log(`${k}: stale, unscored, excluded (${c.why.slice(0,80)})`)}
  if(R.early.audited)F.push(`early: ${R.early.audited} signals were already audited when scored`);console.log('early case scored with',R.early.audited,'audited;',Object.keys(R.early.sc).length,'scores');
  if(R.pre.audited)F.push(`pre: ${R.pre.audited} signals audited although audit responses were held`);console.log('pre case scored with',R.pre.audited,'audited');
  {const lc=Math.floor(Date.now()/864e5)*864e5-864e5;for(const k of ['ethbtc','gold','rainbow','mayer','2y','pi','dd','wrsi']){const a=R.agree.rd[k],f=R.forming.rd[k];if(!a||!f){F.push(`forming: ${k} missing`);continue}

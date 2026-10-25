@@ -10,7 +10,11 @@ Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (dispatched by the
 import json, sys, urllib.request
 from datetime import datetime, timezone
 LAST_RUN_MAX_MIN = 90
+# first main commit writing macro.json checked_at: 206b8e0 at 2026-10-15T17:57:08Z; missing macro_checked only warns for 24h after it
+ROLLOUT_START = '2026-10-15T17:57:08Z'
 P = lambda s: datetime.fromisoformat(s.replace('Z', '+00:00'))
+from datetime import timedelta
+ROLLOUT_END = P(ROLLOUT_START) + timedelta(hours=24)
 def load(src):
     if src.startswith('http'):
         with urllib.request.urlopen(src + ('&' if '?' in src else '?') + 'v=%d' % datetime.now().timestamp(), timeout=30) as r: return json.load(r)
@@ -36,7 +40,10 @@ def check(d, now):
     for s, v in (d.get('macro') or {}).items():
         if isinstance(v, dict) and v.get('ok') is False: bad.append(f'macro {s}: past its limit ({v.get("limit")})')
     mc = d.get('macro_checked')
-    if mc is None: bad.append('macro_checked missing (macro fetch time unknown)')
+    if mc is None:
+        # rollout (16 Oct): macro_checked is new. Missing = warning for 24h after the first main commit that wrote checked_at, then a failure.
+        if now < ROLLOUT_END: print(f'::warning title=Live data age::macro_checked missing (rollout window until {ROLLOUT_END:%Y-%m-%dT%H:%MZ})')
+        else: bad.append('macro_checked missing (macro fetch time unknown; rollout window ended)')
     elif not mc.get('checked_at') or mc.get('limit_h') is None: bad.append('macro fetch: no checked_at/limit_h')
     else:
         h = (now - P(mc['checked_at'])).total_seconds() / 3600

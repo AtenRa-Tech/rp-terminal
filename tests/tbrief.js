@@ -2,7 +2,7 @@ const p=require('puppeteer-core');const W=ms=>new Promise(r=>setTimeout(r,ms));
 const BAN=[/what are you buying/i,/what'?s your move/i,/everyone'?s watching/i,/are you ready/i,/don'?t miss/i,/\bLFG\b/i,/to the moon/i,/\bNFA\b[\s.!]*$/i,/undefined|NaN/];
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915,deviceScaleFactor:2,isMobile:true,hasTouch:true});
 const e=[];pg.on('pageerror',x=>e.push(x.message));const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);console.log((c?'PASS ':'FAIL ')+m)};
-await require('./hermetic').hermetic(pg);await pg.goto('http://localhost:8765/index.html');
+await require('./hermetic').hermetic(pg);await pg.goto(process.env.URL||'http://localhost:8765/index.html');
 await pg.waitForFunction(()=>TAB==='today'&&SIG&&SIG.length&&MAC.items&&MAC.items.length&&NX.cal&&NX.etf,{timeout:90000});await W(6000);
 // wait for auto-audits of top 5 (up to 90s)
 await pg.waitForFunction(()=>typeof AUDDONE!=='undefined'&&AUDDONE,{timeout:120000}).catch(()=>console.log('audits not finished in time'));await W(1500);
@@ -53,7 +53,7 @@ const live=await pg.evaluate(()=>document.querySelector('[data-cl="simple"]').in
 await pg.evaluate(()=>runDraftAudit('draft','Simple'));await W(5000);const aud=await pg.evaluate(()=>[...document.querySelectorAll('#audit li')].map(x=>x.innerText).join(' || '));console.log('audit:',aud.slice(0,800));ok(/Banned phrase/.test(aud)&&/Generic question/.test(aud),'audit on edited text flags banned phrases');
 await pg.evaluate(()=>{const c=document.querySelector('#audit')?.closest('.ov,.modal,.sheet');document.querySelectorAll('.ov,.modal').forEach(x=>x.remove?.())});
 // restore clean captions and screenshot
-await pg.goto('http://localhost:8765/index.html');await pg.waitForFunction(()=>SIG&&SIG.length&&MAC.items,{timeout:90000});await W(1500);
+await pg.goto(process.env.URL||'http://localhost:8765/index.html');await pg.waitForFunction(()=>SIG&&SIG.length&&MAC.items,{timeout:90000});await W(1500);
 await pg.evaluate(()=>{openCaptions({kind:'sig',id:todayItems().find(x=>x.kind==='sig').id})});await W(1200);
 await pg.evaluate(()=>{const c=$('#capCard');scrollTo(0,c.getBoundingClientRect().top+scrollY-60)});await W(500);await pg.screenshot({path:'b-captions.png'});
 // insights reachable from markets

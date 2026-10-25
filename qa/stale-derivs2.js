@@ -1,4 +1,6 @@
 // CRYPTO GOD stale-derivatives suite v2. Usage: node qa/stale-derivs2.js [URL]
+// 25 Oct: fixture ages are measured from the page's clock: under the frozen gate the page clock is the constant T0 (FREEZE_T0) while Node's clock advances, so building ages from Node's Date.now() made a 12h10m-old case look <12h after ~10 min of run time.
+const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 // repo copy (team v2, 3 Oct): require via NODE_PATH, fixture in qa/fixtures, output to tmpdir; network frozen across page loads (S1 deterministic)
 // Builds derivs.json fixtures at run time from fixtures/derivs-stale.json by shifting timestamps
 // relative to "now", blocks live derivatives feeds, and checks:
@@ -13,8 +15,8 @@ const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i;
 const H=36e5;
 function lastT(o){let m=0;(function w(x){if(Array.isArray(x)){if(typeof x[0]==='number'&&x[0]>1.7e12)m=Math.max(m,x[0]);x.forEach(w)}else if(x&&typeof x==='object')for(const[k,v]of Object.entries(x)){if((k==='last'||/_t$/.test(k))&&typeof v==='number')m=Math.max(m,v);w(v)}})(o);return m}
 function shift(o,d){if(Array.isArray(o)){if(typeof o[0]==='number'&&o[0]>1.7e12)o[0]+=d;o.forEach(x=>shift(x,d))}else if(o&&typeof o==='object')for(const k of Object.keys(o)){if((k==='last'||/_t$/.test(k))&&typeof o[k]==='number'&&o[k]>1.7e12)o[k]+=d;else shift(o[k],d)}return o}
-function aged(ageMs){const f=JSON.parse(JSON.stringify(BASE)),now=Date.now();shift(f,now-ageMs-lastT(BASE));f.updated=new Date(now-ageMs).toISOString();return f}
-function fundAge(f,age){const now=Date.now();for(const a of Object.values(f.assets)){if(a.funding){const l=lastT(a.funding);shift(a.funding,now-age-l)}if(a.latest?.funding_t)a.latest.funding_t=now-age}return f}
+function aged(ageMs){const f=JSON.parse(JSON.stringify(BASE)),now=PAGE_NOW();shift(f,now-ageMs-lastT(BASE));f.updated=new Date(now-ageMs).toISOString();return f}
+function fundAge(f,age){const now=PAGE_NOW();for(const a of Object.values(f.assets)){if(a.funding){const l=lastT(a.funding);shift(a.funding,now-age-l)}if(a.latest?.funding_t)a.latest.funding_t=now-age}return f}
 function mixed(){const f=aged(10*60e3),old=4*24*H;for(const a of Object.values(f.assets)){if(a.funding)shift(a.funding,-old);if(a.latest?.funding_t)a.latest.funding_t-=old}return f}
 const STRIP=t=>t.replace(/^.*(jumps|surges|plunges|headline).*$/gim,'');
 const FUND=[/Funding[^\n]{0,40}neutral/i,/neutral band/i,/funding[^\n]{0,30}[-+]?\d+\.\d{3,}%/i];
@@ -27,7 +29,9 @@ const zlib=require('zlib'),REC=process.argv.includes('--record'),FX=path.join(__
 const FROZEN=new Map(),FKEY=u=>{try{const x=new (require('url').URL)(u);for(const q of ['x','v','t','_','ts','cb','nocache'])x.searchParams.delete(q);for(const q of ['endTime','end','to']){const v=+x.searchParams.get(q);if(v>1.7e9&&(v>1e12?v:v*1e3)>Date.now()-3*864e5)x.searchParams.set(q,'NOW')}/* 'now'-based paging (bnDaily endTime=Date.now()) must replay across loads/days */return x.toString()}catch(e){return u}};
 if(!REC)for(const [k,v] of Object.entries(JSON.parse(zlib.gunzipSync(fs.readFileSync(FX)))))FROZEN.set(k,{status:v.s,headers:{'content-type':v.c,'access-control-allow-origin':'*'},body:Buffer.from(v.b,'base64')});
 const ORIGIN=new (require('url').URL)(URL).origin;
-async function run(b,body){const pg=await b.newPage();await pg.setBypassServiceWorker(true);await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
+// 24 Oct: each case starts with an empty on-device store. Since 21 Oct the app keeps the last settled funding print in localStorage
+// (shown labelled 'saved copy from this device'); a shared browser profile let an earlier case's fresh print leak into S3/S5 (test isolation, not an app bug).
+async function run(b,body){const pg=await b.newPage();await pg.evaluateOnNewDocument(()=>{try{localStorage.clear()}catch(e){}});await pg.setBypassServiceWorker(true);await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
  pg.on('request',r=>{const u=r.url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return body==null?r.respond({status:404,body:''}):r.respond({status:200,contentType:'application/json',body:JSON.stringify(body)});
   // repo copy: every other GET is frozen - the first page load records it, later loads replay it, so prices/market data are identical and only derivs.json differs
   const k=FKEY(u);if(r.method()==='GET'&&FROZEN.has(k)){const f=FROZEN.get(k);return r.respond({status:f.status,headers:f.headers,body:f.body}).catch(()=>{})}
@@ -49,13 +53,15 @@ async function run(b,body){const pg=await b.newPage();await pg.setBypassServiceW
  // Without it the first measured run was the only live one and could see a late/failed exchange price -> audit warn -> S1 diff.
  await run(b,null);
  if(REC){const o={};for(const [k,v] of FROZEN){if(k.startsWith(ORIGIN))continue;o[k]={s:v.status,c:v.headers['content-type'],b:Buffer.from(v.body).toString('base64')}}fs.writeFileSync(FX,zlib.gzipSync(JSON.stringify(o)));console.log('recorded',Object.keys(o).length,'responses to',FX);await b.close();process.exit(0)}
- for(const [k,f] of [['missing',null],['stale4d',aged(4*24*H)],['inside',aged(2*H+50*60e3)],['past',fundAge(aged(3*H+10*60e3),7*H)],['fund_past',fundAge(aged(30*60e3),12*H+10*60e3)],['mixed',mixed()]])R[k]=await run(b,f);
+ for(const [k,f] of [['missing',null],['stale4d',aged(4*24*H)],['inside',aged(2*H+50*60e3)],['past',fundAge(aged(3*H+10*60e3),7*H)],['fund_past',fundAge(aged(30*60e3),12*H+10*60e3)],['mixed',mixed()],['oi16h',fundAge(aged(16*H),7*H)]])R[k]=await run(b,f);
  await b.close();const fails=[],notes=[];
  const eq=JSON.stringify(R.stale4d.scores)===JSON.stringify(R.missing.scores)&&R.stale4d.post===R.missing.post;
  if(!eq){const diff=Object.keys({...R.stale4d.scores,...R.missing.scores}).filter(k=>R.stale4d.scores[k]!==R.missing.scores[k]).map(k=>`${k}: stale ${R.stale4d.scores[k]??'absent'} vs missing ${R.missing.scores[k]??'absent'}`);(process.env.S1_REPORT_ONLY?notes:fails).push((process.env.S1_REPORT_ONLY?'::warning title=S1 (report only on the live gate until #29 is live)::':'')+`S1 scores differ from "derivs missing" (POST NOW ${R.stale4d.post} vs ${R.missing.post}): ${diff.join('; ')}`)}
  const ins=has(R.inside.txt,FUND.concat(OI));if(!ins.length)fails.push('S2 inside-limit (2h50m) shows no derivatives readings');
  // Ruling 3 Oct: each metric's own limit decides (funding 12h; OI and basis 3h). Late file (3h10m) with funding 7h old:
  const po=has(R.past.txt,OI),pf=has(R.past.txt,FUND);if(po.length)fails.push('S2 past-limit OI (3h10m) still shows: '+[...new Set(po)].join(' | '));if(!pf.length)fails.push('S5 late file: funding 7h old (inside 12h) was hidden');
+ /* 24 Oct ruling: hourly OI uses the 5h limit, so a 16h-old print (e.g. OI ending 23:00 UTC yesterday) is stale and unscored; the one-close step-back is for daily closes (oicap) only */
+ const o16=has(R.oi16h.txt,OI);if(o16.length)fails.push('S7 16h-old hourly OI still shows as a reading: '+[...new Set(o16)].join(' | '));
  const fp=has(R.fund_past.txt,FUND);if(fp.length)fails.push('S5 funding 12h10m old (past 12h) still shows: '+[...new Set(fp)].join(' | '));
  for(const k of ['past','fund_past','mixed','stale4d']){const m=R[k].txt.match(/(\d+(?:\.\d+)?)h old \(limit (\d+)h\)/g)||[];for(const x of m){const [,a,l]=x.match(/([\d.]+)h old \(limit (\d+)h\)/);if(+a<=+l)fails.push(`S6 ${k}: contradictory status "${x}"`)}}
  const mf=has(R.mixed.txt,FUND),mo=has(R.mixed.txt,OI);if(mf.length)fails.push('S3 mixed: stale funding still shown: '+[...new Set(mf)].join(' | '));if(!mo.length)fails.push('S3 mixed: fresh open interest was dropped');
