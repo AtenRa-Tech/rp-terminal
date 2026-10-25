@@ -1,4 +1,6 @@
 // Stale-derivatives caption + export test v2 (Crypto News GOD). Usage: node qa/stale-captions.js [URL]. Exit 1 = block.
+// 25 Oct: fixture ages are measured from the page's clock: under the frozen gate the page clock is the constant T0 (FREEZE_T0) while Node's clock advances, so building ages from Node's Date.now() made a 12h10m-old case look <12h after ~10 min of run time.
+const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 // Ruling 3 Oct: each metric's own limit decides (funding 12h; open interest and basis 3h).
 // Builds fixtures at run time from fixtures/derivs-stale.json (timestamps shifted relative to now), blocks live derivatives feeds,
 // then generates every caption template (3 styles), the picked caption, Studio draft text and export images (fillText log). Cases:
@@ -15,13 +17,13 @@ const BASE=JSON.parse(fs.readFileSync(process.env.DERIVS_FIXTURE||path.join(__di
 const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i,H=36e5;
 function lastT(o){let m=0;(function w(x){if(Array.isArray(x)){if(typeof x[0]==='number'&&x[0]>1.7e12)m=Math.max(m,x[0]);x.forEach(w)}else if(x&&typeof x==='object')for(const[k,v]of Object.entries(x)){if((k==='last'||/_t$/.test(k))&&typeof v==='number')m=Math.max(m,v);w(v)}})(o);return m}
 function shift(o,d){if(Array.isArray(o)){if(typeof o[0]==='number'&&o[0]>1.7e12)o[0]+=d;o.forEach(x=>shift(x,d))}else if(o&&typeof o==='object')for(const k of Object.keys(o)){if((k==='last'||/_t$/.test(k))&&typeof o[k]==='number'&&o[k]>1.7e12)o[k]+=d;else shift(o[k],d)}return o}
-function aged(ms){const f=align(JSON.parse(JSON.stringify(BASE))),now=Date.now();shift(f,now-ms-lastT(f));f.updated=new Date(now-ms).toISOString();return f}
+function aged(ms){const f=align(JSON.parse(JSON.stringify(BASE))),now=PAGE_NOW();shift(f,now-ms-lastT(f));f.updated=new Date(now-ms).toISOString();return f}
 // align (8 Oct ruling a): each asset's hourly series end where its latest block says, so the fixture is internally consistent.
 function align(f){for(const a of Object.values(f.assets||{})){const L=a.latest||{},end=L.oi_t||lastT(L);if(!end)continue;for(const k of ['oi_hourly','basis_hourly']){if(a[k]&&lastT(a[k]))shift(a[k],Math.floor(end/36e5)*36e5-lastT(a[k]))}}return f}
 // oiOld: hourly OI ends ms ago while latest.oi_t stays fresh -> no 00:00 UTC point for the last closed day -> oicap stale.
 // 15 Oct one-entry rule: latest = the last SETTLED print (same time and rate), age measured on that print
-function oiOld(f,ms){const now=Date.now();for(const a of Object.values(f.assets||{}))if(a.oi_hourly)shift(a.oi_hourly,now-ms-lastT(a.oi_hourly));return f}
-function fundAge(f,age){const now=Date.now();for(const a of Object.values(f.assets)){const P=a.funding?.points;if(P?.length){shift(a.funding,now-age-P.at(-1)[0]);a.latest={...(a.latest||{}),funding_t:P.at(-1)[0],funding:P.at(-1)[1]}}}return f}
+function oiOld(f,ms){const now=PAGE_NOW();for(const a of Object.values(f.assets||{}))if(a.oi_hourly)shift(a.oi_hourly,now-ms-lastT(a.oi_hourly));return f}
+function fundAge(f,age){const now=PAGE_NOW();for(const a of Object.values(f.assets)){const P=a.funding?.points;if(P?.length){shift(a.funding,now-age-P.at(-1)[0]);a.latest={...(a.latest||{}),funding_t:P.at(-1)[0],funding:P.at(-1)[1]}}}return f}
 const FUND=[/funding[^|\n]{0,40}(neutral|positive|negative|elevated|flat)/i,/neutral band/i,/funding[^|\n]{0,25}[-+]?\d+\.\d+ ?%/i];
 const OI=[/\bopen interest[^|\n]{0,30}[-+]?\d/i,/\bOI [-+−]?\d+(\.\d+)?%/];
 const hits=(rows,res)=>{const o=[];for(const [w,t] of rows)for(const re of res){const m=t.match(re);if(m)o.push(w+': "'+m[0]+'"')}return [...new Set(o)]};
