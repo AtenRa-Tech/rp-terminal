@@ -1,4 +1,6 @@
 // CRYPTO GOD stale-derivatives suite v2. Usage: node qa/stale-derivs2.js [URL]
+// 25 Oct: fixture ages are measured from the page's clock: under the frozen gate the page clock is the constant T0 (FREEZE_T0) while Node's clock advances, so building ages from Node's Date.now() made a 12h10m-old case look <12h after ~10 min of run time.
+const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 // repo copy (team v2, 3 Oct): require via NODE_PATH, fixture in qa/fixtures, output to tmpdir; network frozen across page loads (S1 deterministic)
 // Builds derivs.json fixtures at run time from fixtures/derivs-stale.json by shifting timestamps
 // relative to "now", blocks live derivatives feeds, and checks:
@@ -13,8 +15,8 @@ const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i;
 const H=36e5;
 function lastT(o){let m=0;(function w(x){if(Array.isArray(x)){if(typeof x[0]==='number'&&x[0]>1.7e12)m=Math.max(m,x[0]);x.forEach(w)}else if(x&&typeof x==='object')for(const[k,v]of Object.entries(x)){if((k==='last'||/_t$/.test(k))&&typeof v==='number')m=Math.max(m,v);w(v)}})(o);return m}
 function shift(o,d){if(Array.isArray(o)){if(typeof o[0]==='number'&&o[0]>1.7e12)o[0]+=d;o.forEach(x=>shift(x,d))}else if(o&&typeof o==='object')for(const k of Object.keys(o)){if((k==='last'||/_t$/.test(k))&&typeof o[k]==='number'&&o[k]>1.7e12)o[k]+=d;else shift(o[k],d)}return o}
-function aged(ageMs){const f=JSON.parse(JSON.stringify(BASE)),now=Date.now();shift(f,now-ageMs-lastT(BASE));f.updated=new Date(now-ageMs).toISOString();return f}
-function fundAge(f,age){const now=Date.now();for(const a of Object.values(f.assets)){if(a.funding){const l=lastT(a.funding);shift(a.funding,now-age-l)}if(a.latest?.funding_t)a.latest.funding_t=now-age}return f}
+function aged(ageMs){const f=JSON.parse(JSON.stringify(BASE)),now=PAGE_NOW();shift(f,now-ageMs-lastT(BASE));f.updated=new Date(now-ageMs).toISOString();return f}
+function fundAge(f,age){const now=PAGE_NOW();for(const a of Object.values(f.assets)){if(a.funding){const l=lastT(a.funding);shift(a.funding,now-age-l)}if(a.latest?.funding_t)a.latest.funding_t=now-age}return f}
 function mixed(){const f=aged(10*60e3),old=4*24*H;for(const a of Object.values(f.assets)){if(a.funding)shift(a.funding,-old);if(a.latest?.funding_t)a.latest.funding_t-=old}return f}
 const STRIP=t=>t.replace(/^.*(jumps|surges|plunges|headline).*$/gim,'');
 const FUND=[/Funding[^\n]{0,40}neutral/i,/neutral band/i,/funding[^\n]{0,30}[-+]?\d+\.\d{3,}%/i];
