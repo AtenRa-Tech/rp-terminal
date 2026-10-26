@@ -56,8 +56,8 @@ const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try
  if(r.len>280)fails.push([...loc,'over 280 ('+r.len+')']);
  if(BADTOK.test(t))fails.push([...loc,'bad token '+t.match(BADTOK)[0]]);
  if(STATUS.test(t))fails.push([...loc,'status text '+t.match(STATUS)[0]]);
- for(const re of BANNED)if(re.test(t))fails.push([...loc,'banned "'+t.match(re)[0]+'"']);
- if(!/^news/.test(r.c))for(const re of RULE1)if(re.test(sellStrip(t)))fails.push([...loc,'rule 1 "'+t.match(re)[0]+'"']);
+ const tq=t.replace(new RegExp(BW.quoted_headline.re[0],'g'),' ');for(const re of BANNED)if(re.test(tq))fails.push([...loc,'banned "'+t.match(re)[0]+'"']);
+ if(!/^news/.test(r.c))for(const re of RULE1)if(re.test(sellStrip(tq)))fails.push([...loc,'rule 1 "'+t.match(re)[0]+'"']);
  if(r.lint&&r.lint.length)fails.push([...loc,'app lint: '+r.lint.join(',')]);
  if(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/.test(t))fails.push([...loc,'empty slot "'+t.match(/(?:\b(?:is|at|That's|That is|Context:)\s*[.,;]|,\s*[.,]|\(\s*\)|\.\s*\.(?!\.))/)[0]+'"']);
  const rc=repClause(t);if(rc)fails.push([...loc,'repeated phrase "'+rc+'"']);

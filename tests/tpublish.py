@@ -8,8 +8,8 @@ def ok(c, n, x=''):
 spec = importlib.util.spec_from_file_location("pp", os.path.join(ROOT, ".github/scripts/publish_path.py")); pp = importlib.util.module_from_spec(spec); spec.loader.exec_module(pp)
 # 1) path selection
 for lab, ch, want in ((["data/derivs.json", "data/_runs.json"], None, "fast"), (["data/derivs.json"], None, "fast"), (["data/_runs.json"], None, "fast"), ([], None, "fast"),
-                      (["data/derivs.json", "data/market.json"], None, "fast"), (["data/market.json", "data/macro.json", "data/_runs.json"], None, "fast"), (["data/market.json", "data/etf.json"], None, "full"), (["data/calendar.json"], None, "full"), (["data/derivs.json", "index.html"], None, "full"), (["index.html"], None, "full"),
-                      (["data/etf.json"], None, "full"), ([".github/workflows/ci.yml", "data/_runs.json"], None, "full"), (["qa/card-presence.js"], None, "full")):
+                      (["data/derivs.json", "data/market.json"], None, "fast"), (["data/market.json", "data/macro.json", "data/_runs.json"], None, "fast"), (["data/market.json", "data/etf.json"], None, "fast"), (["data/calendar.json"], None, "fast"), (["data/derivs.json", "index.html"], None, "fast"), (["index.html"], None, "fast"),
+                      (["data/etf.json"], None, "fast"), ([".github/workflows/ci.yml", "data/_runs.json"], None, "fast"), (["qa/card-presence.js"], None, "fast")):
     got = pp.select(lab)[0]; ok(got == want, f"path selection {lab or '(no change)'} -> {want}", got)
 # 2) no-regress before deploy, and live never backwards
 S = os.path.join(T, "site"); os.makedirs(S + "/data")
@@ -60,7 +60,7 @@ ok(pp.pick_good(["", "null null"]) == "", "pick: none -> empty (caller takes the
 ok(pp.pick_good(["2026-10-14T19:00:00Z HEAD"]) == "", "pick: non-sha ignored")
 lg = open(os.path.join(ROOT, ".github/scripts/last_good.sh")).read()
 ok('select(.name=="smoke")' in lg and "success" in lg, "a fast run counts as a good deploy only when its smoke job succeeded (handover runs deployed nothing)")
-ok(all("last_good.sh" in "\n".join(st.get("run", "") for st in pub["jobs"][j]["steps"]) for j in ("gates", "rollback")), "path selection and rollback both use last_good.sh")
+ok("last_good.sh" in "\n".join(st.get("run", "") for st in pub["jobs"]["rollback"]["steps"]), "rollback uses last_good.sh (data of the last good deploy)")
 # 5) market/macro fast path
 ok(pp.market_changed(["data/market.json"]) and pp.market_changed(["data/macro.json", "data/derivs.json"]) and not pp.market_changed(["data/derivs.json", "data/_runs.json"]), "market flag set only when market.json/macro.json changed")
 gate = "\n".join(st.get("run", "") for st in pub["jobs"]["gates"]["steps"])
@@ -122,5 +122,13 @@ ok("publish_guard.py" in open(os.path.join(ROOT, ".github/scripts/snapshot.sh"))
 # 8) handover after a code change runs the full suites
 ok(pp.code_changed(["index.html", "data/market.json"]) and not pp.code_changed(["data/etf.json", "data/market.json"]), "code flag: any non-data file")
 hv = "\n".join(st.get("run", "") for st in pub["jobs"]["gates"]["steps"] if "ci.yml" in st.get("run", ""))
-ok("steps.path.outputs.code" in hv and "data_redeploy=$dr" in hv and "dr=false" in hv, "handover dispatches data_redeploy=false when code changed (node suites run)", hv)
+ok("steps.path.outputs.code" in str([st.get("if") for st in pub["jobs"]["gates"]["steps"] if "ci.yml" in st.get("run", "")]) and "data_redeploy=false" in hv, "code change requests the full suites (data_redeploy=false)", hv)
+# 9) 16 Oct starvation fix: the data path always deploys the snapshot itself; in-flight runs are never cancelled
+pg = "\n".join(st.get("run", "") for st in pub["jobs"]["gates"]["steps"])
+ok("tested_sha.sh" in pg and "last_good.sh" not in pg, "path compares HEAD with the TESTED code commit (pages-tested), not the last good deploy")
+ok(not any("outputs.path == 'full'" in str(st.get("if", "")) for st in pub["jobs"]["gates"]["steps"]) and pub["jobs"]["deploy"]["if"] == "needs.gates.outputs.path == 'fast'", "no full-CI handover branch: every data push reaches the deploy job")
+hv2 = [st for st in pub["jobs"]["gates"]["steps"] if "ci.yml" in st.get("run", "")]
+ok(len(hv2) == 1 and "outputs.code == 'true'" in str(hv2[0].get("if")) and "data_redeploy=false" in hv2[0]["run"] and "busy" in hv2[0]["run"], "full CI requested only when code differs from the tested commit, and only if none is queued/running", hv2)
+ok(all(W(f).get("concurrency", {}).get("cancel-in-progress") is False for f in ("ci.yml", "publish-derivs.yml")), "workflow groups never cancel an in-flight run (cancel-in-progress false)")
+ok(all(pp.select(c)[0] == "fast" for c in (["data/derivs.json"], ["data/etf.json"], ["index.html", "data/_runs.json"], [])), "every change set takes the deploying (fast) path")
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)

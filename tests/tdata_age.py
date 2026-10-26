@@ -30,7 +30,10 @@ rc, o = run({'last_run': None, 'runs': []}); ok(rc == 1 and 'Traceback' not in o
 C = copy.deepcopy(FRESH); C['macro_checked']['checked_at'] = '2026-10-14T23:00:00Z'
 rc, o = run(C); ok(rc == 1 and 'macro fetch' in o, 'macro fetch not run for 8.5h (checked_at) fails the alarm', o)
 C = copy.deepcopy(FRESH); del C['macro_checked']
-rc, o = run(C); ok(rc == 1 and 'macro_checked' in o, 'missing macro_checked fails (not silently passed)', o)
+rc, o = run(C); ok(rc == 0 and '::warning' in o and 'macro_checked missing' in o, 'missing macro_checked INSIDE the 24h rollout window (from 15 Oct 17:57Z) only warns', o)
+W2 = copy.deepcopy(C); W2['last_run'] = '2026-10-16T17:50:00Z'; W2['runs'][0]['feeds'] = {'BTC oi': {'t': '2026-10-16T17:00:00Z', 'lim_h': 3.0}}; W2['market']['updated'] = '2026-10-16T17:30:00Z'
+rc, o = run(W2, '2026-10-16T17:58:00Z'); ok(rc == 1 and 'rollout window ended' in o, 'missing macro_checked AFTER the window (16 Oct 17:58Z) fails', o)
+rc, o = run(W2, '2026-10-16T17:56:00Z'); ok(rc == 0, 'missing macro_checked one minute before the window ends still only warns', o)
 # fresh checked_at does NOT hide an old series: last_date decides
 C = copy.deepcopy(FRESH); C['macro_checked']['checked_at'] = '2026-10-15T07:29:00Z'; C['macro']['M2SL']['ok'] = False
 rc, o = run(C); ok(rc == 1 and 'M2SL' in o and 'macro fetch' not in o, 'fresh checked_at + series past its last_date limit still fails (stale)', o)
