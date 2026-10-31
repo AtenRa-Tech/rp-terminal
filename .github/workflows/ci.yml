@@ -126,6 +126,8 @@ jobs:
         run: python3 tests/tlim5.py
       - name: Stored history kept (blocking) - stored OI/basis hours never rewritten, oi_daily restated only within 2 days of close, publish guard oi_usd exact / oi_coin 1e-4 / basis exact
         run: python3 tests/tkeep_hours.py
+      - name: One-off restore of published hours (blocking) - restore_hours allowlist (BTC oi_hourly 2 hours), refusals, byte-identical elsewhere, guard vs live passes
+        run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/trestore_hours.py
       - name: Fast publish path selection + no-regress (blocking)
         if: steps.scope.outputs.full == 'true'
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpublish.py

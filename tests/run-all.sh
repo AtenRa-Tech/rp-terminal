@@ -9,4 +9,5 @@ bad=0; for t in tqa talt tbrief taud tnews tmac tsig tscroll tfix tnewsfx tgolde
 done
 echo "== tlim5 (py)"; python3 tlim5.py || { echo '!! tlim5 failed'; bad=1; }
 echo "== tkeep_hours (py)"; python3 tkeep_hours.py || { echo '!! tkeep_hours failed'; bad=1; }
+echo "== trestore_hours (py)"; python3 trestore_hours.py || { echo '!! trestore_hours failed'; bad=1; }
 exit $bad

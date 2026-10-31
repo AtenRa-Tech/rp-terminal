@@ -3,7 +3,7 @@
 fetch_derivs.py: oi_hourly / basis_hourly hours already stored are kept as stored (new hours only are filled);
 oi_daily: a bar within 2 days of its close is replaced by the fresh fetch, older stored bars are kept (age alone decides).
 publish_guard.py: oi_usd exact, oi_coin within 1e-4 relative, basis exact; messages name the reference (main or live).
-Fixed clock: NOW = 2026-10-31T08:27Z (main 647d8af refresh). Uses main's committed data/derivs.json (read only, copied to a temp dir)."""
+Fixed clock: NOW = 2026-10-31T08:27Z (main 647d8af refresh). Uses main's 647d8af derivs.json as a small committed subset tests/fixtures/restore/derivs-647d8af.json (BTC+ETH hourly/basis/daily; rebuild with tests/fixtures/restore/make.py) (copied to a temp dir), so the fixed clock and the data never drift apart (31 Oct: reading live data/ made this fail once main's data moved past the clock)."""
 import copy, importlib.util, json, os, subprocess, sys, tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); H = 3600_000; DAY = 24 * H
 NOW = 1793442420000  # 2026-10-31T08:27:00Z
@@ -15,7 +15,7 @@ def mod(name, p):
     s = importlib.util.spec_from_file_location(name, os.path.join(ROOT, p)); m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
 fd = mod("fetch_derivs", "scripts/fetch_derivs.py"); pg = mod("publish_guard", ".github/scripts/publish_guard.py")
 fd.NOW_MS = NOW
-MAIN = json.load(open(os.path.join(ROOT, "data/derivs.json")))
+MAIN = json.load(open(os.path.join(ROOT, "tests/fixtures/restore/derivs-647d8af.json")))
 T = tempfile.mkdtemp(); fd.OUT = os.path.join(T, "derivs.json"); json.dump(MAIN, open(fd.OUT, "w"))
 D21 = 1792512000000  # 21 Oct daily bar (OKX day starts 00:00 UTC+8 = 20 Oct 16:00Z)
 REV_H = 1791118800000  # the BTC hour OKX restated on 31 Oct (coin .624 -> .483)
