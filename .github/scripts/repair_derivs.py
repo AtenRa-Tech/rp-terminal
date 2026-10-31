@@ -4,7 +4,8 @@ HARD ALLOWLIST (shared with publish_guard.ALLOW_DIFF): BTC/ETH oi_hourly 1793473
 Input "ASSET:series:t,..." (any pair off the allowlist, malformed, duplicate or >4 refuses, exit 1). Empty = no-op (exit 0, file untouched).
 Repair mode (runs BEFORE fetch_derivs): each listed point is REMOVED (no typed values: the OKX-first fetch in the same run re-adds the hour
 from OKX, since it is inside the 30-day window and no longer stored). Safety stops, any one refuses with nothing written:
-  - the point must be in the file AND identical to what LIVE serves there, and live's series source must be Binance (it is the Binance point);
+  - the point must be on the allowlist, in the file AND identical to what LIVE serves there (no source-label stop: after the 22:35Z OKX fetch the label reads OKX
+    over the kept Binance points, so a label cannot identify them; the verify step requires an OKX point that differs from live's);
   - oi_hourly: the point must break continuity (>25% USD or coin vs the previous stored hour), i.e. it really is the 2.9x step.
 Proof: before/after diff; the only difference allowed is the removal of exactly the listed points (every other asset/series/point/key identical).
 --verify mode (after the fetch, before the commit): every listed hour must be back, from an OKX series, different from live's Binance point,
@@ -65,7 +66,6 @@ def main():
         LS = ser(L, a, k); lp = {p[0]: p for p in LS.get("points") or []}
         if t not in idx: print(f"{a} {k} {t}: not in the file (already removed), nothing to do"); continue
         if t not in lp or not same(k, P[idx[t]], lp[t]): die(f"{a} {k} {t}: file point {P[idx[t]]} is not the point live serves ({lp.get(t)}); safety stop, nothing written")
-        if venue(LS.get("source")) != "binance": die(f"{a} {k}: live source {LS.get('source')!r} is not Binance; safety stop, nothing written")
         if k == "oi_hourly":
             j = idx[t]
             if j == 0 or jump(P[j], P[j - 1]) <= MAXJ: die(f"{a} {k} {t}: no >25% step vs the previous hour; safety stop, nothing written")

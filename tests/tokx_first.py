@@ -98,6 +98,7 @@ def rep(args, src=MAIN, live=LIVE, extra=None):
     before = open(f).read()
     r = subprocess.run([sys.executable, RP] + args + [f], env=dict(os.environ, LIVE_DERIVS=live, **(extra or {})), capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr, before, open(f).read(), f
+def sp_(args, live): r = subprocess.run([sys.executable] + args, env=dict(os.environ, LIVE_DERIVS=live, NOW_MS=str(NOW)), capture_output=True, text=True); return r.returncode, r.stdout + r.stderr
 rc, o_, b, a_, f = rep([LIST]); J = json.loads(a_)
 ok(rc == 0 and all(T19 not in pts(J, x, "oi_hourly") and T20 not in pts(J, x, "basis_hourly") for x in ("BTC", "ETH")), "repair removes exactly the 4 Binance points", o_)
 E2 = json.loads(b)
@@ -111,8 +112,13 @@ for arg, why in (("", "empty"), ("  ", "blank")):
 for arg, why in ((f"BTC:oi_hourly:{T19 - H}", "other hour"), (f"BTC:funding:{T19}", "other series"), (f"SOL:oi_hourly:{T19}", "other asset"),
                  (f"BTC:oi_hourly:{T19},BTC:oi_hourly:{T19}", "duplicate"), ("BTC:oi_hourly", "malformed"), (f"BTC:oi_hourly:{T19};rm -rf /", "injection text")):
     rc, o_, b, a_, _ = rep([arg]); ok(rc == 1 and a_ == b, f"refused ({why}): exit 1, file untouched", o_)
-L2 = copy.deepcopy(L); L2["assets"]["BTC"]["oi_hourly"]["source"] = "OKX"; fl = os.path.join(T, "l2.json"); json.dump(L2, open(fl, "w"))
-rc, o_, b, a_, _ = rep([LIST], live=fl); ok(rc == 1 and "safety stop" in o_ and a_ == b, "safety stop: live series not Binance -> nothing written", o_)
+L2 = copy.deepcopy(L)
+for x in ("BTC", "ETH"):
+    for k in ("oi_hourly", "basis_hourly"): L2["assets"][x][k]["source"] = "OKX"   # live labelled OKX over the Binance points (state after the 22:35Z fetch)
+fl = os.path.join(T, "l2.json"); json.dump(L2, open(fl, "w"))
+rc, o_, b, a_, _ = rep([LIST], live=fl); J2 = json.loads(a_) if rc == 0 else {}
+ok(rc == 0 and all(T19 not in pts(J2, x, "oi_hourly") and T20 not in pts(J2, x, "basis_hourly") for x in ("BTC", "ETH")), "live labelled OKX over the Binance points: the repair still removes exactly the 4 (no source-label stop)", o_)
+rc, o_ = sp_([RP, "--verify", LIST, MAIN], fl); ok(rc == 1 and "still equals live's Binance point" in o_, "verify with an OKX label: a file still holding live's Binance points fails (identical to live)", o_)
 L3 = copy.deepcopy(L)
 for p in L3["assets"]["ETH"]["basis_hourly"]["points"]:
     if p[0] == T20: p[1] += 1
