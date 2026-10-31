@@ -2,7 +2,8 @@
 """Refresh data/derivs.json for RP Terminal: BTC/ETH perpetual open interest,
 funding and spot-vs-perp basis from public exchange endpoints (stdlib only).
 
-Fallback chain per series: Binance USD-M -> OKX -> Bybit -> Deribit (funding only).
+Fallback chain per series (1 Nov ruling): OKX -> Binance USD-M -> Bybit (-> Deribit for funding). A fallback whose venue differs
+from the stored series' recorded "source" is REFUSED (stored series kept): one series never mixes exchanges (31 Oct 21:50Z Binance OI 2.9x step).
 Binance and Bybit geo-block US IPs (HTTP 451 / 403), and GitHub-hosted runners are
 in the US, so in practice OKX is usually the source there. The venue actually used
 is recorded per series ("source"), with every attempt listed under "attempts".
@@ -52,7 +53,7 @@ def settled_hours(pts, now_ms=None):
     return [r for r in pts if int(r[0]) + OI_SETTLE_MS <= now]
 
 
-def keep_stored_hours(pts, stored):
+def keep_stored_hours(pts, stored, floor=None):
     """Closed hours are never rewritten (31 Oct: an OKX restatement of BTC 1791118800000 coin 28465.624 -> .483 failed the
     live-overlap guard). For every hour already in the existing derivs.json the STORED point is kept as is; the fetch only
     adds hours not stored yet. Stored hours inside the fetched window that the API no longer returns are kept too;
@@ -61,6 +62,8 @@ def keep_stored_hours(pts, stored):
         return pts
     old = {int(p[0]): p for p in (stored or []) if isinstance(p, list) and p and isinstance(p[0], (int, float))}
     lo = min(int(p[0]) for p in pts)
+    if floor is not None:   # never-shrink (basis): stored hours newer than floor stay even if the fetch window is shorter
+        lo = min(lo, floor)
     m = {int(p[0]): p for p in pts}
     m.update({t: p for t, p in old.items() if t >= lo})
     return [m[t] for t in sorted(m)]
@@ -83,6 +86,49 @@ def keep_old_days(pts, stored, now_ms=None):
         if t >= lo and now - (t + DAY) > DAILY_RESTATE_MS:
             m[t] = p
     return [m[t] for t in sorted(m)]
+
+
+VENUES = ("okx", "binance", "bybit", "deribit")
+
+
+def venue(src):
+    """Normalised venue of a series 'source' ("OKX (perp close vs spot close)" -> okx, "Binance USD-M basis ..." -> binance)."""
+    s = str(src or "").strip().lower()
+    for v in VENUES:
+        if s.startswith(v):
+            return v
+    return s.split(" ")[0] if s else ""
+
+
+CONT_MAX = 0.25
+
+
+def continuity_error(pts, stored, cols=(1, 2)):
+    """oi_hourly: every hour NOT already stored must be within 25% (USD and coin) of its previous point, and of the next point
+    when that one is stored. Returns an error string or None."""
+    old = {int(p[0]) for p in (stored or []) if isinstance(p, list) and p}
+    for i, p in enumerate(pts):
+        if int(p[0]) in old:
+            continue
+        nb = ([pts[i - 1]] if i > 0 else []) + ([pts[i + 1]] if i + 1 < len(pts) and int(pts[i + 1][0]) in old else [])
+        for q in nb:
+            for c in cols:
+                a, b = p[c], q[c]
+                if isinstance(a, (int, float)) and isinstance(b, (int, float)) and b and abs(a - b) / abs(b) > CONT_MAX:
+                    return f"continuity: hour {p[0]} col {c} {a} vs neighbour {q[0]} {b} ({abs(a - b) / abs(b):.0%} > {CONT_MAX:.0%})"
+    return None
+
+
+def merge_funding(pts, stored, now_ms=None):
+    """Funding: stored history kept, fetched events add/replace (newest wins), capped at 2 years. Refuses (None, reason) a fetch
+    whose newest event is OLDER than the stored newest (31 Oct: Binance startTime=now-365d returned the oldest 1000 events)."""
+    now = NOW_MS if now_ms is None else now_ms
+    old = [p for p in (stored or []) if isinstance(p, list) and len(p) >= 2]
+    if old and pts and max(int(p[0]) for p in pts) < max(int(p[0]) for p in old):
+        return None, f"fetched funding ends {max(int(p[0]) for p in pts)}, older than stored {max(int(p[0]) for p in old)}: refused"
+    m = {int(t): r for t, r in old}
+    m.update({int(t): r for t, r in pts})
+    return [[t, m[t]] for t in sorted(m) if t >= now - 730 * DAY], None
 
 
 def write_json(path, obj):
@@ -178,7 +224,9 @@ def bybit_oi(a, interval, days):
 
 # ---------------- funding ----------------
 def bn_funding(a, days):
-    d = get(f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={SYM[a]['bn']}&limit=1000&startTime={NOW_MS - days * DAY}")
+    # endTime only (no startTime): Binance returns the NEWEST <=1000 events up to endTime (startTime returned the OLDEST 1000)
+    d = get(f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={SYM[a]['bn']}&limit=1000&endTime={NOW_MS}")
+    d = [r for r in d if int(r["fundingTime"]) >= NOW_MS - days * DAY]
     return [[int(r["fundingTime"]), float(r["fundingRate"])] for r in d], {"source": "Binance USD-M", "instrument": SYM[a]["bn"], "interval_h": 8}
 
 
@@ -248,9 +296,13 @@ def okx_basis(a, days):
     return pts, {"source": "OKX (perp close vs spot close)", "instrument": f"{SYM[a]['okx']} vs {SYM[a]['okx_spot']}"}
 
 
-def chain(label, fns, attempts):
+def chain(label, fns, attempts, stored_src=None):
+    """First candidate that returns data wins. stored_src: the stored series' source; a candidate from another venue is refused."""
     tried = []
     for name, fn in fns:
+        if stored_src and venue(name) != venue(stored_src):
+            tried.append({"source": name, "ok": False, "error": f"source change refused (stored {stored_src})"})
+            continue
         try:
             pts, meta = fn()
             if not pts:
@@ -277,6 +329,15 @@ def main():
         pa = prev.get("assets", {}).get(a, {})
         A = {}
 
+        def src(key):
+            return (pa.get(key) or {}).get("source")
+
+        def refuse(key, why):
+            print(f"  {a} {key}: {why}", file=sys.stderr)
+            for at in attempts[::-1]:
+                if at["series"] == f"{a} {key}":
+                    at["tried"][-1].update(ok=False, error=why[:160]); break
+
         def put(key, pts, meta, cols, units):
             # OI and basis: store only CLOSED hours/days (a forming bar is dropped)
             if pts and key in ("oi_hourly", "basis_hourly"):
@@ -286,7 +347,11 @@ def main():
             elif pts and key == "oi_daily":
                 pts = closed_bars(pts, DAY)
             if pts and key in ("oi_hourly", "basis_hourly"):
-                pts = keep_stored_hours(pts, (pa.get(key) or {}).get("points"))
+                stored = (pa.get(key) or {}).get("points")
+                pts = keep_stored_hours(pts, stored, NOW_MS - 30 * DAY if key == "basis_hourly" else None)
+                err = continuity_error(pts, stored) if key == "oi_hourly" else None
+                if err:
+                    refuse(key, err); pts = None
             elif pts and key == "oi_daily":
                 pts = keep_old_days(pts, (pa.get(key) or {}).get("points"))
             if pts:
@@ -294,21 +359,19 @@ def main():
             elif key in pa:
                 A[key] = dict(pa[key], stale_copy=True)
 
-        pts, meta = chain(f"{a} oi_hourly", [("Binance", lambda: bn_oi(a, "1h", 30)), ("OKX", lambda: okx_oi(a, "1H", 30)), ("Bybit", lambda: bybit_oi(a, "1h", 30))], attempts)
+        pts, meta = chain(f"{a} oi_hourly", [("OKX", lambda: okx_oi(a, "1H", 30)), ("Binance", lambda: bn_oi(a, "1h", 30)), ("Bybit", lambda: bybit_oi(a, "1h", 30))], attempts, src("oi_hourly"))
         put("oi_hourly", pts, meta, ["t", "oi_usd", "oi_coin"], "USD notional and coin")
         # long daily history: OKX first (since end-2023); Binance only keeps 30 days
         pts, meta = chain(f"{a} oi_daily", [("OKX", lambda: okx_oi(a, "1D", 1100)), ("Bybit", lambda: bybit_oi(a, "1d", 1100)), ("Binance", lambda: bn_oi(a, "1d", 30))], attempts)
         put("oi_daily", pts, meta, ["t", "oi_usd", "oi_coin"], "USD notional and coin")
-        pts, meta = chain(f"{a} funding", [("Binance", lambda: bn_funding(a, 365)), ("OKX", lambda: okx_funding(a, 365)), ("Bybit", lambda: bybit_funding(a, 365)), ("Deribit", lambda: deribit_funding(a, 90))], attempts)
+        pts, meta = chain(f"{a} funding", [("OKX", lambda: okx_funding(a, 300)), ("Binance", lambda: bn_funding(a, 300)), ("Bybit", lambda: bybit_funding(a, 300)), ("Deribit", lambda: deribit_funding(a, 90))], attempts, src("funding"))
         if pts:
-            # merge with earlier runs from the SAME source so history accumulates beyond what the API serves
-            old = pa.get("funding", {})
-            if old.get("source") == meta["source"]:
-                m = {int(t): r for t, r in old.get("points", [])}
-                m.update({int(t): r for t, r in pts})
-                pts = [[t, m[t]] for t in sorted(m) if t >= NOW_MS - 730 * DAY]
+            # merge with earlier runs (same venue, enforced by chain) so history accumulates; an older-only fetch is refused
+            pts, err = merge_funding(pts, (pa.get("funding") or {}).get("points"))
+            if err:
+                refuse("funding", err)
         put("funding", pts, meta or {}, ["t", "rate"], "fraction per funding interval (0.0001 = 0.01%)")
-        pts, meta = chain(f"{a} basis_hourly", [("Binance", lambda: bn_basis(a, 21)), ("OKX", lambda: okx_basis(a, 30))], attempts)
+        pts, meta = chain(f"{a} basis_hourly", [("OKX", lambda: okx_basis(a, 30)), ("Binance", lambda: bn_basis(a, 21))], attempts, src("basis_hourly"))
         put("basis_hourly", pts, meta, ["t", "perp", "spot", "basis_pct"], "USD prices; basis in percent")
         lat = {}
         if A.get("oi_hourly"):
@@ -324,7 +387,7 @@ def main():
         assets[a] = A
     out = {"updated": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
            "scope": "Single venue per series (see 'source'); not an aggregate of all exchanges.",
-           "fallback_chain": "Binance USD-M -> OKX -> Bybit (-> Deribit for funding). Binance/Bybit block US IPs, so GitHub-hosted runs normally use OKX.",
+           "fallback_chain": "OKX -> Binance USD-M -> Bybit (-> Deribit for funding); a fallback from another venue than the stored series is refused.",
            "assets": assets, "attempts": attempts}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     write_json(OUT, out)

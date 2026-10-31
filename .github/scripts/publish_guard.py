@@ -6,10 +6,22 @@
       basis_hourly: every field exactly; oi_hourly: t and oi_usd (index 1) exactly, oi_coin (index 2) within COIN_RTOL relative
       (31 Oct: OKX restates the coin figure in the 4th-5th significant digit with identical USD; that is not a history rewrite)
 Usage: publish_guard.py <derivs.json> [ref_derivs.json] [--ref main|live]   (default ref name "main"; main copy: git show
-FETCH_HEAD:data/derivs.json). The ref name is only used in messages. Env NOW_MS (tests)."""
+FETCH_HEAD:data/derivs.json). The ref name is only used in messages. Env NOW_MS (tests).
+1 Nov one-off: --allow-diff "ASSET:series:t,..." (only with --ref live; set only when data.yml input repair_derivs is set) exempts
+exactly those (asset, series, hour) pairs from the overlap check; every pair must be on the HARD allowlist ALLOW_DIFF below, else exit 2."""
 import json, os, sys, time
 H = 3600000
 COIN_RTOL = 1e-4
+# the 31 Oct 21:50Z Binance points (OI 19:00Z, basis 20:00Z) served by live; nothing else can ever be exempted
+ALLOW_DIFF = {(a, "oi_hourly", 1793473200000) for a in ("BTC", "ETH")} | {(a, "basis_hourly", 1793476800000) for a in ("BTC", "ETH")}
+def parse_allow(raw):
+    out = set()
+    for x in [x.strip() for x in (raw or "").split(",") if x.strip()]:
+        parts = x.split(":")
+        if len(parts) != 3 or not parts[2].isdigit() or (parts[0], parts[1], int(parts[2])) not in ALLOW_DIFF:
+            raise ValueError(f"{x!r} is not on the allow-diff allowlist")
+        out.add((parts[0], parts[1], int(parts[2])))
+    return out
 def cf_marks(x, path="$"):
     out = []
     if isinstance(x, dict):
@@ -30,7 +42,7 @@ def same(k, p, q):
     if not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (a, b)):
         return False
     return abs(a - b) <= COIN_RTOL * max(abs(a), abs(b))
-def check(pub, main=None, now=None, ref="main"):
+def check(pub, main=None, now=None, ref="main", allow=frozenset()):
     now = now if now is not None else int(time.time() * 1000); last_closed = (now // H) * H - H; bad = []
     if pub.get("_test_only"): bad.append("file is stamped _test_only")
     m = cf_marks(pub)
@@ -42,7 +54,7 @@ def check(pub, main=None, now=None, ref="main"):
             if op: bad.append(f"{a} {k}: {len(op)} point(s) for an hour not yet closed (first {op[0][0]}, last closed hour starts {last_closed})")
             if main is not None:
                 M = {p[0]: p for p in ((((main.get("assets") or {}).get(a) or {}).get(k) or {}).get("points") or []) if isinstance(p, list) and p}
-                diff = [p[0] for p in P if isinstance(p, list) and p and p[0] in M and not same(k, p, M[p[0]])]
+                diff = [p[0] for p in P if isinstance(p, list) and p and p[0] in M and not same(k, p, M[p[0]]) and (a, k, p[0]) not in allow]
                 if diff: bad.append(f"{a} {k}: {len(diff)} hour(s) differ from {ref} (first {diff[0]}: {ref} {M[diff[0]]} vs published {[p for p in P if isinstance(p, list) and p and p[0] == diff[0]][0]})")
     return bad
 if __name__ == "__main__":
@@ -50,8 +62,15 @@ if __name__ == "__main__":
     if "--ref" in av:
         i = av.index("--ref"); ref = av[i + 1] if i + 1 < len(av) else ""; del av[i:i + 2]
         if ref not in ("main", "live"): print("::error title=Publish guard::--ref must be main or live"); sys.exit(2)
+    allow = set()
+    if "--allow-diff" in av:
+        i = av.index("--allow-diff"); raw = av[i + 1] if i + 1 < len(av) else ""; del av[i:i + 2]
+        if ref != "live": print("::error title=Publish guard::--allow-diff is only valid with --ref live"); sys.exit(2)
+        try: allow = parse_allow(raw)
+        except ValueError as e: print(f"::error title=Publish guard::{e}"); sys.exit(2)
+        if allow: print(f"publish guard: exempting exactly {len(allow)} allowlisted hour(s) vs live: {sorted(allow)}")
     pub = json.load(open(av[0])); main = json.load(open(av[1])) if len(av) > 1 and os.path.exists(av[1]) else None
     if len(av) > 1 and main is None: print(f"::error title=Publish guard::{ref} derivs.json missing"); sys.exit(1)
-    bad = check(pub, main, int(os.environ["NOW_MS"]) if os.environ.get("NOW_MS") else None, ref)
+    bad = check(pub, main, int(os.environ["NOW_MS"]) if os.environ.get("NOW_MS") else None, ref, allow)
     if bad: print(f"::error title=Publish guard refused derivs.json (vs {ref})::" + "; ".join(bad)); sys.exit(1)
     print(f"publish guard OK (vs {ref}): no test marks, only closed hours" + (f", overlapping hours match {ref} (oi_usd + basis exact, oi_coin within {COIN_RTOL:g} rel)" if main is not None else ""))

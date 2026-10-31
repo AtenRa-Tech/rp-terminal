@@ -24,6 +24,11 @@ on:
         type: string
         required: false
         default: ''
+      repair_derivs:
+        description: 'One-off (1 Nov): remove these Binance points so the OKX fetch re-adds them, and exempt exactly them from the vs-live guard. Allowlist: BTC/ETH oi_hourly 1793473200000, basis_hourly 1793476800000 as ASSET:series:t,... Empty = normal run.'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -85,6 +90,14 @@ jobs:
           LIVE_OUT: ${{ runner.temp }}/restore-live-derivs.json
         run: python3 .github/scripts/restore_hours.py "$RESTORE_HOURS"
 
+      - name: Repair Binance points (dispatch input repair_derivs only; empty = skipped)
+        id: repair
+        if: github.event_name == 'workflow_dispatch' && inputs.repair_derivs != ''
+        env:
+          REPAIR_DERIVS: ${{ inputs.repair_derivs }}
+          LIVE_OUT: ${{ runner.temp }}/repair-live-derivs.json
+        run: python3 .github/scripts/repair_derivs.py "$REPAIR_DERIVS"
+
       - name: Derivatives OI / funding / basis (hourly)
         continue-on-error: true
         run: python scripts/fetch_derivs.py
@@ -117,10 +130,19 @@ jobs:
         if: steps.restore.outcome == 'success'
         run: python3 .github/scripts/publish_guard.py data/derivs.json "$RUNNER_TEMP/restore-live-derivs.json" --ref live
 
+      - name: Repair only - the fetch must have re-added OKX values for every repaired hour (continuity-checked), then guard vs live (blocking)
+        id: repair_guard
+        if: steps.repair.outcome == 'success'
+        env:
+          REPAIR_DERIVS: ${{ inputs.repair_derivs }}
+        run: |
+          python3 .github/scripts/repair_derivs.py --verify "$REPAIR_DERIVS"
+          python3 .github/scripts/publish_guard.py data/derivs.json "$RUNNER_TEMP/repair-live-derivs.json" --ref live --allow-diff "$REPAIR_DERIVS"
+
       - name: Commit if changed
         id: commit
-        # a refused restore (or a restore whose result fails the vs-live guard) commits/pushes nothing (not even _runs.json)
-        if: always() && steps.restore.outcome != 'failure' && steps.restore_guard.outcome != 'failure'
+        # a refused restore/repair (or one whose result fails the vs-live guard) commits/pushes nothing (not even _runs.json)
+        if: always() && steps.restore.outcome != 'failure' && steps.restore_guard.outcome != 'failure' && steps.repair.outcome != 'failure' && steps.repair_guard.outcome != 'failure'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -267,6 +289,7 @@ jobs:
       - name: Snapshot (tested code + newest data/ from main); refuse if code or data older than live
         env:
           GH_TOKEN: ${{ github.token }}
+          PUBLISH_ALLOW_DIFF: ${{ github.event_name == 'workflow_dispatch' && inputs.repair_derivs || '' }}
         run: |
           python3 .github/scripts/no_regress.py snapshot live-before.json
           code=$(bash .github/scripts/tested_sha.sh); [ -n "$code" ] || { echo "::error::no tested code commit"; exit 1; }
