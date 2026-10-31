@@ -8,4 +8,5 @@ bad=0; for t in tqa talt tbrief taud tnews tmac tsig tscroll tfix tnewsfx tgolde
   if [ $rc -ne 0 ] || echo "$out" | grep -qE '^FAIL |FAILS: [1-9]'; then echo "!! $t failed (rc=$rc)"; bad=1; fi
 done
 echo "== tlim5 (py)"; python3 tlim5.py || { echo '!! tlim5 failed'; bad=1; }
+echo "== tkeep_hours (py)"; python3 tkeep_hours.py || { echo '!! tkeep_hours failed'; bad=1; }
 exit $bad

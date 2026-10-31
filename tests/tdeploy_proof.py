@@ -80,7 +80,7 @@ rc, o = with_main(lambda d: d["assets"]["BTC"]["oi_hourly"]["points"].append([to
 rc, o = with_main(lambda d: d.__setitem__("_test_only", True), "test mark"); ok(rc != 0 and "_test_only" in o, "(a) refused: test-marked file", o[-300:]); restore()
 rc, o = deploy(tested()); ok(rc == 0, "clean data deploys again", o[-300:])
 lv = json.load(open(f"{live}/data/derivs.json")); p0 = lv["assets"]["ETH"]["basis_hourly"]["points"][-3]; p0[-1] = p0[-1] + 0.001; json.dump(lv, open(f"{live}/data/derivs.json", "w"))
-rc, o = deploy(tested()); ok(rc != 0 and "differ from main" in o, "(a) refused: an overlapping hour differs from what LIVE serves", o[-300:])
+rc, o = deploy(tested()); ok(rc != 0 and "differ from live" in o and "vs live" in o, "(a) refused: an overlapping hour differs from what LIVE serves", o[-300:])
 json.dump(DV, open(f"{live}/data/derivs.json", "w")); lr = json.load(open(f"{live}/data/_runs.json")); lr["last_run"] = "2099-01-01T00:00:00Z"; json.dump(lr, open(f"{live}/data/_runs.json", "w"))
 rc, o = deploy(tested()); ok(rc != 0 and "older than" in o, "(a) refused: data older than live (no_regress)", o[-300:])
 json.dump(json.load(open(f"{ROOT}/data/_runs.json")), open(f"{live}/data/_runs.json", "w")); rc, o = deploy(tested()); ok(rc == 0, "clean deploy before the hold test", o[-300:])
