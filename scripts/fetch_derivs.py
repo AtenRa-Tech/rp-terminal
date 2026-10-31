@@ -334,6 +334,7 @@ def main():
 
         def refuse(key, why):
             print(f"  {a} {key}: {why}", file=sys.stderr)
+            print(f"::warning title=derivs series refused::{a} {key}: {why[:200]} (stored series kept, listed under attempts)", file=sys.stderr)
             for at in attempts[::-1]:
                 if at["series"] == f"{a} {key}":
                     at["tried"][-1].update(ok=False, error=why[:160]); break

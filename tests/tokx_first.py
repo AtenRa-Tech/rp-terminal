@@ -34,7 +34,9 @@ def run_fetch(stored, oi=None, funding=None, basis=None, bn=None):
     fd.bn_oi = fd.bn_funding = fd.bn_basis = bad
     fd.bybit_oi = fd.bybit_funding = fd.deribit_funding = lambda *a: (_ for _ in ()).throw(RuntimeError("HTTP 403 (geo-blocked)"))
     import io, contextlib
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()): fd.main()
+    global ERR; ERR = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(ERR): fd.main()
+    ERR = ERR.getvalue()
     return json.load(open(f))
 def tried(o, s): return next(x["tried"] for x in o["attempts"] if x["series"] == s)
 def pts(o, a, k): return {p[0]: p for p in o["assets"][a][k]["points"]}
@@ -60,6 +62,8 @@ R = copy.deepcopy(M)
 for a in ("BTC", "ETH"): R["assets"][a]["oi_hourly"]["points"] = [p for p in R["assets"][a]["oi_hourly"]["points"] if p[0] != T19]
 o = run_fetch(R, oi=okx_from(R, lambda a, P: [p if p[0] != T19 else [p[0], p[1] * 2.9, p[2] * 2.9] for p in P]))
 ok("continuity" in json.dumps(tried(o, "BTC oi_hourly")) and o["assets"]["BTC"]["oi_hourly"]["points"] == R["assets"]["BTC"]["oi_hourly"]["points"], "a 2.9x new OI hour refuses the series (stored kept, attempt failed)")
+ok("::warning title=derivs series refused::BTC oi_hourly" in ERR and "continuity" in ERR, "refused OI series is visible in the run log (warning annotation + reason)", ERR)
+ok(any(x["series"] == "BTC oi_hourly" and not x["tried"][-1]["ok"] and "continuity" in x["tried"][-1]["error"] for x in o["attempts"]) and o["assets"]["BTC"]["oi_hourly"].get("stale_copy") is True, "refused OI series is visible in data attempts (ok false + reason) and the stored series is marked stale_copy")
 o = run_fetch(R)
 ok(tried(o, "BTC oi_hourly")[-1]["ok"] and len(o["assets"]["BTC"]["oi_hourly"]["points"]) == len(R["assets"]["BTC"]["oi_hourly"]["points"]) + 1, "a normal 1% move passes (OKX 19:00Z re-added)")
 mid = [list(p) for p in M["assets"]["BTC"]["oi_hourly"]["points"]]; st = [p for p in mid if p[0] != T19]
@@ -135,6 +139,11 @@ def sp(args): r = subprocess.run([sys.executable] + args, env=dict(os.environ, L
 rc, o_ = sp([RP, "--verify", LIST, fo]); ok(rc == 0 and o_.count("re-added") == 4, "verify: all 4 hours re-added from OKX and continuous", o_)
 ok(o["assets"]["BTC"]["oi_hourly"]["points"][-1][0] >= T19 and pts(o, "BTC", "oi_hourly")[T19][2] < 40000, "19:00Z BTC OI is OKX scale (~34k coin), not 97k")
 rc, o_ = sp([RP, "--verify", LIST, f]); ok(rc == 1 and "not re-added" in o_, "verify fails when the fetch did not re-add an hour (commit blocked)")
+# OKX down at the dispatch: repair removed 4 points, nothing refills them -> the fetch keeps the repaired file, --verify FAILS (workflow then skips the commit)
+od = run_fetch(Rj, oi=okx_down, funding=okx_down, basis=okx_down); fd_ = os.path.join(T, "okxdown.json"); json.dump(od, open(fd_, "w"))
+ok(T19 not in pts(od, "BTC", "oi_hourly") and T20 not in pts(od, "ETH", "basis_hourly") and "OKX down" in json.dumps(tried(od, "BTC oi_hourly")), "OKX down after the repair: the 4 hours are NOT refilled (Binance refused, no other source)")
+rc, o_ = sp([RP, "--verify", LIST, fd_]); ok(rc == 1 and "was not re-added" in o_, "OKX down at dispatch: --verify exits 1, so the commit is skipped and live keeps what it serves", o_)
+rc, o_ = sp([G, fd_, LIVE, "--ref", "live", "--allow-diff", LIST]); ok(rc == 0, "OKX-down file itself would pass the guard (only --verify blocks it: documents why verify is required)", o_)
 rc, o_ = sp([G, fo, LIVE, "--ref", "live", "--allow-diff", LIST]); ok(rc == 0, "guard vs live passes with exactly the 4 exempted hours", o_)
 rc, o_ = sp([G, fo, LIVE, "--ref", "live"]); ok(rc == 1 and o_.count("differ from live") == 4, "without the exemption the same file is refused (4 series)", o_)
 o5 = copy.deepcopy(o); o5["assets"]["BTC"]["oi_hourly"]["points"][-6][1] += 1; f5 = os.path.join(T, "o5.json"); json.dump(o5, open(f5, "w"))
