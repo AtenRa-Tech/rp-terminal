@@ -52,6 +52,39 @@ def settled_hours(pts, now_ms=None):
     return [r for r in pts if int(r[0]) + OI_SETTLE_MS <= now]
 
 
+def keep_stored_hours(pts, stored):
+    """Closed hours are never rewritten (31 Oct: an OKX restatement of BTC 1791118800000 coin 28465.624 -> .483 failed the
+    live-overlap guard). For every hour already in the existing derivs.json the STORED point is kept as is; the fetch only
+    adds hours not stored yet. Stored hours inside the fetched window that the API no longer returns are kept too;
+    hours older than the fetched window fall off as before. Returns a new list sorted by t."""
+    if not pts:
+        return pts
+    old = {int(p[0]): p for p in (stored or []) if isinstance(p, list) and p and isinstance(p[0], (int, float))}
+    lo = min(int(p[0]) for p in pts)
+    m = {int(p[0]): p for p in pts}
+    m.update({t: p for t, p in old.items() if t >= lo})
+    return [m[t] for t in sorted(m)]
+
+
+DAILY_RESTATE_MS = 2 * 24 * 3600_000
+
+
+def keep_old_days(pts, stored, now_ms=None):
+    """oi_daily (31 Oct ruling, age alone decides): a daily bar whose close (t + 1 day) is within 2 days of fetch time is
+    replaced by the fresh fetch (venues restate recent days); an older bar that is already stored is kept as stored.
+    New bars are added; stored bars older than the fetched window fall off as before. Returns a new list sorted by t."""
+    if not pts:
+        return pts
+    now = NOW_MS if now_ms is None else now_ms
+    old = {int(p[0]): p for p in (stored or []) if isinstance(p, list) and p and isinstance(p[0], (int, float))}
+    lo = min(int(p[0]) for p in pts)
+    m = {int(p[0]): p for p in pts}
+    for t, p in old.items():
+        if t >= lo and now - (t + DAY) > DAILY_RESTATE_MS:
+            m[t] = p
+    return [m[t] for t in sorted(m)]
+
+
 def write_json(path, obj):
     """Atomic write; refuses NaN/Infinity so a bad value can never corrupt the file."""
     s = json.dumps(obj, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
@@ -252,6 +285,10 @@ def main():
                     pts = settled_hours(pts)
             elif pts and key == "oi_daily":
                 pts = closed_bars(pts, DAY)
+            if pts and key in ("oi_hourly", "basis_hourly"):
+                pts = keep_stored_hours(pts, (pa.get(key) or {}).get("points"))
+            elif pts and key == "oi_daily":
+                pts = keep_old_days(pts, (pa.get(key) or {}).get("points"))
             if pts:
                 A[key] = dict(meta, columns=cols, units=units, last=pts[-1][0], points=pts)
             elif key in pa:

@@ -35,6 +35,6 @@ else
     echo "live derivs.json unreadable (attempt $i/3)"; [ $i -lt 3 ] && sleep $(( i * ${SNAP_RETRY_SLEEP:-10} ))
   done
   if [ -z "$got" ]; then rm -rf "$dir"; echo "::error title=Publish HELD::live derivs.json unreadable after 3 attempts: overlap-with-live cannot be checked, so NOTHING is published. The next scheduled run will deploy."; exit 1; fi
-  python3 "$here/publish_guard.py" "$dir/data/derivs.json" "$dir/.live-derivs.json"
+  python3 "$here/publish_guard.py" "$dir/data/derivs.json" "$dir/.live-derivs.json" --ref live
 fi
 rm -f "$dir/.live-derivs.json"
