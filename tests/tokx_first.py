@@ -64,6 +64,23 @@ o = run_fetch(R, oi=okx_from(R, lambda a, P: [p if p[0] != T19 else [p[0], p[1] 
 ok("continuity" in json.dumps(tried(o, "BTC oi_hourly")) and o["assets"]["BTC"]["oi_hourly"]["points"] == R["assets"]["BTC"]["oi_hourly"]["points"], "a 2.9x new OI hour refuses the series (stored kept, attempt failed)")
 ok("::warning title=derivs series refused::BTC oi_hourly" in ERR and "continuity" in ERR, "refused OI series is visible in the run log (warning annotation + reason)", ERR)
 ok(any(x["series"] == "BTC oi_hourly" and not x["tried"][-1]["ok"] and "continuity" in x["tried"][-1]["error"] for x in o["attempts"]) and o["assets"]["BTC"]["oi_hourly"].get("stale_copy") is True, "refused OI series is visible in data attempts (ok false + reason) and the stored series is marked stale_copy")
+# the stale alarm fires on the refused (stale_copy) series: latest.oi_t stays at the stored tail, runs_log feeds go not-ok past the 5h limit, data_age.py fails naming it
+import datetime as _dt
+sys.path.insert(0, os.path.join(ROOT, "scripts")); sys.path.insert(0, os.path.join(ROOT, ".github/scripts"))
+import runs_log, data_age
+ref = o   # the refused run above
+tail = R["assets"]["BTC"]["oi_hourly"]["points"][-1][0]
+ok(ref["assets"]["BTC"]["oi_hourly"].get("stale_copy") is True and ref["assets"]["BTC"]["latest"]["oi_t"] == tail, "refused series: latest.oi_t stays at the stored tail (no fake freshness)", ref["assets"]["BTC"]["latest"])
+iso = lambda ms: _dt.datetime.fromtimestamp(ms / 1000, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def alarm(now_ms):
+    fd = runs_log.feeds(ref, now_ms); lim = fd["BTC oi"]["lim_h"]
+    d = {"last_run": iso(now_ms - 600000), "runs": [{"feeds": fd}], "market": {"updated": iso(now_ms - 3600000), "limit_h": 3},
+         "macro": {}, "macro_checked": {"checked_at": iso(now_ms - 3600000), "limit_h": 7}}
+    return data_age.check(d, data_age.P(iso(now_ms))), lim
+bad, lim = alarm(tail + 2 * H)
+ok(not any("BTC oi" in b for b in bad), f"refused series 2h after its tail: inside the {lim}h limit, alarm quiet (it stays quiet until the limit)", bad)
+bad, lim = alarm(tail + int((lim + 1) * H))
+ok(any(b.startswith("BTC oi") and "limit" in b for b in bad), "refused series past its limit: the stale alarm (data_age) fires and names BTC oi", bad)
 o = run_fetch(R)
 ok(tried(o, "BTC oi_hourly")[-1]["ok"] and len(o["assets"]["BTC"]["oi_hourly"]["points"]) == len(R["assets"]["BTC"]["oi_hourly"]["points"]) + 1, "a normal 1% move passes (OKX 19:00Z re-added)")
 mid = [list(p) for p in M["assets"]["BTC"]["oi_hourly"]["points"]]; st = [p for p in mid if p[0] != T19]
