@@ -8,7 +8,7 @@ import fetch_derivs as fd
 H = 3600000; NOW = 1793486100000; T19, T20 = 1793473200000, 1793476800000
 FX = os.path.join(ROOT, "tests/fixtures/repair"); MAIN, LIVE = os.path.join(FX, "main-a0271f9.json"), os.path.join(FX, "live-2150z.json")
 RP = os.path.join(ROOT, ".github/scripts/repair_derivs.py"); G = os.path.join(ROOT, ".github/scripts/publish_guard.py")
-FUND_H = json.load(open(os.path.join(ROOT, "shared/freshness.json")))["signal_cards"]["funding_h"]
+FUND_H = json.load(open(os.path.join(FX, "freshness.json")))["signal_cards"]["funding_h"]
 LIST = f"BTC:oi_hourly:{T19},ETH:oi_hourly:{T19},BTC:basis_hourly:{T20},ETH:basis_hourly:{T20}"
 fails = []; T = tempfile.mkdtemp(); M = json.load(open(MAIN)); L = json.load(open(LIVE))
 def ok(c, m, x=""):
