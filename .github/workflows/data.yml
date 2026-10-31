@@ -19,6 +19,11 @@ on:
         description: 'Also run the daily macro + ETF batch'
         type: boolean
         default: false
+      restore_hours:
+        description: 'One-off: restore these closed hours (ms, comma-separated) from LIVE into data/derivs.json. Allowlist: BTC oi_hourly 1791118800000,1791475200000 only. Empty = normal run.'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -72,6 +77,14 @@ jobs:
           echo "full=$FULL" >> "$GITHUB_OUTPUT"
           echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL"
 
+      - name: Restore published hours from live (dispatch input restore_hours only; empty = skipped)
+        id: restore
+        if: github.event_name == 'workflow_dispatch' && inputs.restore_hours != ''
+        env:
+          RESTORE_HOURS: ${{ inputs.restore_hours }}
+          LIVE_OUT: ${{ runner.temp }}/restore-live-derivs.json
+        run: python3 .github/scripts/restore_hours.py "$RESTORE_HOURS"
+
       - name: Derivatives OI / funding / basis (hourly)
         continue-on-error: true
         run: python scripts/fetch_derivs.py
@@ -99,9 +112,15 @@ jobs:
           for f in data/*.json; do python -c "import json,sys; json.load(open('$f'))" || { echo "invalid $f, restoring"; git checkout -- "$f"; }; done
           rm -f data/*.tmp
 
+      - name: Restore only - publish guard vs live on the file about to be committed (blocking)
+        id: restore_guard
+        if: steps.restore.outcome == 'success'
+        run: python3 .github/scripts/publish_guard.py data/derivs.json "$RUNNER_TEMP/restore-live-derivs.json" --ref live
+
       - name: Commit if changed
         id: commit
-        if: always()
+        # a refused restore (or a restore whose result fails the vs-live guard) commits/pushes nothing (not even _runs.json)
+        if: always() && steps.restore.outcome != 'failure' && steps.restore_guard.outcome != 'failure'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
