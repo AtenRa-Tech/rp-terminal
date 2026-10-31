@@ -7,7 +7,7 @@ name: CI and deploy
 on:
   push:
     branches: [main]
-    # data-only commits (the data job, pushed with its deploy key) are redeployed by data.yml dispatching this workflow with data_redeploy=true
+    # data-only pushes (data.yml, deploy key) never start this workflow: data.yml dispatches the fast publish (publish guard + smoke) instead
     paths-ignore: ['data/**']
   pull_request:
     branches: [main]
@@ -37,10 +37,32 @@ env:
 
 jobs:
   test:
+    # the ruleset's required check: it ALWAYS runs and reports (never path-filtered at workflow level), so data-only PRs are never stuck.
+    # 21 Oct (slow schedule): a change that touches ONLY data/ runs the publish guard + a local smoke test; anything else runs the full suite.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scope - data-only change (only data/ differs from the base) or code change (full suite)
+        id: scope
+        env:
+          EV: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          MQ_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$EV" in pull_request) base="$PR_BASE";; merge_group) base="$MQ_BASE";; *) base="";; esac
+          full=true
+          if [ -n "$base" ]; then
+            # fail closed: if the diff cannot be computed, run the full suite
+            if files=$(git diff --no-renames --name-only "$base" HEAD); then
+              bad=$(printf '%s\n' "$files" | grep -v -e '^data/' -e '^$' || true)
+              if [ -n "$files" ] && [ -z "$bad" ]; then full=false; fi
+            fi
+          fi
+          echo "full=$full" >> "$GITHUB_OUTPUT"; echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "event=$EV base=${base:-none} -> full suite=$full"
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -56,50 +78,87 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gates"
           python3 -m http.server 8765 >/dev/null 2>&1 &
           for i in $(seq 1 20); do curl -sf http://localhost:8765/index.html >/dev/null && break; sleep 1; done
+      - name: Data-only change - publish guard on data/derivs.json vs the base (blocking)
+        if: steps.scope.outputs.full == 'false'
+        run: |
+          git show "${{ steps.scope.outputs.base }}:data/derivs.json" > "$RUNNER_TEMP/base-derivs.json"
+          python3 .github/scripts/publish_guard.py data/derivs.json "$RUNNER_TEMP/base-derivs.json"
+          python3 tests/tclosed_hours.py
+      - name: Data-only change - local smoke test (every tab renders, no errors) + card presence (blocking)
+        if: steps.scope.outputs.full == 'false'
+        run: |
+          set -e
+          node tests/tsmoke.js http://localhost:8765/
+          node qa/card-presence.js http://localhost:8765/index.html
       - name: Node test suites (headless Chrome; skipped on hourly data redeploys to save minutes)
-        if: ${{ !inputs.data_redeploy }}
+        if: ${{ steps.scope.outputs.full == 'true' && (!inputs.data_redeploy) }}
         run: set -o pipefail; tests/run-all.sh 2>&1 | tee "$RUNNER_TEMP/gates/node-suites.log"
       - name: Known-answer tests (frozen 30 Sep 2026 snapshot, data-golden.json)
+        if: steps.scope.outputs.full == 'true'
         run: set -o pipefail; GOLD=tests/fixtures node -r ./tests/freeze/preload.js tests/tgolden.js 2>&1 | tee "$RUNNER_TEMP/gates/known-answer.log"
       - name: Caption sweep gate (blocking)
+        if: steps.scope.outputs.full == 'true'
         run: set -o pipefail; node -r ./tests/freeze/preload.js qa/caption-sweep.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/caption-sweep.log"
       - name: Pulse movers gate (blocking; 5 fixtures + history fixture, movers and heatmap, Crypto News GOD's qa/pulse-movers.js)
+        if: steps.scope.outputs.full == 'true'
         run: set -o pipefail; node -r ./tests/freeze/preload.js qa/pulse-movers.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/pulse-movers.log"
       - name: OI ÷ supply label gate (blocking; Crypto News GOD's qa/oicap-label.js, unchanged)
+        if: steps.scope.outputs.full == 'true'
         run: set -o pipefail; node -r ./tests/freeze/preload.js qa/oicap-label.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/oicap-label.log"
       - name: Card presence gate (blocking; Crypto News GOD's qa/card-presence.js, unchanged) - every known card is in SIG or SIGSTALE with stale:true + staleWhy
+        if: steps.scope.outputs.full == 'true'
         run: set -o pipefail; node -r ./tests/freeze/preload.js qa/card-presence.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/card-presence.log"
       - name: Sell-off lint gate (blocking; 13 sentences through the app's lintBanned(), qa/selloff-lint.js unchanged)
+        if: steps.scope.outputs.full == 'true'
         run: set -o pipefail; node -r ./tests/freeze/preload.js qa/selloff-lint.js http://localhost:8765/index.html 2>&1 | tee "$RUNNER_TEMP/gates/selloff-lint.log"
       - name: Export check gate (blocking, built files; 29 exports need @RPTIME, Data source + as-of, UTC time, no lean words)
+        if: steps.scope.outputs.full == 'true'
         working-directory: ${{ runner.temp }}
         # one retry after 90 s only to ride out a CoinGecko/CoinPaprika rate limit; any second failure blocks
         run: set -o pipefail; { node -r "$GITHUB_WORKSPACE/tests/freeze/preload.js" "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html || { sleep 90; node -r "$GITHUB_WORKSPACE/tests/freeze/preload.js" "$GITHUB_WORKSPACE/qa/export-check.js" http://localhost:8765/index.html; }; } 2>&1 | tee "$RUNNER_TEMP/gates/export-check.log"
       - name: Derivatives run log (blocking) - _runs.json freshness per feed, 24h hourly sample, 95% SLA logic
+        if: steps.scope.outputs.full == 'true'
         run: python3 tests/truns.py
       - name: Market + macro freshness in _runs.json (blocking)
+        if: steps.scope.outputs.full == 'true'
         run: python3 tests/tmktfresh.py
+      - name: OI/basis 5h limit from the hour start, 2h settle, missed-run + OKX-revision cases (blocking)
+        run: python3 tests/tlim5.py
       - name: Fast publish path selection + no-regress (blocking)
+        if: steps.scope.outputs.full == 'true'
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpublish.py
       - name: Live data watchdog on seed/missing _runs.json (blocking)
+        if: steps.scope.outputs.full == 'true'
         run: python3 tests/tlivelag.py
       - name: Confidence full inside each input's freshness limit, reduced only past it (blocking)
+        if: steps.scope.outputs.full == 'true'
         run: node -r ./tests/freeze/preload.js qa/conf-limit.js http://localhost:8765/index.html
       - name: Live price never changes a score (blocking) - agreeing, late (3% off) and missing live BTC give identical scores + data confidence
+        if: steps.scope.outputs.full == 'true'
         run: node -r ./tests/freeze/preload.js qa/live-price-score.js http://localhost:8765/index.html
       - name: Stale alarm / live data age per feed limit (blocking) - stale fails, fresh passes
+        if: steps.scope.outputs.full == 'true'
         run: python3 tests/tdata_age.py
       - name: Pages deploys share ONE group (blocking) - static check over every deploying workflow
+        if: steps.scope.outputs.full == 'true'
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpages.py
       - name: Three deploys at once (blocking) - live ends on newest tested code + newest data; untested code never ships via a data publish
+        if: steps.scope.outputs.full == 'true'
         run: python3 tests/tpages_sim.py
+      - name: Slow schedule (blocking) - no cron more often than hourly, data jobs never overlap, test check always reports
+        if: steps.scope.outputs.full == 'true'
+        run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tschedule.py
       - name: Deploy proof (blocking) - every data deploy runs the publish guard; a data push ships only pages-tested code
+        if: steps.scope.outputs.full == 'true'
         run: python3 tests/tdeploy_proof.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
+        if: steps.scope.outputs.full == 'true'
         run: python3 tests/tclosed_hours.py
       - name: Fixture consistency (blocking) - no derivs fixture has a latest timestamp newer than its own series beyond the metric limit
+        if: steps.scope.outputs.full == 'true'
         run: set -o pipefail; node qa/fixture-consistency.js 2>&1 | tee "$RUNNER_TEMP/gates/fixture-consistency.log"
       - name: Stale-data gate (blocking) - a metric past its freshness limit gives no reading anywhere (team tests + boundary/mixed/scores/confidence)
+        if: steps.scope.outputs.full == 'true'
         run: |
           set -eo pipefail
           { node -r ./tests/freeze/preload.js qa/stale-derivs.js http://localhost:8765/index.html
@@ -107,6 +166,7 @@ jobs:
             node -r ./tests/freeze/preload.js qa/stale-derivs2.js http://localhost:8765/index.html
             node -r ./tests/freeze/preload.js qa/stale-conf.js http://localhost:8765/index.html; } 2>&1 | tee "$RUNNER_TEMP/gates/stale-data.log"
       - name: News replay diff (report only)
+        if: steps.scope.outputs.full == 'true'
         continue-on-error: true
         timeout-minutes: 5   # report-only: a hang here must never eat the 45-min job budget (15 Oct: a820abc CI stuck here)
         run: node -r ./tests/freeze/preload.js qa/news-replay.js run http://localhost:8765/index.html
@@ -117,7 +177,7 @@ jobs:
         run: bash .github/scripts/gate-summary.sh "${{ inputs.data_redeploy && 'Data redeploy test' || 'Test' }}"
 
   deploy:
-    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and data.yml; a second deploy waits (never cancelled mid-deploy)
     concurrency:
       group: pages
       cancel-in-progress: false
@@ -199,19 +259,23 @@ jobs:
         run: URL="$SITE_URL" node tests/tqa6.js
       - name: Range buttons, indicators and stated ranges on the live site (blocking; failure rolls back)
         run: URL="$SITE_URL" node tests/trange.js
-      - name: Data job fallback - dispatch "Refresh derivatives" (and "Refresh data") when _runs.json says a run is late or a feed is stale (GitHub cron is best-effort)
-        # not on data redeploys: a data run that could not refresh derivs.json must not re-trigger itself in a loop
+      - name: Data job fallback - dispatch ONE "Refresh data" when _runs.json says derivatives are past their 3h limit or a feed is stale (GitHub cron is best-effort)
+        # not on data redeploys (no self-trigger loop); 21 Oct: only when NO data run is already queued/running, at most one dispatch per CI run
         if: always() && !inputs.data_redeploy
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # freshness from data/_runs.json (per-feed timestamps from the last derivatives run), not derivs.json 'updated'
+          # freshness from data/_runs.json (per-feed timestamps from the last data run), not derivs.json 'updated'
           j=$(curl -s "${SITE_URL}data/_runs.json?v=$(date +%s)")
           last=$(printf '%s' "$j" | python3 -c "import json,sys,datetime as d;R=json.load(sys.stdin);print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(R['last_run'].replace('Z','+00:00'))).total_seconds()//3600))" 2>/dev/null || echo 999)
           bad=$(printf '%s' "$j" | python3 -c "import json,sys;R=json.load(sys.stdin);print(sum(1 for v in R['runs'][-1]['feeds'].values() if not v['ok']))" 2>/dev/null || echo 99)
-          echo "last derivatives run ${last}h ago; feeds past their limit in that run: ${bad}"
-          if [ "$last" -ge 1 ] || [ "$bad" -gt 0 ]; then gh workflow run derivs.yml --repo "$GITHUB_REPOSITORY" && echo "dispatched Refresh derivatives"; fi
-          if [ "$last" -ge 7 ]; then gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=true && echo "dispatched Refresh data"; fi
+          echo "last data run ${last}h ago; feeds past their limit in that run: ${bad}"
+          if [ "$last" -ge 3 ] || [ "$bad" -gt 0 ]; then
+            busy=$(gh run list --repo "$GITHUB_REPOSITORY" -w data.yml -L 5 --json status -q '[.[]|select(.status!="completed")]|length' || echo 1)
+            if [ "${busy:-1}" -gt 0 ]; then echo "a data run is already queued/running ($busy): no dispatch"; exit 0; fi
+            full=false; [ "$last" -ge 26 ] && full=true
+            gh workflow run data.yml --repo "$GITHUB_REPOSITORY" -f full=$full && echo "dispatched Refresh data (full=$full)"
+          fi
       - name: Promote tested code (refs/tags/pages-tested) - live serves this commit's code and every smoke gate passed
         if: success() && inputs.data_redeploy != true
         run: |
@@ -243,7 +307,7 @@ jobs:
           python3 scripts/runs_log.py --check 95 /tmp/runs-live.json
 
   rollback:
-    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and publish-derivs.yml; a second deploy waits (never cancelled mid-deploy)
+    # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and data.yml; a second deploy waits (never cancelled mid-deploy)
     concurrency:
       group: pages
       cancel-in-progress: false

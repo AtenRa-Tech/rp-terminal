@@ -9,9 +9,9 @@ def ok(c, n, x=None):
     if not c: F.append(n)
 H = rl.H; t = 1_792_000_000_000 // H * H + 20 * 60000
 # 1) 'updated' fresh, OI 4h old -> OI not ok (updated ignored)
-d = {"updated": rl.iso(t), "assets": {"BTC": {"latest": {"oi_t": t - 4 * H, "funding_t": t - 1 * H, "basis_t": t - 1 * H}}}}
+d = {"updated": rl.iso(t), "assets": {"BTC": {"latest": {"oi_t": t - 5 * H - 10 * 60_000, "funding_t": t - 1 * H, "basis_t": t - 1 * H}}}}
 fd = rl.feeds(d, t)
-ok(fd["BTC oi"]["ok"] is False and fd["BTC funding"]["ok"] and fd["BTC basis"]["ok"], "freshness per feed from latest.*_t; a fresh 'updated' does not make a 4h-old OI fresh", fd)
+ok(fd["BTC oi"]["ok"] is False and fd["BTC funding"]["ok"] and fd["BTC basis"]["ok"], "freshness per feed from latest.*_t; a fresh 'updated' does not make a 5h10m-old OI fresh (limit 5h, 24 Oct)", fd)
 ok(rl.feeds({"assets": {"BTC": {"latest": {}}}}, t)["BTC oi"]["ok"] is False, "a feed with no timestamp is not fresh (missing never counts as fresh)")
 # 2) SLA: 23 of 24 hours within -> 95.8% passes; 22 -> fails; a missing hour counts as not within
 def runs(n_ok, missing=0):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""_runs.json market (2h) and macro per-series freshness (Fed daily 3 US business days skipping bond holidays; weekly 12 days)."""
+"""_runs.json market (3h, 21 Oct ruling) and macro per-series freshness (Fed daily 3 US business days skipping bond holidays; weekly 12 days)."""
 import datetime as dt, importlib.util, json, os, sys, tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); F = []
 spec = importlib.util.spec_from_file_location("rl", os.path.join(ROOT, "scripts", "runs_log.py")); rl = importlib.util.module_from_spec(spec); spec.loader.exec_module(rl)
@@ -9,7 +9,9 @@ def ok(c, n, x=''):
 ms = lambda s: int(dt.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp() * 1000)
 t = ms("2026-10-15T12:00:00Z")
 ok(rl.market_fresh({"updated": "2026-10-15T10:30:00Z"}, t)["ok"], "market 1.5h old -> fresh")
-ok(not rl.market_fresh({"updated": "2026-10-15T09:30:00Z"}, t)["ok"], "market 2.5h old -> stale (limit 2h)")
+ok(rl.market_fresh({"updated": "2026-10-15T09:30:00Z"}, t)["ok"], "market 2.5h old -> fresh (limit 3h)")
+ok(not rl.market_fresh({"updated": "2026-10-15T08:54:00Z"}, t)["ok"], "market 3.1h old -> stale (limit 3h)")
+ok(rl.market_fresh({"updated": "2026-10-15T09:30:00Z"}, t)["limit_h"] == 3 == rl.FRESHNESS["market_h"], "market limit_h written to _runs.json = shared/freshness.json market_h = 3")
 ok(not rl.market_fresh({}, t)["ok"], "market missing -> stale, never fresh")
 ok(dt.date(2026, 10, 12) in rl.us_hol(2026) and dt.date(2026, 11, 11) in rl.us_hol(2026) and dt.date(2026, 7, 3) in rl.us_hol(2026), "bond holidays: Columbus Day 12 Oct, Veterans Day 11 Nov, 4 Jul observed Fri 3 Jul 2026")
 # Fri 9 Oct -> Thu 15 Oct: Mon 12 Oct is a bond holiday, so Tue, Wed, Thu = 3 business days -> fresh; Fri 16 -> 4 -> stale
