@@ -32,7 +32,7 @@ def fetched(a, key):
     elif key == "oi_daily":
         P = [[p[0], p[1] * 1.02, p[2] * 1.02] if p[0] in (D21, P[-1][0]) else p for p in P]
     return P
-def fake_chain(label, fns, attempts):
+def fake_chain(label, fns, attempts, stored_src=None):
     a, key = label.split()[0], label.split()[1]
     if key == "funding": return MAIN["assets"][a]["funding"]["points"], {"source": MAIN["assets"][a]["funding"].get("source")}
     pts = fetched(a, key)
