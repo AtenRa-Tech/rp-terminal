@@ -18,7 +18,9 @@ print(json.dumps({str(k):r.macro_fresh({"series":{"M2SL":{"last_date":"2026-08-0
  await pg.waitForFunction(()=>{try{return MAC.M&&MAC.cards&&MAC.cards.length}catch(e){return false}},{timeout:150000}).catch(()=>{});await new Promise(r=>setTimeout(r,5000));
  const r=await pg.evaluate((LIM,FRtxt)=>{const o={inl:JSON.stringify(FRESHNESS)===JSON.stringify(JSON.parse(FRtxt)),cad:CAD.Monthly},D=864e5,real=Date.now,base=Date.UTC(2026,7,1);
   o.app={};for(const k of [LIM-1,LIM,LIM+1]){Date.now=()=>base+k*D;try{const M={...MAC.M,series:{...MAC.M.series,M2SL:{...MAC.M.series.M2SL,last_date:'2026-08-01'}}};o.app[k]=!fresh('M2SL',M).st}finally{Date.now=real}}
+  o.h10={};const b10=Date.UTC(2026,9,30);for(const [k,a] of [['10.5',10.5],['12.0',12.0],['13.9',13.9],['14',14],['14.1',14.1]]){Date.now=()=>b10+a*D;try{const M={...MAC.M,series:{}};for(const id of ['DEXUSEU','DEXJPUS','DEXCHUS','DTWEXBGS'])M.series[id]={...(MAC.M.series[id]||{points:[[b10,1]],freq:'Daily'}),freq:'Daily',last_date:'2026-10-30'};o.h10[k]=['DEXUSEU','DEXJPUS','DEXCHUS','DTWEXBGS'].map(id=>!fresh(id,M).st)}finally{Date.now=real}}
   return o},LIM,JSON.stringify(FR));
  ok(r.inl&&r.cad===LIM,'app: inline FRESHNESS equals shared/freshness.json and drives CAD.Monthly',r);
  ok(r.app[LIM-1]===true&&r.app[LIM]===true&&r.app[LIM+1]===false,'app: M2SL fresh at limit-1 and limit, stale at limit+1',r.app);
+ ok(FR.h10_days===14&&['10.5','12.0','13.9','14'].every(k=>r.h10[k].every(x=>x===true))&&r.h10['14.1'].every(x=>x===false),'app: H.10 FX (DEXUSEU, DEXJPUS, DEXCHUS, DTWEXBGS) fresh at 10.5, 12.0, 13.9 and 14 days, stale at 14.1 (shared/freshness.json h10_days)',r.h10);
  ok(!errs.length,'no page errors',errs.slice(0,3));await b.close();console.log('\nFAILS:',F.length,JSON.stringify(F));process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});
