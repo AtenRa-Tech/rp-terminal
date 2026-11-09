@@ -6,11 +6,16 @@ file's 'updated' field: a run can rewrite the file while a feed fails and keeps 
 Limits match the app (DVLIM): open interest and basis shared/freshness.json derivs_hourly_h (5h), funding 12h.
 
   runs    : last 200 runs  {t, workflow, run_id, feeds:{"BTC oi": {t, age_h, lim_h, ok}, ...}, ok}
-  hourly  : one sample per UTC hour for the last 24 hours (the newest run in that hour wins)
-  sla_24h : {hours_sampled, hours_within, pct_within, window_start, window_end}; a missing hour counts as NOT within
+  hourly  : one sample per UTC hour for the last 24 hours (the newest run in that hour wins); kept for reference, not used by the SLA
+  sla_24h : {hours_sampled, hours_within, pct_within, window_start, window_end, method}. 9 Nov ruling: each of the last 24 UTC hours is judged
+            by what live was serving during it, not by whether a run happened in it. A run's feed timestamps (feeds.*.t) are what live serves
+            from that run until the next run. An hour is within limits only if every feed (open interest and basis 5h, funding 12h) stays within
+            its limit through the whole hour: checked just before each run inside the hour and at the end of the hour (or now, for the current
+            hour). An hour with no run passes if the earlier run's data is still young enough; an hour with no earlier run is a miss.
+            Live is assumed to serve the newest recorded run (a run whose Pages deploy failed still counts; live-lag.py checks that separately).
 
 Usage: python scripts/runs_log.py            (record this run)
-       python scripts/runs_log.py --check 95  (exit 1 if within limits in <95% of the last 24 hourly slots; a missing hour counts as a miss; once 24 samples exist the check fails on its own — no manual switch)
+       python scripts/runs_log.py --check 95  (exit 1 if live data was within limits in <95% of the last 24 UTC hours; warning only while the runs log covers less than 24h)
 """
 import datetime as dt, json, os, sys
 
@@ -41,13 +46,39 @@ def feeds(d, t):
     return out
 
 
-def sla(hourly, t):
+def _ms(x):
+    return int(dt.datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp() * 1000)
+
+
+def _served_ok(run, m):
+    """True if every feed of `run` (what live serves until the next run) is within its limit at moment m (ms)."""
+    fd = (run or {}).get("feeds") or {}
+    if not fd: return False
+    for v in fd.values():
+        if not v.get("t") or (m - _ms(v["t"])) / H > float(v.get("lim_h", LIM["funding"])): return False
+    return True
+
+
+def sla(runs, t):
+    """Last 24 UTC hours. An hour counts as within only if live stayed within limits through all of it (see module doc)."""
+    rs = sorted(((_ms(r["t"]), r) for r in (runs or []) if r.get("t")), key=lambda x: x[0])
     end = t // H * H
     slots = [end - k * H for k in range(24)]
-    by = {s["hour_ms"]: s for s in hourly}
-    within = sum(1 for s in slots if by.get(s, {}).get("ok") is True)
-    return {"hours_sampled": sum(1 for s in slots if s in by), "hours_within": within, "pct_within": round(100 * within / 24, 1),
-            "window_start": iso(slots[-1]), "window_end": iso(end + H)}
+    def serving(m):  # newest run strictly before m: what live showed just before moment m
+        cur = None
+        for rt, r in rs:
+            if rt < m: cur = r
+            else: break
+        return cur
+    within, sampled = 0, 0
+    for s in slots:
+        e = min(s + H, t)
+        if any(s <= rt < s + H for rt, _ in rs): sampled += 1
+        moments = [rt for rt, _ in rs if s < rt <= e] + [e]
+        if all(_served_ok(serving(m), m) for m in moments): within += 1
+    return {"hours_sampled": sampled, "hours_within": within, "pct_within": round(100 * within / 24, 1),
+            "window_start": iso(slots[-1]), "window_end": iso(end + H),
+            "method": "live age through each hour (oi/basis 5h, funding 12h); an hour without a run is not a miss on its own"}
 
 
 def load(p, dflt):
@@ -124,8 +155,8 @@ def record():
     hourly.append({"hour_ms": hr, "hour": iso(hr), "t": iso(t), "ok": ok, "stale": [k for k, v in fd.items() if not v["ok"]]})
     hourly.sort(key=lambda s: s["hour_ms"])
     out = {"note": "Written by scripts/runs_log.py after each derivatives run. Freshness per feed from derivs.json latest.*_t (not 'updated'). "
-                   f"Limits: oi {LIM['oi']:g}h, basis {LIM['basis']:g}h, funding 12h. sla_24h counts a missing hour as not within.",
-           "last_run": iso(t), "runs": runs, "hourly": hourly, "sla_24h": sla(hourly, t),
+                   f"Limits: oi {LIM['oi']:g}h, basis {LIM['basis']:g}h, funding 12h. sla_24h judges each hour by live data age through the hour (9 Nov), not by whether a run happened in it.",
+           "last_run": iso(t), "runs": runs, "hourly": hourly, "sla_24h": sla(runs, t),
            "market": mk, "macro": mc, "macro_checked": macro_checked(load(MACRO, {}), t)}
     tmp = RUNS + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -136,17 +167,18 @@ def record():
 
 def check(pct, path=RUNS, t=None):
     R = load(path, None)
-    if not R or not R.get("hourly"):
-        print("::warning::data/_runs.json missing or has no hourly samples yet (first deploy after the change); SLA check starts after the first Refresh derivatives run")
+    rs = [r for r in ((R or {}).get("runs") or []) if r.get("t")]
+    if not rs:
+        print("::warning::data/_runs.json missing or has no runs yet (first deploy after the change); SLA check starts after the first Refresh derivatives run")
         return 0
     t = t or now_ms()
-    s = sla(R["hourly"], t)
-    first = min(x["hour_ms"] for x in R["hourly"])
+    s = sla(rs, t)
+    first = min(_ms(r["t"]) for r in rs)
     if first > t // H * H - 23 * H:
-        # bootstrap: fewer than 24 hours recorded since _runs.json started; report it, do not invent the missing history
-        print(f"::warning::derivatives SLA: only {s['hours_sampled']} of 24 hourly samples exist yet (since {iso(first)}); {s['hours_within']} within limits. Full check starts after 24h of samples.")
+        # bootstrap: the runs log does not cover the whole 24h window yet; report it, do not invent the missing history
+        print(f"::warning::derivatives SLA: runs log starts {iso(first)}, less than 24h; {s['hours_within']} of 24 hours within limits so far. Full check starts once it covers 24h.")
         return 0
-    msg = f"derivatives within limits in {s['hours_within']}/24 hourly samples ({s['pct_within']}%) over {s['window_start']} - {s['window_end']}"
+    msg = f"live derivatives within limits in {s['hours_within']}/24 hours ({s['pct_within']}%) over {s['window_start']} - {s['window_end']}; {s['hours_sampled']} hours had a run"
     if s["pct_within"] < pct:
         print(f"::error::{msg}, below {pct}%")
         return 1
