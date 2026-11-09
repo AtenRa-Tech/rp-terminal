@@ -87,7 +87,7 @@ def market_fresh(m, t):
     if not u: return {"ok": False, "why": "market.json missing or no 'updated'", "limit_h": MARKET_LIM_H}
     age = (t - _dt.datetime.fromisoformat(u.replace("Z", "+00:00")).timestamp() * 1000) / H
     return {"ok": age <= MARKET_LIM_H, "updated": u, "age_h": round(age, 2), "limit_h": MARKET_LIM_H}
-MACRO_CHECK_LIM_H = 7  # macro fetch runs every 6h (0/6/12/18 UTC + fallback); alarm when the last successful fetch is older
+MACRO_CHECK_LIM_H = 26  # daily batch at 00:20 UTC; data.yml catch-up at 26h. Not the retired 6h cadence (0/6/12/18 UTC).
 def macro_checked(M, t):
     """When fetch_macro.py last ran OK (checked_at). For the alarm only; never used as data time (series last_date is)."""
     c = (M or {}).get("checked_at")

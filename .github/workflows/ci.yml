@@ -229,6 +229,8 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -287,7 +289,16 @@ jobs:
         run: |
           lc=$(curl -sf "${SITE_URL}build.json?v=$(date +%s)" | python3 -c "import json,sys;print(json.load(sys.stdin)['code_sha'])" || true)
           [ "$lc" = "$GITHUB_SHA" ] || { echo "live code is ${lc:-unknown}, not $GITHUB_SHA: tag not moved"; exit 0; }
-          git fetch -q origin main --tags || true; cur=$(git rev-parse -q --verify refs/tags/pages-tested || true)
+          # A depth=1 checkout (the Actions default) does not contain pages-tested.
+          # merge-base --is-ancestor then fails and we treated that as "not an ancestor",
+          # so the tag was not moved (CI 42284938862: pages-tested 95a7e2b vs eecb53f).
+          git fetch -q --unshallow origin 2>/dev/null || true
+          git fetch -q origin '+refs/tags/pages-tested:refs/tags/pages-tested' main
+          cur=$(git rev-parse -q --verify refs/tags/pages-tested || true)
+          if [ -n "$cur" ] && ! git cat-file -e "$cur^{commit}" 2>/dev/null; then
+            echo "::error::pages-tested $cur is missing after fetch; tag not moved"
+            exit 1
+          fi
           if [ -n "$cur" ] && ! git merge-base --is-ancestor "$cur" "$GITHUB_SHA"; then echo "pages-tested $cur is not an ancestor of $GITHUB_SHA: not moved"; exit 0; fi
           git push -f origin "$GITHUB_SHA:refs/tags/pages-tested" && echo "pages-tested -> $GITHUB_SHA"
       - name: Watchdog - failing smoke lines to the job summary as ::error
