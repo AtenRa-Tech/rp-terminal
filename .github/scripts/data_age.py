@@ -4,12 +4,16 @@ Fails (exit 1, ::error) when live data is past its OWN limit, recomputed against
   - each derivatives feed in the newest runs[] entry: now - feeds[f].t > feeds[f].lim_h
   - market: now - market.updated > market.limit_h
   - macro: any series with ok == false (judged by each series' last_date)
-  - macro fetch: now - macro_checked.checked_at > macro_checked.limit_h (fetch_macro.py stopped running)
+  - macro fetch: now - macro_checked.checked_at > MACRO_FETCH_LIMIT_H (26h: daily batch at 00:20 UTC or the 26h catch-up in data.yml; fetch_macro.py stopped running)
   - last_run older than 90 min (the derivatives refresh itself stopped, e.g. workflows disabled)
 Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (dispatched by the Netlify stale alarm) and the live suite."""
 import json, sys, urllib.request
 from datetime import datetime, timezone
 LAST_RUN_MAX_MIN = 90
+# Daily batch at 00:20 UTC, or a catch-up once the last successful fetch is 26h old (data.yml).
+# A tighter limit_h written into older _runs.json (7, from a retired 6h cadence) is ignored:
+# hourly Refresh would otherwise go red while live series are still within their own freshness limits.
+MACRO_FETCH_LIMIT_H = 26
 # first main commit writing macro.json checked_at: 206b8e0 at 2026-10-15T17:57:08Z; missing macro_checked only warns for 24h after it
 ROLLOUT_START = '2026-10-15T17:57:08Z'
 P = lambda s: datetime.fromisoformat(s.replace('Z', '+00:00'))
@@ -44,10 +48,10 @@ def check(d, now):
         # rollout (16 Oct): macro_checked is new. Missing = warning for 24h after the first main commit that wrote checked_at, then a failure.
         if now < ROLLOUT_END: print(f'::warning title=Live data age::macro_checked missing (rollout window until {ROLLOUT_END:%Y-%m-%dT%H:%MZ})')
         else: bad.append('macro_checked missing (macro fetch time unknown; rollout window ended)')
-    elif not mc.get('checked_at') or mc.get('limit_h') is None: bad.append('macro fetch: no checked_at/limit_h')
+    elif not mc.get('checked_at'): bad.append('macro fetch: no checked_at')
     else:
         h = (now - P(mc['checked_at'])).total_seconds() / 3600
-        if h > mc['limit_h']: bad.append(f'macro fetch: last successful run {h:.1f}h ago > limit {mc["limit_h"]}h')
+        if h > MACRO_FETCH_LIMIT_H: bad.append(f'macro fetch: last successful run {h:.1f}h ago > limit {MACRO_FETCH_LIMIT_H}h')
     return bad
 if __name__ == '__main__':
     a = sys.argv[1:]; now = datetime.now(timezone.utc)

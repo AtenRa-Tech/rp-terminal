@@ -30,8 +30,13 @@ rc, o = run(X); ok(rc == 1 and 'M2SL' in o, 'macro series not ok fails', o)
 L = copy.deepcopy(FRESH); L['last_run'] = '2026-10-15T05:50:00Z'
 rc, o = run(L); ok(rc == 1 and 'last_run' in o, 'last_run 100 min old fails (refresh stopped)', o)
 rc, o = run({'last_run': None, 'runs': []}); ok(rc == 1 and 'Traceback' not in o, 'seed _runs.json fails cleanly', o)
-C = copy.deepcopy(FRESH); C['macro_checked']['checked_at'] = '2026-10-14T23:00:00Z'
-rc, o = run(C); ok(rc == 1 and 'macro fetch' in o, 'macro fetch not run for 8.5h (checked_at) fails the alarm', o)
+# 8 Nov: macro is daily (00:20 UTC) + 26h catch-up. A stored 7h limit (retired 6h cadence) must not fail a fetch still inside that window.
+C = copy.deepcopy(FRESH); C['macro_checked']['checked_at'] = '2026-10-14T15:48:00Z'  # 15.7h before 07:30Z (the 8 Nov live alarm)
+rc, o = run(C); ok(rc == 0, 'macro fetch 15.7h ago passes (inside the 26h catch-up), even with stored limit_h 7', o)
+C = copy.deepcopy(FRESH); C['macro_checked']['checked_at'] = '2026-10-14T05:30:00Z'  # exactly 26h
+rc, o = run(C); ok(rc == 0, 'macro fetch exactly 26h ago still passes', o)
+C = copy.deepcopy(FRESH); C['macro_checked']['checked_at'] = '2026-10-14T05:23:00Z'  # 26h 7m
+rc, o = run(C); ok(rc == 1 and 'macro fetch' in o and 'limit 26' in o, 'macro fetch not run for 26.1h (past catch-up) fails the alarm', o)
 C = copy.deepcopy(FRESH); del C['macro_checked']
 rc, o = run(C); ok(rc == 0 and '::warning' in o and 'macro_checked missing' in o, 'missing macro_checked INSIDE the 24h rollout window (from 15 Oct 17:57Z) only warns', o)
 W2 = copy.deepcopy(C); W2['last_run'] = '2026-10-16T17:50:00Z'; W2['runs'][0]['feeds'] = {'BTC oi': {'t': '2026-10-16T17:00:00Z', 'lim_h': 3.0}}; W2['market']['updated'] = '2026-10-16T17:30:00Z'
@@ -46,8 +51,10 @@ rl = importlib.import_module('runs_log'); from datetime import datetime as _D
 t = _D.fromisoformat('2026-10-15T07:30:00+00:00').timestamp() * 1000
 M = {'updated': '2026-10-15T07:29:00Z', 'checked_at': '2026-10-15T07:29:00Z', 'series': {'DGS10': {'freq': 'Daily', 'last_date': '2026-10-01', 'points': [['2026-10-01', 4.1]]}, 'M2SL': {'freq': 'Monthly', 'last_date': '2026-03-01', 'points': [['2026-03-01', 1]]}}}
 mf = rl.macro_fresh(M, t); mc = rl.macro_checked(M, t)
-ok(mc['ok'] and mf['DGS10']['ok'] is False and mf['M2SL']['ok'] is False, 'runs_log: fresh checked_at, old last_date -> series stale; fetch check ok', (mf, mc))
+ok(mc['ok'] and mc['limit_h'] == 26 and rl.MACRO_CHECK_LIM_H == 26 and mf['DGS10']['ok'] is False and mf['M2SL']['ok'] is False, 'runs_log: fresh checked_at, old last_date -> series stale; fetch check ok and writes the 26h catch-up limit', (mf, mc))
 ok(rl.macro_checked({'updated': '2026-10-15T07:29:00Z'}, t)['ok'] is False, "runs_log: 'updated' never stands in for checked_at")
+ok(rl.macro_checked({'checked_at': '2026-10-14T15:48:00Z'}, t)['ok'] is True, 'runs_log: 15.7h-old checked_at is inside the 26h catch-up')
+ok(rl.macro_checked({'checked_at': '2026-10-14T05:23:00Z'}, t)['ok'] is False, 'runs_log: 26.1h-old checked_at is past the catch-up')
 fm = open(os.path.join(ROOT, 'scripts/fetch_macro.py')).read(); ns = {}
 exec(compile('import json\n' + fm[fm.index('def finalize'):fm.index('def main')], 'fm', 'exec'), ns)
 prev = {'updated': '2026-10-15T06:31:00Z', 'checked_at': '2026-10-15T06:31:00Z', 'series': {'A': {'last_date': '2026-10-14'}}}
@@ -57,5 +64,5 @@ ok(not ch and o2['checked_at'] == '2026-10-15T12:05:00Z' and o2['updated'] == '2
 o3, ch = ns['finalize'](prev, dict(out, series={'A': {'last_date': '2026-10-15'}})); ok(ch and o3['updated'] == '2026-10-15T12:05:00Z', 'fetch_macro: changed values update updated + checked_at')
 src = open(os.path.join(ROOT, 'scripts/fetch_macro.py')).read()
 ok(src.index('out, changed = finalize') < src.index('write_json(OUT, out)') and 'return\n    write_json' not in src, 'fetch_macro writes macro.json on every successful run (no early return before write)')
-dy = open(os.path.join(ROOT, '.github/workflows/data.yml')).read(); ok("get('checked_at')" in dy, 'data.yml 6h fallback uses checked_at (a fetch that ran is not re-forced every 15 min)')
+dy = open(os.path.join(ROOT, '.github/workflows/data.yml')).read(); ok("get('checked_at')" in dy and '-ge 26' in dy, 'data.yml 26h catch-up uses checked_at (a fetch that ran is not re-forced every hour)')
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)
