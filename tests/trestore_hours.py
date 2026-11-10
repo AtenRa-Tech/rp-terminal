@@ -61,7 +61,7 @@ ok(K[T1] == lp[T1] and K[T2] == lp[T2] and R[-1][0] + 3600000 in K, "keep-stored
 # workflow wiring: input is dispatch-only, step before the derivs fetch, empty = skipped, refused restore pushes nothing
 W = yaml.safe_load(open(os.path.join(ROOT, ".github/workflows/data.yml"))); on = W.get("on", W.get(True))
 inp = on["workflow_dispatch"]["inputs"]["restore_hours"]; ok(inp["type"] == "string" and inp.get("default", "") == "", "restore_hours: string input, default empty", inp)
-ok([c["cron"] for c in on["schedule"]] == ["17 * * * *", "20 0 * * *", "0 21 * * 4"], "schedule unchanged")
+ok([c["cron"] for c in on["schedule"]] == ["17 * * * *", "47 * * * *", "20 0 * * *", "0 21 * * 4"], "schedule unchanged (9 Nov: :17 + gated :47 slots, tests/tschedule.py)")
 st = W["jobs"]["refresh"]["steps"]; nm = [s.get("name", "") for s in st]
 ir = [i for i, s in enumerate(st) if "restore_hours.py" in s.get("run", "")]; idv = [i for i, s in enumerate(st) if "fetch_derivs.py" in s.get("run", "")]
 ok(len(ir) == 1 and idv and ir[0] < idv[0], "restore step runs once, before the derivs fetch")

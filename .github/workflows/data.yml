@@ -1,7 +1,7 @@
 name: Refresh data
 
 # 21 Oct (account suspended for excessive automation): ONE data workflow on a slow schedule.
-#  - HOURLY at :17 (off the :00 peak): derivatives (OI, funding, basis) + market in ONE run, ONE commit, ONE push, ONE fast publish.
+#  - HOURLY at :17 and :47 (9 Nov: two slots, at most one real refresh an hour; the slot job skips a run when derivs were fetched < 45 min ago): derivatives (OI, funding, basis) + market in ONE run, ONE commit, ONE push, ONE fast publish.
 #    derivs.yml and publish-derivs.yml are gone (folded in here); the old 4x-an-hour crons on data.yml and derivs.yml are gone.
 #  - DAILY batch at 00:20 UTC (after the 00:00 UTC daily closes): macro (FRED) + ETF flows, plus the hourly set.
 #    BTC history and ETH/BTC have no server-side job: the app reads them from the exchanges in the browser (Coinbase/Binance), so
@@ -11,6 +11,7 @@ name: Refresh data
 on:
   schedule:
     - cron: '17 * * * *'    # hourly: derivs + market
+    - cron: '47 * * * *'    # second hourly slot (9 Nov): GitHub drops most scheduled runs; the slot job skips it if :17 already fetched (< 45 min)
     - cron: '20 0 * * *'    # daily batch: macro + ETF (+ hourly set)
     - cron: '0 21 * * 4'    # weekly: Fed H.4.1 (macro)
   workflow_dispatch:
@@ -45,7 +46,32 @@ env:
   NODE_PATH: ${{ github.workspace }}/tests/node_modules
 
 jobs:
+  # 9 Nov ruling: two hourly slots (:17, :47), at most one real refresh an hour. No checkout: reads main's data/_runs.json last_run
+  # through the API and exits before any fetch or deploy if derivatives were fetched under 45 minutes ago (.github/scripts/refresh_slot.py).
+  slot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      go: ${{ steps.slot.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+      - name: Skip this slot if derivatives were fetched in the last 45 minutes (hourly schedules only)
+        id: slot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          { gh api "repos/${GITHUB_REPOSITORY}/contents/data/_runs.json?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || echo '{}'; } \
+            | python3 .github/scripts/refresh_slot.py "$EVENT" "$SCHEDULE" - | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -q '^go=' "$GITHUB_OUTPUT" || echo "go=true" >> "$GITHUB_OUTPUT"
+
   refresh:
+    needs: slot
+    if: needs.slot.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -436,8 +462,9 @@ jobs:
     # 25 Oct: the stale alarm rides on every scheduled data run (hourly) instead of its own 3h cron, so it adds no scheduled runs
     # (tschedule budget <= 27/day). always(): it must still fire when refresh/gates/deploy failed and live data is ageing.
     # Real clock + live _runs.json on purpose: its job is to catch live data past its limit.
-    needs: [refresh, gates, deploy, smoke]
-    if: always()
+    # 9 Nov: not on a skipped :17/:47 slot (no fetch happened; the run that fetched already raised its own alarm).
+    needs: [slot, refresh, gates, deploy, smoke]
+    if: always() && needs.slot.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

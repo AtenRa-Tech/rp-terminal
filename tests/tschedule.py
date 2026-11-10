@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""21 Oct (slow schedule): no workflow runs more often than hourly; data jobs never overlap; the required `test` check always reports."""
+"""21 Oct (slow schedule): no cron fires more often than hourly; data jobs never overlap; the required `test` check always reports.
+9 Nov: data.yml may have two hourly slots (:17, :47) only with the slot gate that exits before any fetch or deploy when derivatives
+were fetched under 45 minutes ago, so there is still at most one real refresh an hour."""
 import os, sys, yaml, glob
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); F = []
 def ok(c, n, x=None):
@@ -22,10 +24,29 @@ def per_day(c):
 for f, cs in crons.items():
     for c in cs:
         m = c.split()[0]; ok("/" not in m and m != "*" and "," not in m, f"{f}: cron '{c}' fires at most once an hour", c)
-ok(crons.get("data.yml") == ["17 * * * *", "20 0 * * *", "0 21 * * 4"], "data.yml: hourly :17 + daily 00:20 UTC batch + weekly Thu 21:00", crons.get("data.yml"))
+ok(crons.get("data.yml") == ["17 * * * *", "47 * * * *", "20 0 * * *", "0 21 * * 4"], "data.yml: hourly :17 and :47 slots + daily 00:20 UTC batch + weekly Thu 21:00", crons.get("data.yml"))
+# 9 Nov: a second hourly slot is allowed only with the early-exit gate in front of every fetch/deploy job
+DJ = W["data.yml"]["jobs"]; SL = DJ.get("slot") or {}; slrun = "\n".join(str(x.get("run", "")) for x in SL.get("steps", []))
+two = sum(1 for c in crons.get("data.yml", []) if c.split()[1:] == ["*", "*", "*", "*"])
+gated = ("refresh_slot.py" in slrun and "data/_runs.json" in slrun and DJ["refresh"].get("needs") == "slot" and DJ["refresh"].get("if") == "needs.slot.outputs.go == 'true'"
+         and "slot" in DJ["stale-alarm"]["needs"] and "needs.slot.outputs.go == 'true'" in DJ["stale-alarm"]["if"])
+ok(two <= 1 or gated, "two hourly slots only with the slot gate: refresh and stale-alarm run only when slot says go", (two, DJ["refresh"].get("needs"), DJ["refresh"].get("if"), DJ["stale-alarm"].get("if")))
+ok(all("fetch_" not in str(x.get("run", "")) and "deploy" not in str(x.get("uses", "")) for x in SL.get("steps", [])), "slot job fetches nothing and deploys nothing (it only reads main's _runs.json)")
+import importlib.util, datetime as _d
+sp = importlib.util.spec_from_file_location("rs", os.path.join(ROOT, ".github/scripts/refresh_slot.py")); rs = importlib.util.module_from_spec(sp); sp.loader.exec_module(rs)
+N = _d.datetime(2026, 11, 9, 10, 47, 30, tzinfo=_d.timezone.utc); lr = lambda m: {"last_run": (N - _d.timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%SZ")}
+g = lambda ev, sch, R: rs.decide(ev, sch, R, N)[0]
+ok(rs.SKIP_MIN == 45, "slot gate threshold is 45 minutes")
+ok(g("schedule", "47 * * * *", lr(30)) is False and g("schedule", "47 * * * *", lr(44)) is False, ":47 skips when :17 fetched 30 or 44 min ago (one real refresh an hour)")
+ok(g("schedule", "47 * * * *", lr(46)) is True and g("schedule", "17 * * * *", lr(120)) is True, ":47 runs when the last fetch is 46 min old (:17 was dropped); :17 runs after a 2h gap")
+ok(g("schedule", "17 * * * *", lr(30)) is False, ":17 skips when the :47 slot fetched 30 min ago")
+ok(g("workflow_dispatch", "", lr(1)) and g("schedule", "20 0 * * *", lr(1)) and g("schedule", "0 21 * * 4", lr(1)), "dispatches, the 00:20 UTC daily batch and the weekly run always go")
+ok(g("schedule", "47 * * * *", {}) is True and g("schedule", "47 * * * *", {"last_run": "garbage"}) is True, "unreadable or missing runs log: runs (fail open)")
 ok("derivs.yml" not in W and "publish-derivs.yml" not in W, "derivs.yml and publish-derivs.yml removed (folded into data.yml)", sorted(W))
-tot = sum(per_day(c) for cs in crons.values() for c in cs); ok(per_day("47 */3 * * *") == 8 and per_day("0 21 * * 4") == 1/7 and per_day("17 * * * *") == 24, "per_day counts */n steps and weekdays", (per_day("47 */3 * * *"), per_day("0 21 * * 4")))
-ok(tot <= 27, f"scheduled runs/day {tot:.2f} <= 27 (publishing adds no runs: it is part of the data run)", tot)
+tot = sum(per_day(c) for f, cs in crons.items() for c in cs if not (f == "data.yml" and c == "47 * * * *" and gated))  # a gated :47 slot is a chance, not a second refresh
+ok(per_day("47 */3 * * *") == 8 and per_day("0 21 * * 4") == 1/7 and per_day("17 * * * *") == 24, "per_day counts */n steps and weekdays", (per_day("47 */3 * * *"), per_day("0 21 * * 4")))
+ok(tot <= 27, f"real scheduled refreshes/day {tot:.2f} <= 27 (the gated :47 slot adds chances, not refreshes; publishing is part of the data run)", tot)
+ok(sum(per_day(c) for cs in crons.values() for c in cs) <= 51, "all scheduled starts/day incl. skipped slots <= 51")
 cc = W["data.yml"]["concurrency"]; ok(cc["group"] == "refresh-data" and cc["cancel-in-progress"] is False, "data.yml: refresh-data group, never cancelled mid-push/mid-publish", cc)
 J = W["data.yml"]["jobs"]; ok(J["gates"]["needs"] == "refresh" and "pushed == 'true'" in J["gates"]["if"] and J["deploy"]["concurrency"]["group"] == "pages" and "rollback-alert" in J, "data.yml publishes in the same run (gates -> deploy[pages] -> smoke -> rollback -> rollback-alert), only after a push")
 sm = J["smoke"]["steps"]; ok(any(str(s.get("name", "")).startswith("data-sha ${{ needs.gates.outputs.sha }}") for s in sm) and "data.yml" in open(os.path.join(ROOT, ".github/scripts/last_good.sh")).read(), "smoke names the deployed data sha; last_good.sh reads data.yml runs")
