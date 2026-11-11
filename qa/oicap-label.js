@@ -3,9 +3,10 @@
 // Expected src (ruling 8 Oct 02:03 IST): "OKX open interest (coins) at 00:00 UTC <D Mon YYYY> (<D Mon> close) ÷ circulating supply[ (supply as of <date>)]", <D Mon YYYY> = lastT + 1 day, close = lastT.
 // No "today's" in any line of any signal card (title, description, read, src, why, captions).
 const {chromium}=require('playwright-core');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});const p=await b.newPage({viewport:{width:412,height:915}});
-await p.goto(URL+'?v='+Date.now(),{waitUntil:'networkidle',timeout:90000});await p.waitForTimeout(9000);
+await QL.open(p,URL+'?v='+Date.now());await p.waitForTimeout(9000);
 const r=await p.evaluate(()=>SIG.concat(typeof SIGSTALE!=='undefined'&&Array.isArray(SIGSTALE)?SIGSTALE:[]).map(c=>({id:c.id,title:c.title,read:c.read,src:c.src,why:typeof c.why==='string'?c.why:'',cap:JSON.stringify(c.cap||''),lastT:c.lastT,desc:(SIGT[c.id]||[])[1]||''})));await b.close();
 const f=[],M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],dU=t=>{const d=new Date(t);return d.getUTCDate()+' '+M[d.getUTCMonth()]+' '+d.getUTCFullYear()};
 for(const a of ['BTC','ETH'])if(!r.some(c=>c.id==='oicap'+a))f.push('oicap'+a+' in neither SIG nor SIGSTALE, so its label went unchecked');

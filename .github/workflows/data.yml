@@ -243,14 +243,22 @@ jobs:
           python3 -m http.server 8765 >/dev/null 2>&1 &
           for i in $(seq 1 20); do curl -sf http://localhost:8765/index.html >/dev/null && break; sleep 1; done
           U=http://localhost:8765/index.html; mkdir -p g; t0=$(date +%s)
+          # 11 Nov: browser gates load the page through qa/_load.js: they wait for the app's ready signal (never for network idle) and, on this
+          # local URL, answer every outside feed from the recorded copies (tests/fixtures/frozen/net, QA_NET=replay) - the result never depends on
+          # feed speed. A gate that times out retries once and then FAILS ("timed out"); a timeout is never a pass.
+          # watchdog: a browser gate still running after 9 min fails as "timed out" (exit 124) inside the 12-min job limit (stale-derivs2, the slowest, takes 4-6 min)
+          export QA_NET=replay QA_GATE_TIMEOUT=540
           node qa/fixture-consistency.js > g/fixture.log 2>&1 & p1=$!
           python3 tests/tclosed_hours.py > g/closed.log 2>&1 & p2=$!
           node qa/stale-derivs2.js $U > g/stale-derivs2.log 2>&1 & p3=$!
           DERIVS_FIXTURE=qa/fixtures/derivs-stale.json node qa/stale-captions.js $U > g/stale-captions.log 2>&1 & p4=$!
           node qa/card-presence.js $U > g/card-presence.log 2>&1 & p5=$!
           node qa/oicap-label.js $U > g/oicap.log 2>&1 & p6=$!
-          node qa/caption-sweep.js $U > g/caption-sweep.log 2>&1 & p7=$!
+          node qa/caption-sweep.js $U --no-live-news > g/caption-sweep.log 2>&1 & p7=$!
           ps="$p1 $p2 $p3 $p4 $p5 $p6 $p7"
+          # WARN-ONLY, never decides publishing: live-headline captions need the real feeds, so they run apart, on the live network, with their own
+          # 5-min timeout; not in $ps, its exit code is ignored and it is only reported as a ::warning below
+          ( QA_NET=live QA_GATE_TIMEOUT=290 timeout 300 node qa/caption-sweep.js $U --live-news-only > g/caption-sweep-livenews.txt 2>&1 ) & plive=$!
           if [ "${{ steps.path.outputs.market }}" = true ]; then
             # market/macro changed: dollar-token exclusion, breadth rebuild, pulse movers (the caption sweep above already covers captions)
             (cd tests && URL=$U node tdollar.js) > g/tdollar.log 2>&1 & ps="$ps $!"
@@ -259,10 +267,12 @@ jobs:
           fi
           fail=0
           for p in $ps; do wait $p || fail=1; done
+          wait $plive && echo "live-news caption sweep (warn-only): $(grep -c 'WARN (live news' g/caption-sweep-livenews.txt || true) warnings" || echo "::warning title=Live-news caption sweep (warn-only)::did not finish cleanly (exit $?); it never blocks publishing - see g/caption-sweep-livenews.txt"
+          grep -q 'WARN (live news' g/caption-sweep-livenews.txt && { echo "::warning title=Live-news captions (warn-only)::"; grep 'WARN (live news' g/caption-sweep-livenews.txt | head -10; } || true
           for f in g/tdollar.log; do [ -f $f ] && grep -qE '^FAIL |FAILS: [1-9]' $f && fail=1; done
           for f in g/*.log; do echo "=== $f"; tail -4 "$f"; done
           echo "gates took $(( $(date +%s) - t0 ))s"
-          [ $fail = 0 ] || { grep -h "^FAIL\|::error" g/*.log | head -20; echo "::error title=Fast publish blocked::a data gate failed; nothing published, live keeps the last good files"; exit 1; }
+          [ $fail = 0 ] || { grep -h "^FAIL\|::error\|timed out\|failed to load" g/*.log | head -20; echo "::error title=Fast publish blocked::a data gate failed; nothing published, live keeps the last good files"; exit 1; }
 
   deploy:
     # P1 (15 Oct): ONE Pages deploy at a time across ci.yml and data.yml; a second deploy waits (never cancelled mid-deploy)

@@ -6,6 +6,7 @@ const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 // C2 Derivatives chip reads "Funding: stale, <age> old, past 12h limit (<source>)" and gives no reading; with fresh data it gives a reading
 // C3 app-side: with the stale file no funding/OI signal cards exist (not selectable in Studio), and capFacts for them is unavailable
 const p=require('puppeteer-core'),fs=require('fs'),path=require('path');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/derivs-stale.json')));const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i,H=36e5;
 function lastT(o){let m=0;(function w(x){if(Array.isArray(x)){if(typeof x[0]==='number'&&x[0]>1.7e12)m=Math.max(m,x[0]);x.forEach(w)}else if(x&&typeof x==='object')for(const[k,v]of Object.entries(x)){if((k==='last'||/_t$/.test(k))&&typeof v==='number')m=Math.max(m,v);w(v)}})(o);return m}
@@ -13,7 +14,7 @@ function shift(o,d){if(Array.isArray(o)){if(typeof o[0]==='number'&&o[0]>1.7e12)
 function aged(ms){const f=JSON.parse(JSON.stringify(BASE)),now=PAGE_NOW();shift(f,now-ms-lastT(BASE));f.updated=new Date(now-ms).toISOString();return f}
 async function run(b,body){const pg=await b.newPage();/* each case starts from an empty localStorage: the app keeps the last good reading across reloads (phone P1), so a fresh case must not leak into the stale one */await pg.evaluateOnNewDocument(()=>{try{localStorage.clear()}catch(e){}});await pg.setViewport({width:412,height:915});await pg.setRequestInterception(true);
  pg.on('request',r=>{const u=r.url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return r.respond({status:200,contentType:'application/json',body:JSON.stringify(body)});r.continue()});
- await pg.goto(URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{waitUntil:'networkidle2',timeout:60000});await pg.waitForFunction(()=>typeof tab==='function',{timeout:60000});
+ await QL.open(pg,URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{timeout:60000});await pg.waitForFunction(()=>typeof tab==='function',{timeout:60000});
  await pg.evaluate(()=>tab('signals'));await new Promise(r=>setTimeout(r,9000));await pg.evaluate(()=>tab('today'));await new Promise(r=>setTimeout(r,6000));
  const r=await pg.evaluate(()=>{const dc=document.getElementById('dataConf')?.textContent||'';const ch=[...document.querySelectorAll('.ms')].find(e=>/^Derivatives/.test(e.innerText));const st=ch?.querySelector('.bias')?.textContent||'';
   const ids=(SIG||[]).map(s=>s.id),der=ids.filter(i=>/^(fund|oicap)/.test(i));const opts=[...document.querySelectorAll('#stType option')].map(o=>o.value);return{dc,pct:+(dc.match(/(\d+)%/)||[])[1],st,der,opts}});

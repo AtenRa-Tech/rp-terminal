@@ -4,6 +4,7 @@
 //   agree (all 4 exchanges within 0.05%), split (one exchange 3% off = late print), down (live endpoints fail).
 // Waits for the top-5 auto audits to finish, then requires identical Opportunity scores, POST NOW count and Data confidence.
 const p=require('puppeteer-core'),U=require('url');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'http://localhost:8765/index.html';
 const LIVE=/api\.coinbase\.com\/v2\/prices|api\.kraken\.com\/0\/public\/Ticker|ticker\/price\?symbol=BTCUSDT|\/simple\/price\?ids=bitcoin/;
 const AUD=/coinbase\.com\/products\/(?!BTC-USD\/)[^/]+\/candles|api\.coinbase\.com|kraken\.com/; // audit-only cross-check sources (21 Oct: Coinbase BTC-USD daily candles are now the PRIMARY BTC history, so they are not held)
@@ -25,7 +26,7 @@ async function run(b,mode,record){const pg=await b.newPage();
    return r.respond(f).catch(()=>{})}
   if(!record&&r.method()==='GET'&&!u.startsWith(new U.URL(URL).origin))return r.abort(); r.continue()});
  if(record)pg.on('response',async res=>{try{const u=res.url(),q=res.request();if(q.method()!=='GET'||LIVE.test(u)||res.status()>=300&&res.status()<400)return;const body=await res.buffer();FROZEN.set(FKEY(u),{status:res.status(),headers:{'content-type':res.headers()['content-type']||'application/octet-stream','access-control-allow-origin':'*'},body})}catch(e){}});
- await pg.goto(URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{waitUntil:'networkidle2',timeout:120000});
+ await QL.open(pg,URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{timeout:120000});
  await pg.click('nav button[data-t="signals"]');
  if(mode==='pre'){await pg.waitForFunction(()=>typeof SIG!=='undefined'&&SIG&&SIG.filter(s=>s.score!=null).length>=13,{timeout:90000,polling:200}).catch(()=>{})}else
  // wait until the auto audits of the top 5 have finished (status line no longer says "(running)")
