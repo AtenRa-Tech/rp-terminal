@@ -1,14 +1,18 @@
 // Post-deploy smoke test. Usage: node tests/tsmoke.js https://atenra-tech.github.io/rp-terminal/
-// Every tab renders, no page errors / app console errors, india.json is 404, each data file is under its age limit.
+// Every tab renders, no page errors / app console errors, india.json serves no content (no 2xx), each data file is under its age limit.
 const p=require('puppeteer-core');const URL=(process.argv[2]||'https://atenra-tech.github.io/rp-terminal/').replace(/\/?$/,'/');
-const MONTHLY_DAYS=require('../shared/freshness.json').monthly_days,monthlyOk=a=>a<=MONTHLY_DAYS;module.exports={MONTHLY_DAYS,monthlyOk};
+const MONTHLY_DAYS=require('../shared/freshness.json').monthly_days,monthlyOk=a=>a<=MONTHLY_DAYS;
+// 11 Nov: no-India guard. Pages sometimes answers a missing file with 503 before 404, so only content (any 2xx) fails; a 5xx or a network
+// error is retried up to 3 times; anything that never returns 2xx is absent. get(u) -> {status} (throws on network error).
+const absent=async(get,u,tries=3,wait=1500)=>{let st=0;for(let i=0;i<=tries;i++){try{st=(await get(u)).status}catch(e){st=0}if(st>=200&&st<300)return{absent:false,status:st,tries:i};if(st&&st<500)return{absent:true,status:st,tries:i};if(i<tries&&wait)await new Promise(r=>setTimeout(r,wait))}return{absent:true,status:st,tries}};
+module.exports={MONTHLY_DAYS,monthlyOk,absent};
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,400):''));if(!c)F.push(n)};
 // bizDays = US weekdays after the observation date, up to and including today (UTC). Was off by one: looping while x<now counted tomorrow as soon as today began.
 const DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>{let d=0,x=new Date(t);x.setUTCHours(0,0,0,0);const e=new Date(n);e.setUTCHours(0,0,0,0);while(x<e){x=new Date(+x+DAY);const w=x.getUTCDay();if(w&&w<6)d++}return d};
 {const T=x=>Date.parse(x);const c=[[T('2026-10-05'),T('2026-10-07T10:30:00Z'),2],[T('2026-10-05'),T('2026-10-07T23:59:00Z'),2],[T('2026-10-05'),T('2026-10-08T00:01:00Z'),3],[T('2026-10-02'),T('2026-10-05T12:00:00Z'),1],[T('2026-10-02'),T('2026-10-04T12:00:00Z'),0]].map(([a,b,w])=>[bizDays(a,b),w]);ok(c.every(([g,w])=>g===w),'bizDays counts weekdays after the date through today (Fri->Mon=1, Mon->Wed=2)',c)}
 if(require.main===module)(async()=>{
  const g=async u=>{const r=await fetch(URL+u+'?v='+now,{cache:'no-store'});return r};
- ok((await g('india.json')).status===404&&(await g('data/india.json')).status===404,'india.json returns 404');
+ {const a=await absent(g,'india.json'),b=await absent(g,'data/india.json');ok(a.absent&&b.absent,'india.json and data/india.json serve no content (no 2xx; 5xx retried)',[a,b])}
  const J={};for(const n of ['derivs','market','etf','macro','calendar']){const r=await g('data/'+n+'.json');ok(r.ok,`data/${n}.json served`,r.status);if(r.ok)J[n]=await r.json()}
  const h=u=>(now-Date.parse(u))/36e5;
  if(J.derivs)ok(h(J.derivs.updated)<=36,'derivs.json under 36h',J.derivs.updated);if(J.market)ok(h(J.market.updated)<=36,'market.json under 36h',J.market.updated);
