@@ -43,6 +43,7 @@ ok(g("schedule", "17 * * * *", lr(30)) is False, ":17 skips when the :47 slot fe
 ok(g("workflow_dispatch", "", lr(1)) and g("schedule", "20 0 * * *", lr(1)) and g("schedule", "0 21 * * 4", lr(1)), "dispatches, the 00:20 UTC daily batch and the weekly run always go")
 B = lambda h, m=0, d=11: _d.datetime(2026, 11, d, h, m, tzinfo=_d.timezone.utc); iso = lambda x: x.strftime("%Y-%m-%dT%H:%M:%SZ")
 ok(rs.batch_due([iso(B(7, 34, 10)), iso(B(0, 25, 11))], B(6, 17)) is True, "11 Nov case: macro checked 10 Nov 07:34, 00:20 run dropped -> batch due at 06:17")
+ok(rs.batch_due([iso(B(7, 34, 10))], B(6, 13)) is True, "CRYPTO GOD case: macro checked yesterday 07:34 UTC, run at 06:13 UTC today -> full batch")
 ok(rs.batch_due([iso(B(0, 31)), iso(B(0, 31))], B(6, 47)) is False, "batch done at 00:31 today -> not due")
 ok(rs.batch_due([iso(B(0, 31, 10)), iso(B(0, 31, 10))], B(0, 17)) is False and rs.batch_due([iso(B(0, 31, 10))], B(0, 47)) is True, "before 00:20 yesterday's batch counts; at 00:47 a missed 00:20 is due")
 ok(rs.batch_due([], B(5)) is True and rs.batch_due(["junk"], B(5)) is True, "unknown macro/etf time -> due")
