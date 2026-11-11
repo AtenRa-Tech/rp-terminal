@@ -9,6 +9,7 @@ const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 //  S3 mixed: open interest fresh + funding 4 days old -> OI readings stay, funding readings go
 //  S4 confidence: derivative cards' data confidence with stale data < with fresh data (or card absent)
 const p=require('puppeteer-core'),fs=require('fs'),path=require('path');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/derivs-stale.json')));
 const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i;
@@ -38,7 +39,7 @@ async function run(b,body){const pg=await b.newPage();await pg.evaluateOnNewDocu
   // replay mode: anything not in the fixture and not the app itself (same origin) is aborted - no live network
   if(!REC&&!u.startsWith(ORIGIN)&&!u.startsWith('data:'))return r.abort();r.continue()});
  if(REC)pg.on('response',async res=>{try{const u=res.url(),k=FKEY(u),q=res.request();if(q.method()!=='GET'||BLOCK.test(u)||/derivs\.json/.test(u)||FROZEN.has(k)||res.status()>=300&&res.status()<400)return;const body=await res.buffer();const H0=res.headers(),h={'content-type':H0['content-type']||'application/octet-stream','access-control-allow-origin':'*'};FROZEN.set(k,{status:res.status(),headers:h,body})}catch(e){}});
- await pg.goto(URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});await new Promise(r=>setTimeout(r,15000));
+ await QL.open(pg,URL+(URL.includes('?')?'&':'?')+'x='+Date.now(),{net:'own'});/* own replay above (market-replay.json.gz) */await new Promise(r=>setTimeout(r,15000));
  // wait for the top-5 auto audits to finish so every case is read in the same state (audit timing was a second S1 split source)
  await pg.waitForFunction(()=>typeof AUDRUN==='undefined'||(!AUDRUN&&(typeof AUDDONE==='undefined'||AUDDONE||!SIG)),{timeout:30000,polling:250}).catch(()=>{});
  let txt='';for(const t of ['today','markets','signals']){await pg.click(`nav button[data-t="${t}"]`);await new Promise(r=>setTimeout(r,4000));txt+=`\n##${t}\n`+await pg.evaluate(()=>document.body.innerText)}

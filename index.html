@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="neo"><head>
+<html lang="en" data-theme="neo" data-ready="0"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#000000">
@@ -1443,9 +1443,10 @@ function fbList(){const o=[],fmt=x=>x.use?`${x.use} for ${x.what} (primary ${x.f
   try{const at=DV?.attempts||[],fl=at.filter(a=>a.tried?.length>1&&!a.tried[0].ok&&a.tried.some(t=>t.ok));if(fl.length){const prim=[...new Set(fl.map(a=>a.tried[0].source))].join('/'),use=[...new Set(fl.map(a=>a.tried.find(t=>t.ok).source))].join('/');o.push(`${use} for derivs.json (primary ${prim} futures failed)`)}}catch(e){}
   return[...new Set(o)]}
 function stB(st){return st==='No data'||/: stale, /.test(st)?'b-nd':'b-nt'}
-let TODAYL=false;
+let TODAYL=false,TODAYP=null;
 async function renderToday(){paintToday();if(TODAYL)return;TODAYL=true;
-  const jobs=[ensureSig().then(paintToday),ensureMac().then(paintToday),dataFile('etf').then(r=>{NX.etf=r.v;paintToday()}).catch(()=>{}),dataFile('calendar').then(r=>{NX.cal=r.v;paintToday()}).catch(()=>{}),dataFile('_runs').then(()=>paintToday()).catch(()=>{}),(D.news.length?Promise.resolve():loadNews()).then(paintToday).catch(()=>{})];
+  const core=[ensureSig().then(paintToday),ensureMac().then(paintToday),dataFile('etf').then(r=>{NX.etf=r.v;paintToday()}).catch(()=>{}),dataFile('calendar').then(r=>{NX.cal=r.v;paintToday()}).catch(()=>{}),dataFile('_runs').then(()=>paintToday()).catch(()=>{})];TODAYP=Promise.allSettled(core);/* the page's own data (no news): feeds the ready signal at boot */
+  const jobs=[...core,(D.news.length?Promise.resolve():loadNews()).then(paintToday).catch(()=>{})];
   if(!D.ins.bitcoin){const w=S.watch.find(x=>x.id==='bitcoin')||{id:'bitcoin',sym:'BTC'};jobs.push(analyze(w).then(r=>{if(!D.ins.bitcoin)D.ins.bitcoin=r;paintToday()}).catch(()=>{}))}
   await Promise.allSettled(jobs);TODAYL=false;paintToday();idle(()=>autoAudit(),4000)}
 function paintToday(){const el=$('#todayBox');if(!el||TAB!=='today')return;const y=scrollY,now=Date.now();
@@ -2169,7 +2170,11 @@ function offBanner(){const el=$('#offBan');if(!el)return;const off=!navigator.on
 addEventListener('online',()=>{offBanner();refresh()});addEventListener('offline',offBanner);
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol)&&(!navigator.webdriver||/[?&]sw=1/.test(location.search)))navigator.serviceWorker.register('sw.js').catch(()=>{});
 async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);offBanner();ensureCC().then(()=>{if(TAB==='studio')renderStudio()}).catch(()=>{});const _y=scrollY;requestAnimationFrame(()=>{if(_y>0&&scrollY<_y-2)scrollTo(0,_y)});renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else refreshChart()}if(TAB==='markets'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio();if(TAB==='today')renderToday()}
-applyTheme(THEME);document.fonts.ready.then(()=>setTimeout(()=>tab(TAB),300));refresh();setInterval(()=>{if(!document.hidden)refresh()},90000);
+applyTheme(THEME);const BOOT_TAB=document.fonts.ready.then(()=>new Promise(r=>setTimeout(()=>{try{tab(TAB)}finally{r()}},300))),BOOT_REF=refresh();setInterval(()=>{if(!document.hidden)refresh()},90000);
+// Ready signal (11 Nov, QA gates): set ONCE when the first load has finished - the first refresh(), the first tab render and that render's own data
+// (signals, macro, ETF, calendar, run log; news is left out, its proxy fetch has no timeout). allSettled + finally: a failed, blocked or timed-out
+// outside feed still ends in ready. Gates wait for <html data-ready="1"> (qa/_load.js) instead of network idle; nothing on screen changes.
+Promise.allSettled([BOOT_REF,BOOT_TAB]).then(()=>Promise.allSettled([TODAYP,SIGP])).finally(()=>{window.RP_READY=true;document.documentElement.dataset.ready='1'});
 // E12: background work for tabs that are not visible runs when the main thread is idle
 const idle=(f,to=6000)=>('requestIdleCallback'in window)?requestIdleCallback(f,{timeout:to}):setTimeout(f,200);
 setTimeout(()=>{if(TAB==='markets')renderInsights().catch(()=>{});else idle(()=>{if(!Object.keys(D.ins).length||TAB!=='markets')renderInsights().catch(()=>{})},10000);idle(()=>loadNews().catch(()=>{}),8000)},2500);

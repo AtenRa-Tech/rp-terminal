@@ -2,6 +2,7 @@
 // Ruling 7 Oct: gainer only at >= +0.1% 24h, loser only at <= -0.1%; fewer qualifiers = fewer slots; none = "No top-50 coin up/down over 24h".
 // Yield-bearing dollar tokens and stablecoins never appear. Renders the Pulse card (16:9 and 1:1) from fixture D.top and reads every fillText.
 const {chromium}=require('playwright-core');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 const c=(sym,ch,price=10,mc=1e9)=>({id:sym.toLowerCase(),symbol:sym.toLowerCase(),name:sym,current_price:price,price_change_percentage_24h:ch,market_cap:mc,total_volume:mc/10});
 const REAL=['BTC','ETH','SOL','XRP','BNB','ADA','DOGE','TRX','LINK','AVAX'];
@@ -32,7 +33,7 @@ const HIST=[
 const sd=a=>{const r=a.slice(1).map((x,i)=>(x/a[i]-1)*100),m=r.reduce((s,x)=>s+x,0)/r.length;return Math.sqrt(r.reduce((s,x)=>s+(x-m)**2,0)/r.length)};
 const HWANT={out:['YLDX','USYC','SUSDE'],keep:['TRX','BCH','BTC','ETH','SOL']};
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});const p=await b.newPage({viewport:{width:412,height:915}});
-await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:90000});await p.waitForTimeout(8000);
+await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now());await p.waitForTimeout(8000);
 const fails=[],out={};
 for(const [k,fx] of Object.entries(FIX))for(const [W,H] of [[1920,1080],[1080,1080]]){
  const log=await p.evaluate(({top,W,H})=>{const P=CanvasRenderingContext2D.prototype,of=P.fillText;const log=[];P.fillText=function(t,...a){log.push(String(t));return of.call(this,t,...a)};
