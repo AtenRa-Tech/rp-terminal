@@ -65,8 +65,9 @@ jobs:
           EVENT: ${{ github.event_name }}
           SCHEDULE: ${{ github.event.schedule }}
         run: |
+          for f in macro etf; do gh api "repos/${GITHUB_REPOSITORY}/contents/data/$f.json?ref=main" -H 'Accept: application/vnd.github.raw' > "$RUNNER_TEMP/$f.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/$f.json"; done
           { gh api "repos/${GITHUB_REPOSITORY}/contents/data/_runs.json?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null || echo '{}'; } \
-            | python3 .github/scripts/refresh_slot.py "$EVENT" "$SCHEDULE" - | tee -a "$GITHUB_STEP_SUMMARY"
+            | python3 .github/scripts/refresh_slot.py "$EVENT" "$SCHEDULE" - "$RUNNER_TEMP/macro.json" "$RUNNER_TEMP/etf.json" | tee -a "$GITHUB_STEP_SUMMARY"
           grep -q '^go=' "$GITHUB_OUTPUT" || echo "go=true" >> "$GITHUB_OUTPUT"
 
   refresh:
@@ -100,8 +101,8 @@ jobs:
             FULL="${{ inputs.full }}"
           elif [ "${{ github.event.schedule }}" = "20 0 * * *" ] || [ "${{ github.event.schedule }}" = "0 21 * * 4" ]; then
             FULL=true
-          elif [ "$(python3 -c "import json,datetime as d;u=min((lambda j:j.get('checked_at') or j['updated'])(json.load(open('data/'+f))) for f in ('macro.json','etf.json'));print(int((d.datetime.now(d.timezone.utc)-d.datetime.fromisoformat(u.replace('Z','+00:00'))).total_seconds()//3600))" 2>/dev/null || echo 99)" -ge 26 ]; then
-            FULL=true   # the daily batch was dropped or failed: the next hourly run picks it up once (checked_at = fetch time)
+          elif [ "$(python3 .github/scripts/refresh_slot.py --batch-due data/macro.json data/etf.json)" = true ]; then
+            FULL=true   # 11 Nov: the 00:20 UTC batch was dropped or failed: the first hourly run (:17 or :47) after that slot does it (checked_at = fetch time)
           else
             FULL=false
           fi
