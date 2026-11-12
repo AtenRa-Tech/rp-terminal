@@ -4,7 +4,7 @@ Fails (exit 1, ::error) when live data is past its OWN limit, recomputed against
   - each derivatives feed in the newest runs[] entry: now - feeds[f].t > feeds[f].lim_h
   - market: now - market.updated > market.limit_h
   - macro: any series with ok == false (judged by each series' last_date)
-  - macro fetch: now - macro_checked.checked_at > MACRO_FETCH_LIMIT_H (26h: daily batch at 00:20 UTC or the 26h catch-up in data.yml; fetch_macro.py stopped running)
+  - macro fetch: now - macro_checked.checked_at > MACRO_FETCH_LIMIT_H (26h: daily batch at 00:20 UTC, caught up by the first hourly run after a dropped slot (refresh_slot.py --batch-due); fetch_macro.py stopped running)
   - last_run older than 90 min (the derivatives refresh itself stopped, e.g. workflows disabled)
 Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (dispatched by the Netlify stale alarm) and the live suite."""
 import json, sys, urllib.request
