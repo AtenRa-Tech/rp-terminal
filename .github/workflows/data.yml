@@ -408,12 +408,19 @@ jobs:
     environment:
       name: github-pages
     steps:
+      # 11 Nov: rollback had no checkout before this step, so last_good.sh was "No such file" (exit 127) and no rollback could ever run.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: _scripts
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
       - name: Last good deploy (newest successful CI and deploy or fast publish before this one)
         id: good
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha=$(bash .github/scripts/last_good.sh)
+          sha=$(bash _scripts/.github/scripts/last_good.sh)
           [ -n "$sha" ] || { echo "::error::no previous good deploy"; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"; echo "rolling back to $sha"
       - uses: actions/checkout@v4

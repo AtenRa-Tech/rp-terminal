@@ -74,4 +74,15 @@ do = "\n".join(s.get("run", "") for s in ts if "full == 'false'" in str(s.get("i
 ok("publish_guard.py" in do and "tsmoke.js" in do, "data-only change: publish guard + smoke test")
 fb = "\n".join(s.get("run", "") for s in ci["jobs"]["smoke"]["steps"])
 ok("derivs.yml" not in fb and fb.count("gh workflow run") == 1 and "busy" in fb, "smoke fallback: at most one data dispatch, only when none is queued/running")
+# 11 Nov: data.yml rollback ran `bash .github/scripts/last_good.sh` with no checkout (exit 127, "no previous good deploy"): every step that
+# runs a repo script must come after a checkout in the same job
+import re as _re
+bad = []
+for f, w in W.items():
+    for jn, j in (w.get("jobs") or {}).items():
+        seen = False
+        for st in j.get("steps") or []:
+            if "actions/checkout" in str(st.get("uses", "")): seen = True
+            if _re.search(r"(?:bash|python3?|sh|node)\s+\S*\.github/scripts/", str(st.get("run", ""))) and not seen: bad.append(f"{f}:{jn}:{st.get('name', '')[:50]}")
+ok(not bad, "every step that runs a repo script has a checkout before it in its job", bad)
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)
