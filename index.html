@@ -1232,7 +1232,11 @@ const NYSE=(()=>{const C={},DAY=864e5,iso=t=>new Date(t).toISOString().slice(0,1
  const bizDays=(t,n=Date.now())=>{let d=0,x=Date.parse(iso(t));const e=Date.parse(iso(n));while(x<e){x+=DAY;if(open(x))d++}return d};
  // bizH(a,b): hours in [a,b) whose UTC date is an NYSE trading day
  const bizH=(a,b)=>{let h=0;for(let t=a;t<b;t+=36e5)if(open(t))h++;return h};
- return {holidays:y=>[...holidays(y)].sort(),open,bizDays,bizH}})();
+ // etfLast(E): etf.json's last COMPLETE day = newest non-pending row (fetch_etf.py holds the newest row pending, total null, until every fund reports),
+ // per dataset from its days[], newest across datasets (same as fetch_etf.py's top-level last_date). held = newest row date still pending and newer than last, else null.
+ const etfLast=E=>{let last=null,held=null;const ds=Object.values((E&&E.datasets)||{});for(const d of ds){const rows=(d&&d.days)||[];for(const r of rows){const x=String(r.date||'').slice(0,10);if(!x)continue;if(r.pending){if(!held||x>held)held=x}else if(!last||x>last)last=x}}
+  if(!ds.length&&E&&E.last_date)last=String(E.last_date).slice(0,10);if(held&&last&&held<=last)held=null;return {last,held}};
+ return {holidays:y=>[...holidays(y)].sort(),open,bizDays,bizH,etfLast}})();
 if(typeof module==='object'&&module&&module.exports)module.exports=NYSE;
 // nyse:end
 // ETF freshness counts NYSE trading hours only (one calendar with tests/tsmoke.js and the stale alarm), not every weekday hour

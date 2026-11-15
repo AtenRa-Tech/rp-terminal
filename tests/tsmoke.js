@@ -8,7 +8,7 @@ const absent=async(get,u,tries=3,wait=1500)=>{let st=0;for(let i=0;i<=tries;i++)
 module.exports={MONTHLY_DAYS,monthlyOk,absent};
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,400):''));if(!c)F.push(n)};
 // bizDays = NYSE trading days after the observation date, up to and including today (UTC): ONE calendar shared/nyse.js (also inlined in index.html for the ETF line, Python twin scripts/nyse.py for the stale alarm).
-const NYSE=require('../shared/nyse.js'),DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>NYSE.bizDays(t,n);Object.assign(module.exports,{bizDays,NYSE});
+const NYSE=require('../shared/nyse.js'),DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>NYSE.bizDays(t,n),etfLast=E=>NYSE.etfLast(E);Object.assign(module.exports,{bizDays,etfLast,NYSE});
 {const T=x=>Date.parse(x);const c=[[T('2026-10-05'),T('2026-10-07T10:30:00Z'),2],[T('2026-10-05'),T('2026-10-07T23:59:00Z'),2],[T('2026-10-05'),T('2026-10-08T00:01:00Z'),3],[T('2026-10-02'),T('2026-10-05T12:00:00Z'),1],[T('2026-10-02'),T('2026-10-04T12:00:00Z'),0]].map(([a,b,w])=>[bizDays(a,b),w]);ok(c.every(([g,w])=>g===w),'bizDays counts weekdays after the date through today (Fri->Mon=1, Mon->Wed=2)',c)}
 if(require.main===module)(async()=>{
  const g=async u=>{const r=await fetch(URL+u+'?v='+now,{cache:'no-store'});return r};
@@ -16,7 +16,8 @@ if(require.main===module)(async()=>{
  const J={};for(const n of ['derivs','market','etf','macro','calendar']){const r=await g('data/'+n+'.json');ok(r.ok,`data/${n}.json served`,r.status);if(r.ok)J[n]=await r.json()}
  const h=u=>(now-Date.parse(u))/36e5;
  if(J.derivs)ok(h(J.derivs.updated)<=36,'derivs.json under 36h',J.derivs.updated);if(J.market)ok(h(J.market.updated)<=36,'market.json under 36h',J.market.updated);
- if(J.etf)ok(bizDays(Date.parse(J.etf.last_date+'T00:00:00Z'))<=2,'etf.json last day within 2 US business days',J.etf.last_date);
+ // last COMPLETE day (newest non-pending row); a held-back pending row is not published. Same rule as the stale alarm (runs_log.py / data_age.py).
+ if(J.etf){const L=etfLast(J.etf);ok(!!L.last&&bizDays(Date.parse(L.last+'T00:00:00Z'))<=2,'etf.json last day within 2 US business days',L)}
  if(J.macro){const S=J.macro.series,age=id=>S[id]?(now-Date.parse(S[id].last_date+'T00:00:00Z'))/DAY:Infinity,lim={daily:['DGS10','DGS2','DFII10','T10Y2Y'],fx:['DEXUSEU','DEXJPUS','DEXCHUS','DTWEXBGS'],weekly:['WALCL','WDTGAL','WTREGEN'],monthly:['M2SL']};
   /* daily Fed series are checked in-page below with the app's FEDD limit and usBizDays (one shared limit) */
   /* H.10 FX: daily values published weekly (Monday ~21:15 UTC, through the prior Friday; Tuesday after a Monday holiday), so a Friday value is legitimately up to ~11 days old just before the next release */lim.fx.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days (H.10 weekly release)`,S[id]?.last_date));lim.weekly.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days`,S[id]?.last_date));

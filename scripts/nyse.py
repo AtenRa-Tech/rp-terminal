@@ -40,3 +40,20 @@ def biz_days(last_ymd, now_ms):
         x += ONE
         if is_open(x): n += 1
     return n
+
+
+def etf_last_complete(E):
+    """(last, held): etf.json's last COMPLETE day = newest non-pending row (fetch_etf.py keeps the newest row pending, total None, until every
+    fund reports), per dataset from its days, newest across datasets (= fetch_etf.py top-level last_date); held = newest pending row date newer
+    than last, else None. Twin of NYSE.etfLast in shared/nyse.js."""
+    last = held = None; ds = list(((E or {}).get("datasets") or {}).values())
+    for d in ds:
+        for r in (d or {}).get("days") or []:
+            x = str(r.get("date") or "")[:10]
+            if not x: continue
+            if r.get("pending"):
+                if held is None or x > held: held = x
+            elif last is None or x > last: last = x
+    if not ds and (E or {}).get("last_date"): last = str(E["last_date"])[:10]
+    if held and last and held <= last: held = None
+    return last, held
