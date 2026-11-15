@@ -90,7 +90,7 @@ def load(p, dflt):
 
 
 # ---- market + macro freshness (15 Oct ruling). Same rules as the app: market.json 2h; macro per series: daily Fed H.15
-# (DGS10, DGS2, DFII10, T10Y2Y) 3 US business days with bond-market holidays skipped; weekly 12 days; H.10 daily FX 10 days;
+# (DGS10, DGS2, DFII10, T10Y2Y) 3 US business days with bond-market holidays skipped; weekly 12 days; H.10 daily FX shared/freshness.json h10_days (14);
 # other daily 5 days; monthly = shared/freshness.json monthly_days (100) from month start, age <= limit ok. Reported in _runs.json; they do not change the derivatives SLA ('ok').
 import datetime as _dt
 MARKET = os.path.join(os.path.dirname(DERIVS), "market.json"); MACRO = os.path.join(os.path.dirname(DERIVS), "macro.json")
@@ -135,7 +135,7 @@ def macro_fresh(M, t):
             bd = us_biz_days(ld, t); out[sid] = {"ok": bd <= FEDD_LIM, "last_date": ld, "biz_days": bd, "limit": f"{FEDD_LIM} US business days"}
         else:
             age = (t - _dt.datetime.fromisoformat(ld[:10] + "T00:00:00+00:00").timestamp() * 1000) / (24 * H)
-            lim = 10 if f == "Daily" and (sid.startswith("DEX") or sid.startswith("DTWEX")) else CAD[f]
+            lim = FRESHNESS["h10_days"] if f == "Daily" and (sid.startswith("DEX") or sid.startswith("DTWEX")) else CAD[f]
             out[sid] = {"ok": age <= lim, "last_date": ld, "age_d": round(age, 1), "limit": f"{lim} days ({f.lower()})"}
     return out
 
