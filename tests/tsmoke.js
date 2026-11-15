@@ -7,8 +7,8 @@ const MONTHLY_DAYS=require('../shared/freshness.json').monthly_days,monthlyOk=a=
 const absent=async(get,u,tries=3,wait=1500)=>{let st=0;for(let i=0;i<=tries;i++){try{st=(await get(u)).status}catch(e){st=0}if(st>=200&&st<300)return{absent:false,status:st,tries:i};if(st&&st<500)return{absent:true,status:st,tries:i};if(i<tries&&wait)await new Promise(r=>setTimeout(r,wait))}return{absent:true,status:st,tries}};
 module.exports={MONTHLY_DAYS,monthlyOk,absent};
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,400):''));if(!c)F.push(n)};
-// bizDays = US weekdays after the observation date, up to and including today (UTC). Was off by one: looping while x<now counted tomorrow as soon as today began.
-const DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>{let d=0,x=new Date(t);x.setUTCHours(0,0,0,0);const e=new Date(n);e.setUTCHours(0,0,0,0);while(x<e){x=new Date(+x+DAY);const w=x.getUTCDay();if(w&&w<6)d++}return d};
+// bizDays = NYSE trading days after the observation date, up to and including today (UTC): ONE calendar shared/nyse.js (also inlined in index.html for the ETF line, Python twin scripts/nyse.py for the stale alarm).
+const NYSE=require('../shared/nyse.js'),DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>NYSE.bizDays(t,n);Object.assign(module.exports,{bizDays,NYSE});
 {const T=x=>Date.parse(x);const c=[[T('2026-10-05'),T('2026-10-07T10:30:00Z'),2],[T('2026-10-05'),T('2026-10-07T23:59:00Z'),2],[T('2026-10-05'),T('2026-10-08T00:01:00Z'),3],[T('2026-10-02'),T('2026-10-05T12:00:00Z'),1],[T('2026-10-02'),T('2026-10-04T12:00:00Z'),0]].map(([a,b,w])=>[bizDays(a,b),w]);ok(c.every(([g,w])=>g===w),'bizDays counts weekdays after the date through today (Fri->Mon=1, Mon->Wed=2)',c)}
 if(require.main===module)(async()=>{
  const g=async u=>{const r=await fetch(URL+u+'?v='+now,{cache:'no-store'});return r};

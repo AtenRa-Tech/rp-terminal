@@ -5,9 +5,13 @@ Fails (exit 1, ::error) when live data is past its OWN limit, recomputed against
   - market: now - market.updated > market.limit_h
   - macro: any series with ok == false (judged by each series' last_date)
   - macro fetch: now - macro_checked.checked_at > MACRO_FETCH_LIMIT_H (26h: daily batch at 00:20 UTC, caught up by the first hourly run after a dropped slot (refresh_slot.py --batch-due); fetch_macro.py stopped running)
+  - etf: NYSE trading days after etf.last_date through today (UTC) > etf.limit_days (2), counted with scripts/nyse.py (NYSE holidays only, twin of shared/nyse.js)
   - last_run older than 90 min (the derivatives refresh itself stopped, e.g. workflows disabled)
 Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (dispatched by the Netlify stale alarm) and the live suite."""
 import json, sys, urllib.request
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'scripts'))
+import nyse  # ONE NYSE trading-day calendar shared with the page and the smoke (shared/nyse.js)
 from datetime import datetime, timezone
 LAST_RUN_MAX_MIN = 90
 # Daily batch at 00:20 UTC, or a catch-up once the last successful fetch is 26h old (data.yml).
@@ -52,6 +56,12 @@ def check(d, now):
     else:
         h = (now - P(mc['checked_at'])).total_seconds() / 3600
         if h > MACRO_FETCH_LIMIT_H: bad.append(f'macro fetch: last successful run {h:.1f}h ago > limit {MACRO_FETCH_LIMIT_H}h')
+    et = d.get('etf')
+    if et is None: print('::warning title=Live data age::etf missing from _runs.json (written by runs_log.py since the NYSE calendar change)')
+    elif not et.get('last_date'): bad.append('etf: no last_date (' + str(et.get('why', 'etf.json missing')) + ')')
+    else:
+        lim = et.get('limit_days', 2); bd = nyse.biz_days(et['last_date'], now.timestamp() * 1000)
+        if bd > lim: bad.append(f'etf: last day {et["last_date"]} is {bd} NYSE trading days old > limit {lim}')
     return bad
 if __name__ == '__main__':
     a = sys.argv[1:]; now = datetime.now(timezone.utc)
