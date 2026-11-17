@@ -44,7 +44,7 @@ def before(case, files):
     return out
 def decide(sd, bd):
     r = subprocess.run([sys.executable, SO, sd, bd], capture_output=True, text=True); return r.returncode, r.stdout
-ETFN = "etf.json last day within 2 US business days"; DERN = "derivs.json under 36h"
+ETFN = "etf.json each fund last complete day within 2 NYSE trading days"; DERN = "derivs.json under 36h"  # ETFN = the real tsmoke check name since #45
 ALL = {"derivs.json": DER, "market.json": raw("market.json"), "etf.json": ETF, "macro.json": raw("macro.json"), "calendar.json": raw("calendar.json")}
 served = {k[:-5]: v for k, v in ALL.items()}
 try:

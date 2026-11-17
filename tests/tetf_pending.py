@@ -86,6 +86,26 @@ try:
     o = fe_run(P1, ["--light"], changed=True); ok("checked_at" not in o and o.get("light_checked_at"), "light re-fetch never creates checked_at", list(o))
     P2 = dict(P0, light_checked_at="2026-10-24T09:17:00Z")
     o = fe_run(P2, [], changed=True); ok(o.get("light_checked_at") == "2026-10-24T09:17:00Z" and o.get("checked_at") == P0["checked_at"], "full (no flag) run carries both stamps over and never stamps light_checked_at", {k: o.get(k) for k in ("checked_at", "light_checked_at")})
+    # ---- ETF freshness comes ONLY from each fund's last complete day: fresh run stamps never make stale ETF fresh ----
+    T0 = int(dt.datetime(2026, 10, 24, 15, 26, tzinfo=dt.timezone.utc).timestamp() * 1000)  # runs_log takes ms
+    ST = json.loads(json.dumps(BASE))
+    for d in ST["datasets"].values(): d["days"] = [x for x in d["days"] if x["date"] <= "2026-10-16"]; d["last_date"] = "2026-10-16"
+    ST["last_date"] = "2026-10-16"; stamp = "2026-10-24T15:20:00Z"; ST.update(updated=stamp, checked_at=stamp, light_checked_at=stamp)
+    for d in ST["datasets"].values(): d["fetched"] = stamp
+    sp3 = importlib.util.spec_from_file_location("rl", os.path.join(ROOT, "scripts/runs_log.py")); rl = importlib.util.module_from_spec(sp3); sp3.loader.exec_module(rl)
+    r = rl.etf_fresh(ST, T0); rf = rl.etf_fresh(BASE, T0)
+    ok(r.get("ok") is False and all(f.get("ok") is False for f in (r.get("funds") or {}).values()) and rf.get("ok") is True,
+       "stale alarm (runs_log.etf_fresh): rows end 16 Oct -> stale although updated/checked_at/light_checked_at/fetched are minutes old; frozen file fresh", {"stale": r, "fresh": rf.get("ok")})
+    fst, fba = os.path.join(T, "st.json"), os.path.join(T, "base.json"); json.dump(ST, open(fst, "w")); json.dump(BASE, open(fba, "w"))
+    js = ("const m=require(process.argv[1]),fs=require('fs'),J=f=>JSON.parse(fs.readFileSync(f,'utf8')),n=Date.parse('2026-10-24T15:26:00Z');"
+          "console.log('@@'+JSON.stringify({s:m.etfFresh(J(process.argv[2]),n).pass,f:m.etfFresh(J(process.argv[3]),n).pass}))")
+    rr = subprocess.run(["node", "-e", js, os.path.join(HERE, "tsmoke.js"), fst, fba], capture_output=True, text=True)
+    R = json.loads(rr.stdout.split("@@", 1)[1]) if "@@" in rr.stdout else {}
+    ok(R == {"s": False, "f": True}, "smoke (tsmoke etfFresh): stale rows fail whatever the run stamps say; frozen file passes", (R, rr.stderr[-300:]))
+    src = open(os.path.join(ROOT, "index.html")).read()
+    fs = src[src.index("function etfFundState("):][:400]
+    ok("checked_at" not in fs and "updated" not in fs and "etfLast" in fs, "page etfFundState judges only the last complete day (no run stamp read)", fs)
+    ok("checked_at" not in open(os.path.join(ROOT, "scripts/runs_log.py")).read().split("def etf_fresh", 1)[1].split("\ndef ", 1)[0], "runs_log.etf_fresh reads no checked_at / light_checked_at")
 finally:
     shutil.rmtree(T, ignore_errors=True)
 print(f"FAILS: {len(fails)}"); sys.exit(1 if fails else 0)

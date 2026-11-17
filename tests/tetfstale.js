@@ -6,7 +6,7 @@
 const p=require('puppeteer-core'),fs=require('fs'),path=require('path');const URL=process.env.URL||'http://localhost:8765/index.html';
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,900):''));if(!c)F.push(n)};
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/frozen/data/etf.json'),'utf8'));
-function staleBtc(){const E=JSON.parse(JSON.stringify(BASE));const d=E.datasets.btc;d.days=d.days.filter(x=>x.date<='2026-10-16');d.last_date='2026-10-16';return E}
+function staleBtc(){const E=JSON.parse(JSON.stringify(BASE));const d=E.datasets.btc;d.days=d.days.filter(x=>x.date<='2026-10-16');d.last_date='2026-10-16';/* fresh run stamps must not make it fresh */E.checked_at=E.light_checked_at=E.updated;return E}
 async function run(name,E){const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
  const pg=await b.newPage();await pg.setViewport({width:412,height:915});const errs=[];pg.on('pageerror',e=>errs.push(e.message));
  await pg.setRequestInterception(true);const body=JSON.stringify(E);
