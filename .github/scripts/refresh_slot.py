@@ -46,6 +46,19 @@ def decide(event, schedule, runs, now, checked=None):
     return True, f"derivatives fetched {age:.0f} min ago (>= {SKIP_MIN}): runs"
 
 
+def etf_pending(etf):
+    """17 Nov (light ETF re-fetch): True when the newest row of datasets.btc.days or datasets.eth.days is pending (fetch_etf.py holds it until every
+    fund reports). data.yml's hourly runs then re-run ONLY fetch_etf.py; once no row is pending they stop. Unreadable -> False (the daily batch covers it)."""
+    try:
+        for a in ("btc", "eth"):
+            days = [d for d in ((etf.get("datasets") or {}).get(a) or {}).get("days") or [] if isinstance(d, dict) and d.get("date")]
+            if days and max(days, key=lambda d: str(d["date"])).get("pending") is True:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def checked_at(paths):
     out = []
     for p in paths:
@@ -61,6 +74,12 @@ if __name__ == "__main__":
         except Exception:
             c = []
         print(str(batch_due(c, dt.datetime.now(dt.timezone.utc))).lower()); sys.exit(0)
+    if sys.argv[1] == "--etf-pending":  # refresh_slot.py --etf-pending data/etf.json -> true|false
+        try:
+            e = json.load(open(sys.argv[2]))
+        except Exception:
+            e = {}
+        print(str(etf_pending(e)).lower()); sys.exit(0)
     ev, sch, src = sys.argv[1], sys.argv[2], sys.argv[3]
     try:
         runs = json.load(sys.stdin if src == "-" else open(src))

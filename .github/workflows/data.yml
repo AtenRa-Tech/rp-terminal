@@ -106,8 +106,11 @@ jobs:
           else
             FULL=false
           fi
-          echo "full=$FULL" >> "$GITHUB_OUTPUT"
-          echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL"
+          # 17 Nov light ETF re-fetch: outside the batch, re-run ONLY fetch_etf.py while etf.json's newest BTC/ETH row is pending (never the full batch)
+          ETF=$FULL
+          if [ "$FULL" != true ] && [ "$(python3 .github/scripts/refresh_slot.py --etf-pending data/etf.json)" = true ]; then ETF=true; fi
+          echo "full=$FULL" >> "$GITHUB_OUTPUT"; echo "etf=$ETF" >> "$GITHUB_OUTPUT"
+          echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL, ETF fetch=$ETF"
 
       - name: Restore published hours from live (dispatch input restore_hours only; empty = skipped)
         id: restore
@@ -138,8 +141,8 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_macro.py
 
-      - name: ETF flows (daily batch)
-        if: steps.plan.outputs.full == 'true'
+      - name: ETF flows (daily batch, or hourly while the newest BTC/ETH row is pending)
+        if: steps.plan.outputs.etf == 'true'
         continue-on-error: true
         run: python scripts/fetch_etf.py
 

@@ -159,6 +159,8 @@ jobs:
         run: python3 tests/tdeploy_proof.py
       - name: Narrow no-rollback (blocking) - live smoke skips rollback only for stale data this deploy left byte-identical; anything else rolls back
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tnorollback.py
+      - name: Light ETF re-fetch (blocking) - hourly runs re-run only fetch_etf.py while the newest BTC/ETH row is pending; batch logic unchanged
+        run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tetf_pending.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tclosed_hours.py

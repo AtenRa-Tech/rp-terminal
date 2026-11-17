@@ -15,6 +15,7 @@ echo "== tabsent (js)"; node tabsent.js || { echo '!! tabsent failed'; bad=1; }
 echo "== tpromote_fetch (sh)"; bash tpromote_fetch.sh || { echo '!! tpromote_fetch failed'; bad=1; }
 # narrow no-rollback ruling (12 Nov): rollback decision fixtures + the ETF stale label carried through to Studio
 echo "== tnorollback (py)"; python3 tnorollback.py || { echo '!! tnorollback failed'; bad=1; }
+echo "== tetf_pending (py)"; python3 tetf_pending.py || { echo '!! tetf_pending failed'; bad=1; }
 echo "== tetfstale"; out=$(timeout 1200 node -r ./freeze/preload.js tetfstale.js 2>&1); rc=$?; echo "$out" | tail -n 40
 if [ $rc -ne 0 ] || echo "$out" | grep -qE '^FAIL |FAILS: [1-9]'; then echo "!! tetfstale failed (rc=$rc)"; bad=1; fi
 exit $bad
