@@ -145,6 +145,8 @@ jobs:
       - name: Stale alarm / live data age per feed limit (blocking) - stale fails, fresh passes
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tdata_age.py
+      - name: ONE NYSE trading-day calendar (blocking) - shared/nyse.js and scripts/nyse.py identical 2024-2030, runs_log etf + stale alarm skip NYSE holidays only
+        run: python3 tests/tnyse.py
       - name: Pages deploys share ONE group (blocking) - static check over every deploying workflow
         if: steps.scope.outputs.full == 'true'
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tpages.py

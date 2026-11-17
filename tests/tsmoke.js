@@ -7,8 +7,12 @@ const MONTHLY_DAYS=require('../shared/freshness.json').monthly_days,H10_DAYS=req
 const absent=async(get,u,tries=3,wait=1500)=>{let st=0;for(let i=0;i<=tries;i++){try{st=(await get(u)).status}catch(e){st=0}if(st>=200&&st<300)return{absent:false,status:st,tries:i};if(st&&st<500)return{absent:true,status:st,tries:i};if(i<tries&&wait)await new Promise(r=>setTimeout(r,wait))}return{absent:true,status:st,tries}};
 module.exports={MONTHLY_DAYS,H10_DAYS,monthlyOk,absent};
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,400):''));if(!c)F.push(n)};
-// bizDays = US weekdays after the observation date, up to and including today (UTC). Was off by one: looping while x<now counted tomorrow as soon as today began.
-const DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>{let d=0,x=new Date(t);x.setUTCHours(0,0,0,0);const e=new Date(n);e.setUTCHours(0,0,0,0);while(x<e){x=new Date(+x+DAY);const w=x.getUTCDay();if(w&&w<6)d++}return d};
+// bizDays = NYSE trading days after the observation date, up to and including today (UTC): ONE calendar shared/nyse.js (also inlined in index.html for the ETF line, Python twin scripts/nyse.py for the stale alarm).
+// etfFresh: each fund (btc, eth) is judged on its own last complete day; pass only if EVERY fund is <= 2 NYSE trading days (the older date decides). Same rule as runs_log.py / data_age.py.
+const NYSE=require('../shared/nyse.js'),DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>NYSE.bizDays(t,n),etfLast=(E,a)=>NYSE.etfLast(E,a);
+const etfFresh=(E,n=now)=>{const L=etfLast(E),lim=2,fund=a=>{const f=L.funds[a];if(!f||!f.last)return{last:null,held:f?f.held:null,biz:null,ok:false};const biz=bizDays(Date.parse(f.last+'T00:00:00Z'),n);return{last:f.last,held:f.held,biz,ok:biz<=lim}};
+ const funds={btc:fund('btc'),eth:fund('eth')};return{last:L.last,held:L.held,biz:L.last?bizDays(Date.parse(L.last+'T00:00:00Z'),n):null,pass:funds.btc.ok&&funds.eth.ok,funds}};
+Object.assign(module.exports,{bizDays,etfLast,etfFresh,NYSE});
 {const T=x=>Date.parse(x);const c=[[T('2026-10-05'),T('2026-10-07T10:30:00Z'),2],[T('2026-10-05'),T('2026-10-07T23:59:00Z'),2],[T('2026-10-05'),T('2026-10-08T00:01:00Z'),3],[T('2026-10-02'),T('2026-10-05T12:00:00Z'),1],[T('2026-10-02'),T('2026-10-04T12:00:00Z'),0]].map(([a,b,w])=>[bizDays(a,b),w]);ok(c.every(([g,w])=>g===w),'bizDays counts weekdays after the date through today (Fri->Mon=1, Mon->Wed=2)',c)}
 if(require.main===module)(async()=>{
  const g=async u=>{const r=await fetch(URL+u+'?v='+now,{cache:'no-store'});return r};
@@ -16,7 +20,8 @@ if(require.main===module)(async()=>{
  const J={};for(const n of ['derivs','market','etf','macro','calendar']){const r=await g('data/'+n+'.json');ok(r.ok,`data/${n}.json served`,r.status);if(r.ok)J[n]=await r.json()}
  const h=u=>(now-Date.parse(u))/36e5;
  if(J.derivs)ok(h(J.derivs.updated)<=36,'derivs.json under 36h',J.derivs.updated);if(J.market)ok(h(J.market.updated)<=36,'market.json under 36h',J.market.updated);
- if(J.etf)ok(bizDays(Date.parse(J.etf.last_date+'T00:00:00Z'))<=2,'etf.json last day within 2 US business days',J.etf.last_date);
+ // each fund's last COMPLETE day (newest non-pending row); a held-back pending row is not published. Fails if EITHER fund is past 2 NYSE trading days. Same rule as the stale alarm (runs_log.py / data_age.py).
+ if(J.etf){const f=etfFresh(J.etf);ok(f.pass,'etf.json each fund last complete day within 2 NYSE trading days',f)}
  if(J.macro){const S=J.macro.series,age=id=>S[id]?(now-Date.parse(S[id].last_date+'T00:00:00Z'))/DAY:Infinity,lim={daily:['DGS10','DGS2','DFII10','T10Y2Y'],fx:['DEXUSEU','DEXJPUS','DEXCHUS','DTWEXBGS'],weekly:['WALCL','WDTGAL','WTREGEN'],monthly:['M2SL']};
   /* daily Fed series are checked in-page below with the app's FEDD limit and usBizDays (one shared limit) */
   /* H.10 FX: daily values published weekly (Monday ~21:15 UTC, through the prior Friday; Tuesday after a Monday holiday), so a Friday value is legitimately up to ~11 days old just before the next release */lim.fx.forEach(id=>ok(age(id)<=H10_DAYS,`macro ${id} within ${H10_DAYS} days (H.10 weekly release)`,S[id]?.last_date));lim.weekly.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days`,S[id]?.last_date));
