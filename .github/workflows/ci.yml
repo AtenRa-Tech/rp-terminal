@@ -157,6 +157,8 @@ jobs:
       - name: Deploy proof (blocking) - every data deploy runs the publish guard; a data push ships only pages-tested code
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tdeploy_proof.py
+      - name: Narrow no-rollback (blocking) - live smoke skips rollback only for stale data this deploy left byte-identical; anything else rolls back
+        run: python3 tests/tnorollback.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tclosed_hours.py
@@ -208,12 +210,16 @@ jobs:
           DATA_REDEPLOY: ${{ inputs.data_redeploy }}
         run: |
           python3 .github/scripts/no_regress.py snapshot live-before.json
+          # narrow no-rollback ruling (12 Nov): exact bytes live serves BEFORE this deploy, so smoke can tell "stale and unchanged" from "made worse"
+          python3 .github/scripts/no_regress.py files live-before-files
           if [ "$DATA_REDEPLOY" = true ]; then code=$(bash .github/scripts/tested_sha.sh); else code="$GITHUB_SHA"; fi
           bash .github/scripts/snapshot.sh _site "$code"
       - uses: actions/upload-artifact@v4
         with:
           name: live-before
-          path: live-before.json
+          path: |
+            live-before.json
+            live-before-files/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -242,8 +248,17 @@ jobs:
           name: live-before
       - name: Live derivatives never go backwards (failure rolls back)
         run: python3 .github/scripts/no_regress.py after live-before.json
-      - name: Smoke test the live site
-        run: mkdir -p "$RUNNER_TEMP/gates"; set -o pipefail; node tests/tsmoke.js "$SITE_URL" 2>&1 | tee "$RUNNER_TEMP/gates/smoke.log"
+      - name: Smoke test the live site (failure rolls back, except stale data this deploy did not change)
+        # narrow no-rollback ruling (12 Nov): skip the rollback ONLY when every failing smoke check is a freshness check AND each stale data file is
+        # byte-identical to what live served before this deploy (live-before-files/, saved by the deploy job). Any other failure, a crash, or a stale
+        # file that changed (e.g. went backwards) still fails this step and rolls back. Decision: .github/scripts/stale_only.py (tests/tnorollback.py).
+        run: |
+          mkdir -p "$RUNNER_TEMP/gates"; set -o pipefail; out="$RUNNER_TEMP/smoke-out"; rm -rf "$out"
+          if SMOKE_OUT="$out" node tests/tsmoke.js "$SITE_URL" 2>&1 | tee "$RUNNER_TEMP/gates/smoke.log"; then exit 0; fi
+          if python3 .github/scripts/stale_only.py "$out" live-before-files | tee -a "$RUNNER_TEMP/gates/smoke.log"; then
+            { echo "### Live smoke: stale data only, no rollback"; grep '^NO ROLLBACK' "$RUNNER_TEMP/gates/smoke.log" || true; } >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          exit 1
       - name: Export check on the live site (failure rolls back)
         working-directory: ${{ runner.temp }}
         run: node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL" || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL"; }
