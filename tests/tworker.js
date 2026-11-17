@@ -115,6 +115,13 @@ function mock(w) {
   ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true', "back-off is per UTC day: yesterday's attempts (16h, 17h ago) do not count", r.out);
   r = await run(world({ ...due0, dispatchRuns: [fullRun(2.1, 'completed', 'Refresh data'), fullRun(3, 'completed', 'Refresh data'), fullRun(4, 'completed', 'Refresh data')] }));
   ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true', 'back-off counts only full=true runs ("Refresh data (full)"), not derivatives-only dispatches', r.out);
+  r = await run(world({ ...due0, runs: runs({ oi: 2.1, macroChecked: 27 }), dispatchRuns: [fullRun(2.1), fullRun(8), fullRun(13)] }));
+  ok(posts(r.calls).length === 0 && hb(r.calls)[0].url.endsWith('/fail') && /macro fetch: last successful run 27\.0h ago > limit 26h/.test(hb(r.calls)[0].body) && /daily batch failed 3 times/.test(hb(r.calls)[0].body), 'back-off, 4th attempt within 6h: no dispatch, heartbeat /fail names the stale feed (macro fetch 27h) and the back-off', hb(r.calls)[0] && hb(r.calls)[0].body);
+  { const N0 = Date.parse('2026-11-18T00:30:00Z'); const at = (t) => ({ id: t, status: 'completed', event: 'workflow_dispatch', display_title: 'Refresh data (full)', created_at: t });
+    const m = mock(world({ macro: { checked_at: '2026-11-17T00:25:00Z' }, etf: { checked_at: '2026-11-17T00:25:00Z' }, derivs: { assets: { BTC: { latest: { oi_t: N0 - 2.1 * H, basis_t: N0 - 2.1 * H } } } }, runs: { ...runs({ oi: 2.1 }), last_run: iso(N0 - 30 * 60000) },
+      dispatchRuns: [at('2026-11-17T23:20:00Z'), at('2026-11-17T22:10:00Z'), at('2026-11-17T21:00:00Z')] }));
+    const o = await W.tick(ENV, { fetch: m.f, now: N0, log: () => {} }); const pp = m.calls.filter((x) => x.url === `${API}/dispatches`);
+    ok(o.batch_due && pp.length === 1 && JSON.parse(pp[0].body).inputs.full === 'true', 'new UTC day resets the back-off: 3 failures 21:00-23:20Z yesterday, at 00:30Z the batch is due again -> one full try', o); }
   const dyText = fs.readFileSync(path.join(ROOT, '.github/workflows/data.yml'), 'utf8');
   ok(dyText.includes(`inputs.full && '${L.FULL_TITLE}' || 'Refresh data'`) && /^run-name: /m.test(dyText), 'data.yml run-name marks a full=true dispatch with limits.js FULL_TITLE');
   ok(L.BATCH_MAX_FAILED === 3 && L.BATCH_RETRY_H === 6, 'back-off constants: 3 failed attempts per UTC day, then every 6h');
