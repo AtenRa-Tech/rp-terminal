@@ -34,6 +34,30 @@ async function run(name,E){const b=await p.launch({executablePath:process.env.CH
    await runDraftAudit('draft','Simple');const el=document.querySelector('#audit');const vd=el&&el.querySelector('.vd');const res={vd:vd?vd.className:'',txt:el?el.innerText:''};if(el)el.classList.remove('on');return res};
   o.aud={btc:await aud('btc'),eth:await aud('eth')};return o});
  await b.close();return{name,...r,errs}}
+// (g) 17 Nov ruling: a pending row's partial values (IBIT filled, even a partial total while still flagged pending) never reach the page card,
+// Studio, a caption (every template), an export (fillText of every ETF render) or the Audit.
+const MARK=['876.5','4,321.9','4321.9','765.4'];
+function pendingMarked(){const E=JSON.parse(JSON.stringify(BASE));const pb=E.datasets.btc.days.at(-1),pe=E.datasets.eth.days.at(-1);
+ if(!pb.pending||!pe.pending)throw new Error('frozen etf.json newest rows are expected to be pending');pb.funds.IBIT=-876.5;pb.total=-4321.9;pe.funds.ETHA=765.4;return E}
+async function runPending(){const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
+ const pg=await b.newPage();await pg.setViewport({width:412,height:915});const errs=[];pg.on('pageerror',e=>errs.push(e.message));
+ await pg.setRequestInterception(true);const body=JSON.stringify(pendingMarked());
+ pg.on('request',q=>{if(/\/data\/etf\.json/.test(q.url()))return q.respond({status:200,contentType:'application/json',body});return q.continue()});
+ await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
+ await pg.waitForFunction(()=>{try{return typeof tab==='function'&&typeof etfAStale==='function'}catch(e){return false}},{timeout:60000}).catch(()=>{});
+ await pg.evaluate(()=>tab('news'));await pg.waitForFunction(()=>{try{return !!(NX.etf&&document.querySelector('#nxEtf .card'))}catch(e){return false}},{timeout:60000}).catch(()=>{});
+ await new Promise(r=>setTimeout(r,1500));
+ const r=await pg.evaluate(async()=>{const rows=[];const P=CanvasRenderingContext2D.prototype,of=P.fillText;let log=[];P.fillText=function(t,...a){log.push(String(t));return of.call(this,t,...a)};
+  for(const a of ['btc','eth']){MAC.etfA=a;renderEtf();rows.push(['card '+a,document.querySelector('#nxEtf').innerText]);
+   const F=capFacts({kind:'etf',a});rows.push(['facts '+a,JSON.stringify(F)]);for(const [st] of STY)(CAPT[F.fam][st]||[]).forEach((fn,i)=>{try{rows.push([`caption ${a} ${st}#${i}`,String(tidy(fn(F))||'')])}catch(e){}});
+   rows.push(['etfCap '+a,etfCap(a)]);
+   log=[];try{render8k((x,W,H)=>drawEtf(x,W,H,a),1920,1080)}catch(e){rows.push(['export err '+a,String(e)])}rows.push(['export etf '+a,log.join(' | ')]);
+   openCaptions({kind:'etf',a});await new Promise(r=>setTimeout(r,800));makeDraft(true);rows.push(['studio captions '+a,[...document.querySelectorAll('#capBox textarea')].map(t=>t.value).join(' | ')]);
+   log=[];try{render8k(drawStudio,1920,1080)}catch(e){rows.push(['studio export err '+a,String(e)])}rows.push(['studio export '+a,log.join(' | ')]);
+   let ta=document.getElementById('draft');if(ta){NEWSPICK=null;CAPCTX={kind:'etf',a};await runDraftAudit('draft','Simple');const el=document.querySelector('#audit');rows.push(['audit '+a,el?el.innerText:'']);if(el)el.classList.remove('on')}else rows.push(['audit '+a,'NO DRAFT'])}
+  P.fillText=of;rows.push(['page text',document.body.innerText]);
+  const st={btc:etfStats(NX.etf,'btc'),eth:etfStats(NX.etf,'eth')};return{rows,L:{btc:st.btc.L.date,eth:st.eth.L.date},pend:NX.etf.datasets.btc.days.at(-1).pending}});
+ await b.close();return{...r,errs}}
 (async()=>{
  const S=await run('STALE_BTC',staleBtc()),C=await run('FRESH',BASE);
  console.log('[STALE_BTC] '+JSON.stringify({sw:S.sw,head:S.head,colStale:S.colStale,btn:S.btn,st:{btc:{...S.st.btc,box:S.st.btc.box.slice(0,200)},eth:{capFor:S.st.eth.capFor,ta:S.st.eth.ta.length,exp:S.st.eth.exp}},aud:{btc:S.aud.btc.vd,eth:S.aud.eth.vd}}).slice(0,2500));
@@ -58,4 +82,10 @@ async function run(name,E){const b=await p.launch({executablePath:process.env.CH
  ok(C.st.btc.ta.length===3&&C.btn.btc_4k.exp===1,'control: fresh BTC captions and exports normally',{ta:C.st.btc.ta.length,btn:C.btn.btc_4k});
  ok(!/Stale data/.test(C.aud.btc.txt),'control: fresh BTC caption audit has no stale failure',C.aud.btc.txt.slice(0,300));
  ok(!C.errs.length,'FRESH: no page errors',C.errs);
+ const G=await runPending();const hit=G.rows.filter(([k,t])=>MARK.some(m=>t.includes(m))).map(([k,t])=>k+': '+MARK.filter(m=>t.includes(m)).join(','));
+ ok(G.pend===true&&G.L.btc==='2026-10-22'&&G.L.eth==='2026-10-22','(g) fixture: pending rows (23 Oct) carry partial IBIT/ETHA figures and a partial BTC total; last complete day stays 22 Oct',G.L);
+ const need=['card btc','card eth','caption btc','export etf btc','studio captions btc','studio export btc','audit btc','studio captions eth','audit eth'];
+ ok(need.every(n=>G.rows.some(([k,t])=>k.startsWith(n)&&t&&t!=='NO DRAFT')),'(g) every surface was rendered (card, every caption template, exports, Studio, Audit)',G.rows.map(([k,t])=>k+':'+String(t).length));
+ ok(!hit.length,'(g) pending-row partial values (IBIT −876.5, partial total −4,321.9, ETHA 765.4) appear on no card, caption, export, Studio draft, Audit or page text',hit);
+ ok(!G.errs.length,'(g) no page errors',G.errs);
  console.log('FAILS: '+F.length);process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});

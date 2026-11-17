@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Refresh data/etf.json: daily US spot BTC / ETH ETF net flows (US$m) from Farside.
 stdlib only. If Farside blocks or the layout changes, keep previous data for that
-asset and record status ('blocked' / 'error')."""
+asset and record status ('blocked' / 'error').
+--light (17 Nov): the hourly re-fetch data.yml runs while the newest BTC/ETH row is pending. It writes a top-level `light_checked_at` (every light run,
+also when no data changed) and NEVER writes `checked_at` (that stays the full batch's). Both stamps are carried over unchanged otherwise. Neither is ever
+a freshness signal: ETF freshness comes only from each fund's last complete day."""
 import datetime as dt, html, json, os, re, sys, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -9,6 +12,7 @@ OUT = os.path.join(ROOT, "data", "etf.json")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/128.0 Safari/537.36")
 NOW = dt.datetime.now(dt.timezone.utc)
+STAMPS = ("checked_at", "light_checked_at")  # run stamps, carried over from the previous file; never data
 # full-history pages first, then the short (recent ~2 weeks) pages as fallback
 URLS = {"btc": ["https://farside.co.uk/bitcoin-etf-flow-all-data/", "https://farside.co.uk/btc/"],
         "eth": ["https://farside.co.uk/ethereum-etf-flow-all-data/", "https://farside.co.uk/eth/"]}
@@ -84,7 +88,8 @@ def parse(page):
     return funds, days
 
 
-def main():
+def main(argv=None):
+    light = "--light" in (sys.argv[1:] if argv is None else argv)
     prev = {}
     if os.path.exists(OUT):
         try:
@@ -122,14 +127,21 @@ def main():
         print(f"{k}: status={d['status']} last_date={d.get('last_date')} rows={len(d.get('days', []))} "
               f"{d.get('error', '')}", file=sys.stderr)
     out["last_date"] = max([d.get("last_date") or "" for d in out["datasets"].values()]) or None
+    for k in STAMPS:  # carried over unchanged; a light run only ever sets light_checked_at
+        if prev.get(k): out[k] = prev[k]
+    stamp = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
     # skip rewrite if nothing but timestamps changed
     def strip(o):
         o = json.loads(json.dumps(o)); o.pop("updated", None)
+        for k in STAMPS: o.pop(k, None)
         for d in o.get("datasets", {}).values():
             d.pop("fetched", None)
         return o
     if prev and strip(prev) == strip(out):
+        if light:  # light run: keep the file as it was, only stamp light_checked_at (checked_at untouched)
+            prev["light_checked_at"] = stamp; write_json(OUT, prev); print(f"etf.json: no data change; light_checked_at={stamp}"); return
         print("etf.json: no data change"); return
+    if light: out["light_checked_at"] = stamp
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     write_json(OUT, out)
     print("etf.json written")

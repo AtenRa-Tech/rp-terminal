@@ -141,10 +141,15 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_macro.py
 
-      - name: ETF flows (daily batch, or hourly while the newest BTC/ETH row is pending)
-        if: steps.plan.outputs.etf == 'true'
+      - name: ETF flows (daily batch)
+        if: steps.plan.outputs.full == 'true'
         continue-on-error: true
         run: python scripts/fetch_etf.py
+
+      - name: ETF flows, light re-fetch (hourly while the newest BTC/ETH row is pending; writes light_checked_at, never checked_at)
+        if: steps.plan.outputs.full != 'true' && steps.plan.outputs.etf == 'true'
+        continue-on-error: true
+        run: python scripts/fetch_etf.py --light
 
       - name: Record this run in data/_runs.json (run time, per-feed freshness, rolling 24h hourly sample)
         if: always()

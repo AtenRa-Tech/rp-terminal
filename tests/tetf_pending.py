@@ -26,10 +26,11 @@ ok(rs.etf_pending(old) is False, "only the NEWEST row counts (an older row flagg
 ok(rs.etf_pending({}) is False and rs.etf_pending({"datasets": {"btc": {"days": []}}}) is False and rs.etf_pending("junk") is False, "empty / unreadable -> not pending (daily batch covers it)")
 # workflow
 W = yaml.safe_load(open(os.path.join(ROOT, ".github/workflows/data.yml"))); steps = W["jobs"]["refresh"]["steps"]
-plan = next(s for s in steps if s.get("id") == "plan"); etfs = next(s for s in steps if str(s.get("run", "")).strip() == "python scripts/fetch_etf.py"); mac = next(s for s in steps if "fetch_macro.py" in str(s.get("run", "")))
-ok(etfs.get("if") == "steps.plan.outputs.etf == 'true'" and str(etfs.get("run")).strip() == "python scripts/fetch_etf.py", "ETF step runs on plan output etf (fetch_etf.py only)", etfs)
+plan = next(s for s in steps if s.get("id") == "plan"); etfs = next(s for s in steps if str(s.get("run", "")).strip() == "python scripts/fetch_etf.py"); light = next(s for s in steps if str(s.get("run", "")).strip() == "python scripts/fetch_etf.py --light"); mac = next(s for s in steps if "fetch_macro.py" in str(s.get("run", "")))
+ok(etfs.get("if") == "steps.plan.outputs.full == 'true'", "batch ETF step (fetch_etf.py, no flag) runs only in the daily batch, as before", etfs.get("if"))
+ok(light.get("if") == "steps.plan.outputs.full != 'true' && steps.plan.outputs.etf == 'true'", "light ETF step (fetch_etf.py --light) runs only outside the batch when plan says etf", light.get("if"))
 ok(mac.get("if") == "steps.plan.outputs.full == 'true'", "macro step still gated on the daily batch only (a pending ETF row never runs macro)", mac.get("if"))
-ok(sum("scripts/fetch_etf.py" in str(s.get("run", "")) for s in steps) == 1 and "fetch_macro" not in str(plan["run"]), "fetch_etf.py runs in exactly one step; the plan step never fetches anything itself")
+ok(sum("scripts/fetch_etf.py" in str(s.get("run", "")) for s in steps) == 2 and "fetch_macro" not in str(plan["run"]), "fetch_etf.py runs in exactly two steps (batch, light); the plan step never fetches anything itself")
 T = tempfile.mkdtemp(prefix="tetfp-")
 def run_plan(event, schedule, full_input, etf_obj, batch_done=True):
     d = os.path.join(T, f"{event}-{schedule}-{full_input}-{len(os.listdir(T))}".replace(" ", "_").replace("*", "x")); os.makedirs(os.path.join(d, "data"))
@@ -41,16 +42,18 @@ def run_plan(event, schedule, full_input, etf_obj, batch_done=True):
     assert "${{" not in script, script
     out = os.path.join(d, "out"); open(out, "w").close()
     r = subprocess.run(["bash", "-e", "-c", script], cwd=d, env={**os.environ, "GITHUB_OUTPUT": out}, capture_output=True, text=True)
-    o = dict(l.split("=", 1) for l in open(out).read().split() if "=" in l); return r.returncode, o, r.stdout + r.stderr
+    o = dict(l.split("=", 1) for l in open(out).read().split() if "=" in l)
+    o["batch_step"] = "yes" if o.get("full") == "true" else "no"; o["light_step"] = "yes" if o.get("full") != "true" and o.get("etf") == "true" else "no"
+    return r.returncode, o, r.stdout + r.stderr
 try:
     rc, o, log = run_plan("schedule", "17 * * * *", "", BASE)
-    ok(rc == 0 and o.get("full") == "false" and o.get("etf") == "true", "hourly :17, batch done, newest row pending -> ETF fetch runs, no batch", (o, log))
+    ok(rc == 0 and o.get("full") == "false" and o.get("etf") == "true" and o["light_step"] == "yes" and o["batch_step"] == "no", "hourly :17, batch done, newest row pending -> light ETF fetch (--light) runs, no batch", (o, log))
     rc, o, log = run_plan("schedule", "47 * * * *", "", etf(False, True))
     ok(rc == 0 and o.get("full") == "false" and o.get("etf") == "true", "hourly :47, only ETH newest row pending -> ETF fetch runs, no batch", (o, log))
     rc, o, log = run_plan("schedule", "17 * * * *", "", etf(False, False))
-    ok(rc == 0 and o.get("full") == "false" and o.get("etf") == "false", "hourly, no pending row -> no ETF fetch", (o, log))
+    ok(rc == 0 and o.get("full") == "false" and o.get("etf") == "false" and o["batch_step"] == o["light_step"] == "no", "hourly, no pending row -> no ETF fetch", (o, log))
     rc, o, log = run_plan("schedule", "20 0 * * *", "", etf(False, False))
-    ok(rc == 0 and o.get("full") == "true" and o.get("etf") == "true", "daily 00:20 batch (no pending row) -> batch + ETF as before", (o, log))
+    ok(rc == 0 and o.get("full") == "true" and o.get("etf") == "true" and o["batch_step"] == "yes" and o["light_step"] == "no", "daily 00:20 batch (no pending row) -> batch ETF fetch (no --light) as before", (o, log))
     rc, o, log = run_plan("schedule", "0 21 * * 4", "", etf(False, False))
     ok(rc == 0 and o.get("full") == "true" and o.get("etf") == "true", "weekly Thu run -> batch + ETF as before", (o, log))
     rc, o, log = run_plan("schedule", "17 * * * *", "", etf(False, False), batch_done=False)
@@ -61,6 +64,28 @@ try:
     ok(rc == 0 and o.get("full") == "false" and o.get("etf") == "false", "dispatch full=false, no pending row -> no ETF fetch", (o, log))
     rc, o, log = run_plan("workflow_dispatch", "", "false", BASE)
     ok(rc == 0 and o.get("full") == "false" and o.get("etf") == "true", "dispatch full=false, pending row -> ETF fetch only, never the batch", (o, log))
+    # ---- fetch_etf.py --light (17 Nov): writes light_checked_at, NEVER checked_at; full run never stamps light_checked_at ----
+    sp2 = importlib.util.spec_from_file_location("fe", os.path.join(ROOT, "scripts/fetch_etf.py"))
+    def fe_run(prev, argv, changed=False):
+        fe = importlib.util.module_from_spec(sp2); sp2.loader.exec_module(fe)
+        out = os.path.join(T, f"etf-{len(os.listdir(T))}.json"); json.dump(prev, open(out, "w")); fe.OUT = out
+        fe.fetch = lambda url: url
+        def parse(url):
+            a = "btc" if "bitcoin" in url or url.endswith("/btc/") else "eth"; d = json.loads(json.dumps(prev["datasets"][a]))
+            if changed and a == "btc": max(d["days"], key=lambda x: x["date"])["funds"]["IBIT"] = -1.5
+            return d["funds"], d["days"]
+        fe.parse = parse; fe.main(argv); return json.load(open(out))
+    P0 = json.loads(json.dumps(BASE)); P0["checked_at"] = "2026-10-24T00:31:00Z"
+    o = fe_run(P0, ["--light"])
+    ok(o.get("checked_at") == P0["checked_at"] and o.get("light_checked_at") and {k: v for k, v in o.items() if k != "light_checked_at"} == P0,
+       "light re-fetch, no data change: only light_checked_at is stamped; checked_at and everything else untouched", {k: o.get(k) for k in ("checked_at", "light_checked_at", "updated")})
+    o = fe_run(P0, ["--light"], changed=True)
+    ok(o.get("checked_at") == P0["checked_at"] and o.get("light_checked_at") and max(o["datasets"]["btc"]["days"], key=lambda x: x["date"])["funds"]["IBIT"] == -1.5,
+       "light re-fetch with a pending-row change: data written, light_checked_at stamped, checked_at untouched", {k: o.get(k) for k in ("checked_at", "light_checked_at")})
+    P1 = {k: v for k, v in P0.items() if k != "checked_at"}
+    o = fe_run(P1, ["--light"], changed=True); ok("checked_at" not in o and o.get("light_checked_at"), "light re-fetch never creates checked_at", list(o))
+    P2 = dict(P0, light_checked_at="2026-10-24T09:17:00Z")
+    o = fe_run(P2, [], changed=True); ok(o.get("light_checked_at") == "2026-10-24T09:17:00Z" and o.get("checked_at") == P0["checked_at"], "full (no flag) run carries both stamps over and never stamps light_checked_at", {k: o.get(k) for k in ("checked_at", "light_checked_at")})
 finally:
     shutil.rmtree(T, ignore_errors=True)
 print(f"FAILS: {len(fails)}"); sys.exit(1 if fails else 0)

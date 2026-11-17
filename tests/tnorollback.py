@@ -75,6 +75,53 @@ try:
     rc, out = decide(smoke("x3", [], served), before("x3", ALL)); ok(rc == 1, "smoke exited non-zero with no failing check recorded -> rollback", out)
     rc, out = decide(smoke("x4", [ETFN], served), before("x4", {k: v for k, v in ALL.items() if k != "etf.json"}))
     ok(rc == 1 and "no copy of what live served before" in out, "stale ETF with no pre-deploy copy (live fetch failed) -> rollback", out)
+    # ---- 17 Nov ruling (final): an etf.json change confined to the pending row counts as unchanged (ci.yml and data.yml both use stale_only.py) ----
+    def em(fn):  # mutate a copy of the frozen etf.json (newest BTC and ETH rows are pending, total null) + new updated/fetched as a real refetch writes
+        E = json.loads(ETF); E["updated"] = "2026-10-24T16:20:49Z"
+        for d in E["datasets"].values(): d["fetched"] = "2026-10-24T16:20:49Z"
+        fn(E); return json.dumps(E, separators=(",", ":")).encode()
+    def pend(E, a): return max(E["datasets"][a]["days"], key=lambda x: x["date"])
+    def comp(E, a): return [x for x in E["datasets"][a]["days"] if not x.get("pending")]
+    PV = [
+        ("a", True, "only the pending row changed (IBIT partial filled, still pending, total null) + updated/fetched", lambda E: pend(E, "btc")["funds"].update(IBIT=-876.5)),
+        ("a2", True, "pending-row partial figures change for BTC and ETH, still pending", lambda E: (pend(E, "btc")["funds"].update(HODL=1.2), pend(E, "eth")["funds"].update(ETHV=-3.4))),
+        ("b", False, "a complete row's total changed", lambda E: comp(E, "btc")[-1].update(total=comp(E, "btc")[-1]["total"] + 1)),
+        ("b2", False, "a complete row's fund figure changed (ETH)", lambda E: comp(E, "eth")[-3]["funds"].update(ETHA=999.9)),
+        ("b3", False, "a complete row removed", lambda E: E["datasets"]["btc"]["days"].remove(comp(E, "btc")[-2])),
+        ("c", False, "pending row lost its pending flag", lambda E: pend(E, "btc").update(pending=False)),
+        ("c2", False, "pending row removed (before had it)", lambda E: E["datasets"]["eth"]["days"].remove(pend(E, "eth"))),
+        ("d", False, "pending row got a partial total (still flagged pending)", lambda E: pend(E, "btc").update(total=-4321.9)),
+        ("e", False, "top-level last_date went backwards", lambda E: E.update(last_date="2026-10-21")),
+        ("e2", False, "BTC dataset last_date went backwards", lambda E: E["datasets"]["btc"].update(last_date="2026-10-21")),
+        ("f", False, "a top-level field other than updated differs (units)", lambda E: E.update(units="US$bn")),
+        ("f2", False, "a dataset field other than fetched differs (status label)", lambda E: E["datasets"]["eth"].update(status="blocked")),
+        ("f3", False, "a dataset field other than fetched differs (url)", lambda E: E["datasets"]["btc"].update(url="https://example.invalid/")),
+    ]
+    for case, want, label, fn in PV:
+        rc, out = decide(smoke("p" + case, [ETFN], {**served, "etf": em(fn)}), before("p" + case, ALL))
+        ok((rc == 0) == want and ("inside the pending row" in out if want else "stale AND changed" in out),
+           f"({case[0]}) pending-row ruling: {label} -> {'no rollback' if want else 'rollback'}", out)
+    # checked_at (written by fetch_etf.py every run, Worker branch) may differ alongside updated/fetched; nothing else
+    def ck(E): E["checked_at"] = "2026-10-24T16:20:49Z"
+    def nopend0(E):
+        for d in E["datasets"].values(): d["days"] = [x for x in d["days"] if not x.get("pending")]
+    for case, want, label, b_fn, a_fn in [
+        ("ck1", True, "only checked_at + updated/fetched changed (no pending row)", nopend0, lambda E: (nopend0(E), ck(E))),
+        ("ck2", True, "only checked_at + updated/fetched changed (pending rows untouched)", lambda E: None, ck),
+        ("ck3", True, "checked_at changed and the pending row's partials changed", lambda E: None, lambda E: (ck(E), pend(E, "btc")["funds"].update(IBIT=-876.5))),
+        ("ck4", False, "checked_at changed AND a complete row changed", nopend0, lambda E: (nopend0(E), ck(E), comp(E, "eth")[-1].update(total=12345.6))),
+        ("ck5", False, "checked_at changed AND another top-level field (source) changed", nopend0, lambda E: (nopend0(E), ck(E), E.update(source="other"))),
+        ("ck7", True, "only light_checked_at + updated/fetched changed (light re-fetch, no data change)", nopend0, lambda E: (nopend0(E), E.update(light_checked_at="2026-10-24T16:17:00Z"))),
+        ("ck6", False, "checked_at changed AND a dataset field other than fetched (funds list) changed", nopend0, lambda E: (nopend0(E), ck(E), E["datasets"]["btc"]["funds"].append("XYZ")))]:
+        Bf = json.loads(ETF); b_fn(Bf); Bb = json.dumps(Bf, separators=(",", ":")).encode()
+        rc, out = decide(smoke("p" + case, [ETFN], {**served, "etf": em(a_fn)}), before("p" + case, {**ALL, "etf.json": Bb}))
+        ok((rc == 0) == want, f"checked_at ruling: stale etf.json, {label} -> {'no rollback' if want else 'rollback'}", out)
+    # a new pending row appearing after the last complete day (before had none) is also confined to the pending row
+    def nopend(E):
+        for d in E["datasets"].values(): d["days"] = [x for x in d["days"] if not x.get("pending")]
+    NP = em(nopend)
+    rc, out = decide(smoke("pnew", [ETFN], {**served, "etf": ETF}), before("pnew", {**ALL, "etf.json": NP}))
+    ok(rc == 0, "(a) a new pending row (pending, total null) after an unchanged history -> no rollback", out)
     # no_regress.py files: exact bytes, unreadable/non-JSON live file left out
     bd = before("f", {**ALL, "macro.json": b"<html>503</html>"})
     ok(open(os.path.join(bd, "etf.json"), "rb").read() == ETF and not os.path.exists(os.path.join(bd, "macro.json")), "no_regress.py files saves exact bytes; a non-JSON live answer is not saved")
@@ -138,6 +185,8 @@ try:
     rc, out = data_step("4", card_ok=False, smoke_fails=[ETFN]); ok(rc == 1 and "FAIL card presence" in out, "data.yml: stale-only smoke but card presence fails -> rollback", out[-600:])
     rc, out = data_step("5", smoke_fails=[ETFN], live_now={"derivs.json": der_back()}); ok(rc == 1 and "went backwards" in out and "NO ROLLBACK" not in out, "data.yml: live derivs went backwards -> rollback (before smoke runs)", out[-600:])
     rc, out = data_step("6", smoke_fails=[]); ok(rc == 0, "data.yml: clean smoke -> passes", out[-400:])
+    rc, out = data_step("7", smoke_fails=[ETFN], served_over={"etf": em(PV[0][3])}); ok(rc == 0, "data.yml: stale ETF changed only in the pending row -> no rollback", out[-500:])
+    rc, out = data_step("8", smoke_fails=[ETFN], served_over={"etf": em(PV[7][3])}); ok(rc == 1, "data.yml: pending row got a partial total -> rollback", out[-500:])
     # ci.yml smoke job: run the real smoke step, then model GitHub step semantics for the pages-tested promote step (if: success() && ...):
     # it runs only if NO earlier step failed (no continue-on-error anywhere). Ruling: after a stale-only pass the tag moves ONLY if every
     # non-freshness check passed; any other failure leaves the tag where it is (and the job fails -> rollback).
@@ -160,6 +209,10 @@ try:
         mv, rb = tag_moves(rc, [i]); ok(not mv and rb, f"ci.yml: stale-only smoke but '{names[i][:60]}' fails -> pages-tested stays, rollback")
     rc, out = ci_smoke("2", smoke_fails=[ETFN, "no page errors or app console errors"]); mv, rb = tag_moves(rc, [])
     ok(rc == 1 and not mv and rb, "ci.yml: stale ETF + a page error in smoke -> pages-tested stays, rollback", out[-400:])
+    rc, out = ci_smoke("4", smoke_fails=[ETFN], served_over={"etf": em(PV[0][3])}); mv, rb = tag_moves(rc, [])
+    ok(rc == 0 and mv and not rb, "ci.yml: stale ETF changed only in the pending row -> no rollback, tag moves", out[-400:])
+    rc, out = ci_smoke("5", smoke_fails=[ETFN], served_over={"etf": em(PV[5][3])}); mv, rb = tag_moves(rc, [])
+    ok(rc == 1 and not mv and rb, "ci.yml: pending row lost its pending flag -> rollback, tag stays", out[-400:])
     rc, out = ci_smoke("3", smoke_fails=[ETFN], served_over={"etf": etf_back()}); mv, rb = tag_moves(rc, [])
     ok(rc == 1 and not mv and rb, "ci.yml: stale ETF changed/backwards -> pages-tested stays, rollback", out[-400:])
     ok(os.path.exists(os.path.join(T, "wf-c1", "gates", "smoke.log")) and "NO ROLLBACK" in open(os.path.join(T, "wf-c1", "gates", "smoke.log")).read(), "ci.yml: decision logged to the gates smoke.log")
