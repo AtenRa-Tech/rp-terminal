@@ -118,11 +118,27 @@ ETF_LIM_DAYS = 2  # = tests/tsmoke.js 'etf.json last day within 2 US business da
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import nyse  # ONE NYSE trading-day calendar (twin of shared/nyse.js); NOT us_hol, the bond calendar above
 def etf_fresh(E, t):
-    """ETF flows: NYSE trading days after etf.json's last complete day (newest non-pending row) through today (UTC); ok while <= ETF_LIM_DAYS. Read by data_age.py (stale alarm)."""
-    ld, held = nyse.etf_last_complete(E)  # last COMPLETE day: a held-back (pending) newest row is not published; same rule as tests/tsmoke.js
-    if not ld: return {"ok": False, "why": "etf.json missing or no complete row", "held_back": held, "limit_days": ETF_LIM_DAYS}
-    bd = nyse.biz_days(ld, t)
-    return {"ok": bd <= ETF_LIM_DAYS, "last_date": ld, "held_back": held, "biz_days": bd, "limit_days": ETF_LIM_DAYS, "limit": f"{ETF_LIM_DAYS} NYSE trading days"}
+    """ETF flows: each fund (btc, eth) is judged on its own last complete day (newest non-pending row; a held-back pending row is not published).
+    ok only while EVERY fund is <= ETF_LIM_DAYS NYSE trading days (the older date decides). Read by data_age.py (the stale alarm)."""
+    funds = {}
+    for a in nyse.FUNDS:
+        ld, held = nyse.etf_last_fund(E, a)
+        if not ld:
+            funds[a] = {"ok": False, "why": "etf.json missing or no complete row", "held_back": held, "limit_days": ETF_LIM_DAYS}
+            continue
+        bd = nyse.biz_days(ld, t)
+        funds[a] = {"ok": bd <= ETF_LIM_DAYS, "last_date": ld, "held_back": held, "biz_days": bd, "limit_days": ETF_LIM_DAYS, "limit": f"{ETF_LIM_DAYS} NYSE trading days"}
+    ok_all = all(f.get("ok") for f in funds.values())
+    dated = [a for a in funds if funds[a].get("last_date")]
+    older = min(dated, key=lambda a: funds[a]["last_date"]) if dated else None
+    out = {"ok": ok_all, "funds": funds, "limit_days": ETF_LIM_DAYS, "limit": f"{ETF_LIM_DAYS} NYSE trading days"}
+    if older:
+        f = funds[older]
+        out.update({"last_date": f["last_date"], "held_back": f.get("held_back"), "biz_days": f["biz_days"]})
+    else:
+        helds = [funds[a].get("held_back") for a in funds if funds[a].get("held_back")]
+        out.update({"why": "etf.json missing or no complete row", "held_back": max(helds) if helds else None})
+    return out
 def market_fresh(m, t):
     u = (m or {}).get("updated")
     if not u: return {"ok": False, "why": "market.json missing or no 'updated'", "limit_h": MARKET_LIM_H}

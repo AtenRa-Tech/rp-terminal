@@ -15,9 +15,17 @@ const NYSE=(()=>{const C={},DAY=864e5,iso=t=>new Date(t).toISOString().slice(0,1
  const bizDays=(t,n=Date.now())=>{let d=0,x=Date.parse(iso(t));const e=Date.parse(iso(n));while(x<e){x+=DAY;if(open(x))d++}return d};
  // bizH(a,b): hours in [a,b) whose UTC date is an NYSE trading day
  const bizH=(a,b)=>{let h=0;for(let t=a;t<b;t+=36e5)if(open(t))h++;return h};
- // etfLast(E): etf.json's last COMPLETE day = newest non-pending row (fetch_etf.py holds the newest row pending, total null, until every fund reports),
- // per dataset from its days[], newest across datasets (same as fetch_etf.py's top-level last_date). held = newest row date still pending and newer than last, else null.
- const etfLast=E=>{let last=null,held=null;const ds=Object.values((E&&E.datasets)||{});for(const d of ds){const rows=(d&&d.days)||[];for(const r of rows){const x=String(r.date||'').slice(0,10);if(!x)continue;if(r.pending){if(!held||x>held)held=x}else if(!last||x>last)last=x}}
-  if(!ds.length&&E&&E.last_date)last=String(E.last_date).slice(0,10);if(held&&last&&held<=last)held=null;return {last,held}};
- return {holidays:y=>[...holidays(y)].sort(),open,bizDays,bizH,etfLast}})();
+ // etfLast(E, a): last COMPLETE day = newest non-pending days[] row (fetch_etf.py holds the newest row pending, total null, until every fund reports).
+ // With a ('btc'|'eth'): that fund only, {last,held}. Without a: {last,held,funds} where funds.btc/eth are each fund's {last,held};
+ // last is the older of the two complete days (it decides overall freshness: smoke and the alarm fail if either fund is past 2 NYSE trading days),
+ // held is the newest pending row newer than its own fund's last, else null. Old etf.json with no datasets falls back to last_date for both funds.
+ const FUNDS=['btc','eth'];
+ const etfOne=(d,fb)=>{let last=null,held=null;const rows=(d&&d.days)||[];for(const r of rows){const x=String(r.date||'').slice(0,10);if(!x)continue;if(r.pending){if(!held||x>held)held=x}else if(!last||x>last)last=x}
+  if(!rows.length&&fb)last=fb;if(held&&last&&held<=last)held=null;return{last,held}};
+ const etfLast=(E,a)=>{const ds=(E&&E.datasets)||{},fb=E&&E.last_date?String(E.last_date).slice(0,10):null,old=!E||!E.datasets;
+  if(a)return etfOne(ds[a],old?fb:null);
+  const funds={};for(const k of FUNDS)funds[k]=etfOne(ds[k],old?fb:null);
+  const lasts=FUNDS.map(k=>funds[k].last).filter(Boolean),helds=FUNDS.map(k=>funds[k].held).filter(Boolean);
+  return{last:lasts.length?lasts.slice().sort()[0]:null,held:helds.length?helds.slice().sort().at(-1):null,funds}};
+ return {holidays:y=>[...holidays(y)].sort(),open,bizDays,bizH,etfLast,FUNDS}})();
 if(typeof module==='object'&&module&&module.exports)module.exports=NYSE;

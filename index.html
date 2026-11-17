@@ -1232,11 +1232,19 @@ const NYSE=(()=>{const C={},DAY=864e5,iso=t=>new Date(t).toISOString().slice(0,1
  const bizDays=(t,n=Date.now())=>{let d=0,x=Date.parse(iso(t));const e=Date.parse(iso(n));while(x<e){x+=DAY;if(open(x))d++}return d};
  // bizH(a,b): hours in [a,b) whose UTC date is an NYSE trading day
  const bizH=(a,b)=>{let h=0;for(let t=a;t<b;t+=36e5)if(open(t))h++;return h};
- // etfLast(E): etf.json's last COMPLETE day = newest non-pending row (fetch_etf.py holds the newest row pending, total null, until every fund reports),
- // per dataset from its days[], newest across datasets (same as fetch_etf.py's top-level last_date). held = newest row date still pending and newer than last, else null.
- const etfLast=E=>{let last=null,held=null;const ds=Object.values((E&&E.datasets)||{});for(const d of ds){const rows=(d&&d.days)||[];for(const r of rows){const x=String(r.date||'').slice(0,10);if(!x)continue;if(r.pending){if(!held||x>held)held=x}else if(!last||x>last)last=x}}
-  if(!ds.length&&E&&E.last_date)last=String(E.last_date).slice(0,10);if(held&&last&&held<=last)held=null;return {last,held}};
- return {holidays:y=>[...holidays(y)].sort(),open,bizDays,bizH,etfLast}})();
+ // etfLast(E, a): last COMPLETE day = newest non-pending days[] row (fetch_etf.py holds the newest row pending, total null, until every fund reports).
+ // With a ('btc'|'eth'): that fund only, {last,held}. Without a: {last,held,funds} where funds.btc/eth are each fund's {last,held};
+ // last is the older of the two complete days (it decides overall freshness: smoke and the alarm fail if either fund is past 2 NYSE trading days),
+ // held is the newest pending row newer than its own fund's last, else null. Old etf.json with no datasets falls back to last_date for both funds.
+ const FUNDS=['btc','eth'];
+ const etfOne=(d,fb)=>{let last=null,held=null;const rows=(d&&d.days)||[];for(const r of rows){const x=String(r.date||'').slice(0,10);if(!x)continue;if(r.pending){if(!held||x>held)held=x}else if(!last||x>last)last=x}
+  if(!rows.length&&fb)last=fb;if(held&&last&&held<=last)held=null;return{last,held}};
+ const etfLast=(E,a)=>{const ds=(E&&E.datasets)||{},fb=E&&E.last_date?String(E.last_date).slice(0,10):null,old=!E||!E.datasets;
+  if(a)return etfOne(ds[a],old?fb:null);
+  const funds={};for(const k of FUNDS)funds[k]=etfOne(ds[k],old?fb:null);
+  const lasts=FUNDS.map(k=>funds[k].last).filter(Boolean),helds=FUNDS.map(k=>funds[k].held).filter(Boolean);
+  return{last:lasts.length?lasts.slice().sort()[0]:null,held:helds.length?helds.slice().sort().at(-1):null,funds}};
+ return {holidays:y=>[...holidays(y)].sort(),open,bizDays,bizH,etfLast,FUNDS}})();
 if(typeof module==='object'&&module&&module.exports)module.exports=NYSE;
 // nyse:end
 // ETF freshness counts NYSE trading hours only (one calendar with tests/tsmoke.js and the stale alarm), not every weekday hour
@@ -1249,7 +1257,7 @@ function drawEtf(ctx,W,H,a){const E=NX.etf,st=etfStats(E,a),A=a.toUpperCase(),{u
   const X=m,Y=top+150*u,Wd=W-2*m,Ht=H-Y-m-80*u;watermark(ctx,X,Y,Wd-86*u,Ht,u);const L=st.last30;bars(ctx,X,Y,Wd,Ht,u,{v:L.map(x=>x.total),lab:L.map(x=>dShort(ymd(x.date))),labT:L.map(x=>ymd(x.date)),every:5,yf:v=>(v<0?'-':'')+'$'+Math.abs(v).toFixed(0)+'M'})}
 function etfCap(a){const st=etfStats(NX.etf,a),A=a.toUpperCase();return`US spot ${A} ETFs: ${fM(st.L.total,0)} on ${dShort(ymd(st.L.date))} (Farside).\n\nLast 7 trading days: ${fM(st.s7)}. Last 30: ${fM(st.s30)}.\n\nNet flows in US$m across ${st.d.funds.length} funds; data through ${dU(ymd(st.L.date))}.`}
 function renderEtf(){const el=$('#nxEtf');if(!el)return;const E=NX.etf;if(!E){el.innerHTML='';return}const a=MAC.etfA,S2={btc:etfStats(E,'btc'),eth:etfStats(E,'eth')},bh=bizH(Date.parse(E.updated),Date.now()),stale=bh>36||Object.values(E.datasets).some(d=>d.status!=='ok');
-  const col=(k)=>{const s=S2[k];if(!s?.L)return`<div class="stat"><div class="k">${k.toUpperCase()}</div><div class="v">–</div></div>`;return`<div class="stat"><div class="k">${k.toUpperCase()} · ${dShort(ymd(s.L.date))}</div><div class="v ${cls(s.L.total)}">${fM(s.L.total)}</div><div style="font-size:12px">7d <span class="${cls(s.s7)}">${fM(s.s7)}</span> · 30d <span class="${cls(s.s30)}">${fM(s.s30)}</span></div>${(dm=>dm?`<div style="font-size:12px" class="etfdom">${dm.k}: ${fM(dm.v,1)} (${Math.round(dm.share*100)}% of the day)</div>`:'')(etfDom(s.L))}</div>`};
+  const col=(k)=>{const s=S2[k];if(!s?.L)return`<div class="stat" data-etf="${k}" data-etf-stale="1"><div class="k">${k.toUpperCase()}</div><div class="v">–</div></div>`;const fs=etfFundState(k);return`<div class="stat" data-etf="${k}" data-etf-stale="${fs.stale?'1':'0'}"><div class="k">${k.toUpperCase()} · ${dShort(ymd(s.L.date))}${fs.stale?'<span class="bias b-dn">⚠️ stale</span>':''}</div><div class="v ${cls(s.L.total)}">${fM(s.L.total)}</div><div style="font-size:12px">7d <span class="${cls(s.s7)}">${fM(s.s7)}</span> · 30d <span class="${cls(s.s30)}">${fM(s.s30)}</span></div>${(dm=>dm?`<div style="font-size:12px" class="etfdom">${dm.k}: ${fM(dm.v,1)} (${Math.round(dm.share*100)}% of the day)</div>`:'')(etfDom(s.L))}</div>`};
   el.innerHTML=`<div class="card"><h3>ETF flows · US spot${stale?'<span class="bias b-dn">⚠️ stale</span>':''}<span class="sp"></span><span class="mu" style="text-transform:none;letter-spacing:0;font-size:12px">US$m</span></h3>
    <div class="grid num">${col('btc')}${col('eth')}</div>
    <div class="chips" style="margin:10px 0 6px"><button class="pill ${a==='btc'?'on':''}" data-etfa="btc">BTC 30d</button><button class="pill ${a==='eth'?'on':''}" data-etfa="eth">ETH 30d</button></div>
@@ -1359,7 +1367,9 @@ function btcFund(){const FL=fundLatest(DV?.assets?.BTC);if(FL)return{f:FL.f,t:FL
 const LIVE_MAX=10*60000,dvLbl=dv=>dv?.at&&Date.now()-dv.at<=LIVE_MAX?'live':`as of ${dv?.at?hmU(dv.at):'an unknown time'} (fetched earlier, not live)`;
 const FUND_BAND=.01,fundSt=f=>f>FUND_BAND?'Funding positive':f<-FUND_BAND?'Funding negative':'Funding neutral';
 const st30=()=>{const s=SIGD?.ST;if(!s||s.v.length<2)return null;const n=s.v.length,k=Math.floor(s.t[n-1]/DAY)-30,j=s.t.findIndex(x=>Math.floor(x/DAY)===k);return j<0||!s.v[j]?null:(s.v[n-1]/s.v[j]-1)*100};// exact calendar date 30 days earlier, else null
-const etfStale=()=>{try{if(!NX.etf?.last_date)return false;const lt=ymd(NX.etf.last_date)+DAY,bh=bizH(lt,Date.now());if(bh>48){STALEM.etf={age:(Date.now()-lt)/36e5,src:'Farside',lim:48,limT:'48 business-hour'};return true}delete STALEM.etf;return false}catch(e){return false}};
+const ETF_LIM_DAYS=2;// same 2 NYSE trading-day limit as tests/tsmoke.js and the stale alarm (data_age.py)
+function etfFundState(a,now=Date.now()){const L=NYSE.etfLast(NX.etf,a);if(!L.last)return{stale:true,last:null,held:L.held,days:null};const days=NYSE.bizDays(L.last,now);return{stale:days>ETF_LIM_DAYS,last:L.last,held:L.held,days}}
+const etfStale=()=>{try{if(!NX.etf)return false;const b=['btc','eth'].map(a=>etfFundState(a)),st=b.some(x=>x.stale);if(st){const w=b.filter(x=>x.last).sort((p,q)=>p.last.localeCompare(q.last))[0]||b[0];STALEM.etf={age:w&&w.last?(Date.now()-ymd(w.last))/36e5:null,src:'Farside',lim:ETF_LIM_DAYS,limT:ETF_LIM_DAYS+' NYSE trading-day'};return true}delete STALEM.etf;return false}catch(e){return false}};
 const etf7=()=>{if(!NX.etf||etfStale())return null;try{const m=etfComb(NX.etf),k=[...m.keys()].sort();return k.length<7?null:k.slice(-7).reduce((s,x)=>s+m.get(x),0)}catch(e){return null}};
 function macDeltas(){const M=MAC.M;if(!M)return null;const o={};try{const G=gm2(M);o.yoy=G?.yoyCC??null;o.yoyUSD=G?.yoy;o.m2m=G?mU(G.t.at(-1)):'';const dx=ser('DTWEXBGS',M);if(dx){const j=back(dx,91);o.dxy=dx.v.at(-1);o.dxy3=(o.dxy/dx.v[j]-1)*100}
   const ry=ser('DFII10',M);if(ry){const j=back(ry,91);o.ry=ry.v.at(-1);o.ry3=(o.ry-ry.v[j])*100}}catch(e){}return o}
@@ -1448,7 +1458,7 @@ function topNews(){const W=S.watch.map(w=>{const nm=(D.mk[w.id]?.name||w.id).rep
     return{n,sc:(hit?2:0)+(out.length?2:0)+(age<6?2:age<24?1:0)-(age>48?2:0),hit:hit?.[0],out,age}}).sort((a,b)=>b.sc-a.sc||b.n.t-a.n.t).slice(0,3)}
 function freshLine(){const p=[];let stale=0;
   if(MAC.M){const ids=Object.keys(MAC.M.series||{});const st=ids.filter(id=>{try{return fresh(id,MAC.M).st}catch(e){return false}});stale+=st.length;p.push(`macro ${ids.length-st.length}/${ids.length} fresh`)}else p.push('macro loading');{const dc=dataConf();stale+=dc.stale.filter(k=>!/^macro /.test(k)).length;if(dc.pct!=null)p.push(`<span id="dataConf" class="${dc.stale.length?'dn':''}">data confidence ${dc.pct}%${dc.stale.length?' ('+esc(dc.stale.map(staleLbl).slice(0,4).join('; '))+')':''}</span>`)}
-  if(NX.etf?.last_date){const lt=ymd(NX.etf.last_date)+DAY,bh=bizH(lt,Date.now());if(bh>48)stale++;p.push(`ETF flows through ${dShort(ymd(NX.etf.last_date))}${bh>48?' (stale)':''}`)}
+  if(NX.etf){for(const a of['btc','eth']){const s=etfFundState(a);if(!s.last)continue;if(s.stale)stale++;p.push(`${a.toUpperCase()} ETF flows through ${dShort(ymd(s.last))}${s.stale?' (stale)':''}`)}}
   if(SIGD?.P){const ag=(Date.now()-(SIGD.P.t.at(-1)+DAY))/DAY;if(ag>1.5)stale++;p.push(`BTC history age ${ag.toFixed(1)}d (last completed close)`)}
   const fst=dataStale();stale+=fst.length;if(fst.length)p.push('stale data files: '+fst.join(', '));
   const its=todayItems().slice(0,5),au=its.filter(x=>x.audit);{const wb=au.filter(x=>x.audit==='warn'||x.audit==='bad');p.push(`<span id="audSt">audits ${au.filter(x=>x.audit==='ok').length}✓ ${au.filter(x=>x.audit==='warn').length}⚠ ${au.filter(x=>x.audit==='bad').length}✗ of top ${its.length}${AUDRUN?' (running)':''}${wb.length?' — '+wb.map(x=>`${x.audit==='bad'?'✗':'⚠'} ${esc(audName(x))}: ${esc(x.auditWhy||'see its audit')}`).join('; '):''}</span>`)}

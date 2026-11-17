@@ -42,18 +42,40 @@ def biz_days(last_ymd, now_ms):
     return n
 
 
-def etf_last_complete(E):
-    """(last, held): etf.json's last COMPLETE day = newest non-pending row (fetch_etf.py keeps the newest row pending, total None, until every
-    fund reports), per dataset from its days, newest across datasets (= fetch_etf.py top-level last_date); held = newest pending row date newer
-    than last, else None. Twin of NYSE.etfLast in shared/nyse.js."""
-    last = held = None; ds = list(((E or {}).get("datasets") or {}).values())
-    for d in ds:
-        for r in (d or {}).get("days") or []:
-            x = str(r.get("date") or "")[:10]
-            if not x: continue
-            if r.get("pending"):
-                if held is None or x > held: held = x
-            elif last is None or x > last: last = x
-    if not ds and (E or {}).get("last_date"): last = str(E["last_date"])[:10]
+FUNDS = ("btc", "eth")
+
+
+def _etf_one(d, fb=None):
+    last = held = None
+    rows = (d or {}).get("days") or []
+    for r in rows:
+        x = str(r.get("date") or "")[:10]
+        if not x: continue
+        if r.get("pending"):
+            if held is None or x > held: held = x
+        elif last is None or x > last: last = x
+    if not rows and fb: last = fb
     if held and last and held <= last: held = None
     return last, held
+
+
+def etf_last_fund(E, asset):
+    """(last, held) for one fund ('btc' or 'eth'). Twin of NYSE.etfLast(E, a). Old etf.json with no datasets falls back to last_date."""
+    ds = (E or {}).get("datasets") or {}
+    fb = str(E["last_date"])[:10] if (E or {}).get("last_date") else None
+    old = not (E or {}).get("datasets")
+    return _etf_one(ds.get(asset), fb if old else None)
+
+
+def etf_last_funds(E):
+    return {k: etf_last_fund(E, k) for k in FUNDS}
+
+
+def etf_last_complete(E):
+    """(last, held): last is the older of btc/eth last complete days (it decides overall freshness: smoke and the alarm fail if either
+    fund is past 2 NYSE trading days); held is the newest pending row newer than its own fund's last, else None. Twin of NYSE.etfLast(E).
+    Old etf.json with no datasets falls back to last_date for both funds."""
+    funds = etf_last_funds(E)
+    lasts = [funds[k][0] for k in FUNDS if funds[k][0]]
+    helds = [funds[k][1] for k in FUNDS if funds[k][1]]
+    return (min(lasts) if lasts else None), (max(helds) if helds else None)
