@@ -7,8 +7,15 @@ const p=require('puppeteer-core'),fs=require('fs'),path=require('path');const UR
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,900):''));if(!c)F.push(n)};
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/frozen/data/etf.json'),'utf8'));
 function staleBtc(){const E=JSON.parse(JSON.stringify(BASE));const d=E.datasets.btc;d.days=d.days.filter(x=>x.date<='2026-10-16');d.last_date='2026-10-16';/* fresh run stamps must not make it fresh */E.checked_at=E.light_checked_at=E.updated;return E}
-async function run(name,E){const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
+// QA 17 Nov: last complete row Fri 23 Oct, newest row Mon 26 Oct pending (partial IBIT), file `updated` Fri 22:00 UTC (38 weekday hours before Tue 12:00)
+function friTue(){const E=JSON.parse(JSON.stringify(BASE));for(const [a,d] of Object.entries(E.datasets)){const p=d.days.at(-1);if(p.date!=='2026-10-23'||!p.pending)throw new Error('frozen pending row expected on 23 Oct');
+  for(const k of Object.keys(p.funds))if(p.funds[k]==null)p.funds[k]=0;p.total=Math.round(Object.values(p.funds).reduce((s,v)=>s+v,0)*10)/10;p.pending=false;d.last_date='2026-10-23';d.fetched='2026-10-23T22:00:00Z';
+  d.days.push({date:'2026-10-26',total:null,funds:Object.fromEntries(Object.keys(p.funds).map(k=>[k,k==='IBIT'?-33.3:null])),pending:true})}
+ E.last_date='2026-10-23';E.updated='2026-10-23T22:00:00Z';return E}
+async function run(name,E,clock){const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});
  const pg=await b.newPage();await pg.setViewport({width:412,height:915});const errs=[];pg.on('pageerror',e=>errs.push(e.message));
+ /* optional page clock (registered after the frozen preload's, so it wins): a constant instant like the frozen gate's */
+ if(clock)await pg.evaluateOnNewDocument(T=>{const RD=Date;class FD extends RD{constructor(...a){a.length?super(...a):super(T)}static now(){return T}}window.Date=FD},clock);
  await pg.setRequestInterception(true);const body=JSON.stringify(E);
  pg.on('request',q=>{if(/\/data\/etf\.json/.test(q.url()))return q.respond({status:200,contentType:'application/json',body});return q.continue()});
  await pg.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'domcontentloaded',timeout:90000});
@@ -30,9 +37,10 @@ async function run(name,E){const b=await p.launch({executablePath:process.env.CH
   o.st={btc:await studio('btc'),eth:await studio('eth')};
   window.render8k=r8;
   // Audit: the BTC ETF caption text (as it would be if pasted or left from before the feed went stale) must fail while BTC is stale
-  const aud=async a=>{CAPCTX={kind:'etf',a};NEWSPICK=null;let ta=document.getElementById('draft');if(!ta){ta=document.createElement('textarea');ta.id='draft';document.body.appendChild(ta)}ta.value=etfCap(a);
-   await runDraftAudit('draft','Simple');const el=document.querySelector('#audit');const vd=el&&el.querySelector('.vd');const res={vd:vd?vd.className:'',txt:el?el.innerText:''};if(el)el.classList.remove('on');return res};
-  o.aud={btc:await aud('btc'),eth:await aud('eth')};return o});
+  const NEWS=(window.D&&D.news&&D.news[0])||{title:'US spot bitcoin ETFs post net outflows',desc:'Flows data for the week.',src:'Test',t:Date.now()-3600e3,link:'https://example.invalid/etf'};
+  const aud=async(a,news)=>{CAPCTX={kind:'etf',a};NEWSPICK=news?NEWS:null;let ta=document.getElementById('draft');if(!ta){ta=document.createElement('textarea');ta.id='draft';document.body.appendChild(ta)}ta.value=etfCap(a);
+   await runDraftAudit('draft','Simple');const el=document.querySelector('#audit');const vd=el&&el.querySelector('.vd');const res={vd:vd?vd.className:'',txt:el?el.innerText:''};if(el)el.classList.remove('on');NEWSPICK=null;return res};
+  o.aud={btc:await aud('btc'),eth:await aud('eth'),btcNews:await aud('btc',1),ethNews:await aud('eth',1)};return o});
  await b.close();return{name,...r,errs}}
 // (g) 17 Nov ruling: a pending row's partial values (IBIT filled, even a partial total while still flagged pending) never reach the page card,
 // Studio, a caption (every template), an export (fillText of every ETF render) or the Audit.
@@ -59,7 +67,18 @@ async function runPending(){const b=await p.launch({executablePath:process.env.C
   const st={btc:etfStats(NX.etf,'btc'),eth:etfStats(NX.etf,'eth')};return{rows,L:{btc:st.btc.L.date,eth:st.eth.L.date},pend:NX.etf.datasets.btc.days.at(-1).pending}});
  await b.close();return{...r,errs}}
 (async()=>{
- const S=await run('STALE_BTC',staleBtc()),C=await run('FRESH',BASE);
+ const S=await run('STALE_BTC',staleBtc()),C=await run('FRESH',BASE),Q=await run('FRI_TUE_OLD_UPDATED',friTue(),Date.UTC(2026,9,27,12));
+ // QA fix 2: the ETF stale check runs whenever the draft's context is ETF, even with a news story picked
+ ok(/bad/.test(S.aud.btcNews.vd)&&/Stale data: US spot BTC ETF flows stale/.test(S.aud.btcNews.txt),'QA2: news pick + ETF context + stale BTC ETF -> Audit fails with Stale data',S.aud.btcNews);
+ ok(!/Stale data/.test(S.aud.ethNews.txt),'QA2 control: news pick + fresh ETH ETF context -> no stale failure',S.aud.ethNews.txt.slice(0,300));
+ // QA fix 1: file age (`updated`) never marks ETF stale; only each fund's last complete day (#45, 2 NYSE trading days)
+ ok(Q.sw.btc===''&&Q.sw.eth==='','QA1: last complete row Fri 23 Oct, now Tue 27 Oct 12:00 UTC, newest row pending, updated 38 weekday hours old -> both funds fresh',Q.sw);
+ ok(!/stale/i.test(Q.head)&&!Q.colStale.length&&!/stale/i.test(Q.note),'QA1: no stale label on the card (header, columns, note)',{head:Q.head,col:Q.colStale,note:Q.note});
+ ok(['share','4k','cap'].every(k=>!Q.btn['btc_'+k].dis)&&Q.btn.btc_4k.exp===1&&Q.btn.btc_share.exp===1,'QA1: card Share / 4K / Caption not blocked',Q.btn);
+ ok(Q.st.btc.ta.length===3&&!Q.st.btc.stale&&Object.values(Q.st.btc.exp).every(v=>v===1),'QA1: Studio captions and 8K / X 4K / Share work',{ta:Q.st.btc.ta.length,exp:Q.st.btc.exp});
+ ok(!/Stale data/.test(Q.aud.btc.txt)&&!/Stale data/.test(Q.aud.btcNews.txt),'QA1: Audit has no stale failure',Q.aud.btc.txt.slice(0,300));
+ ok(Q.fig.btc&&Q.st.btc.ta.some(t=>/23 Oct/.test(t)),'QA1: captions use the last complete day (23 Oct), never the pending 26 Oct row',Q.st.btc.ta.map(t=>t.slice(0,90)));
+ ok(!Q.errs.length,'QA1: no page errors',Q.errs);
  console.log('[STALE_BTC] '+JSON.stringify({sw:S.sw,head:S.head,colStale:S.colStale,btn:S.btn,st:{btc:{...S.st.btc,box:S.st.btc.box.slice(0,200)},eth:{capFor:S.st.eth.capFor,ta:S.st.eth.ta.length,exp:S.st.eth.exp}},aud:{btc:S.aud.btc.vd,eth:S.aud.eth.vd}}).slice(0,2500));
  ok(/stale: last complete day 16 Oct 2026/.test(S.sw.btc)&&S.sw.eth==='','helper (reads etfFundState): BTC stale (last complete day 16 Oct, past 2 NYSE trading days), ETH fresh',S.sw);
  // (e) the ETF card shows its stale label
