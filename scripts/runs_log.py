@@ -113,6 +113,32 @@ def us_biz_days(last_ymd, now_ms):
         if x.year not in H: H[x.year] = us_hol(x.year)
         if x.weekday() < 5 and x not in H[x.year]: n += 1
     return n
+ETF = os.path.join(os.path.dirname(DERIVS), "etf.json")
+ETF_LIM_DAYS = 2  # = tests/tsmoke.js 'etf.json last day within 2 US business days' and the page's 48 trading-hour ETF line
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import nyse  # ONE NYSE trading-day calendar (twin of shared/nyse.js); NOT us_hol, the bond calendar above
+def etf_fresh(E, t):
+    """ETF flows: each fund (btc, eth) is judged on its own last complete day (newest non-pending row; a held-back pending row is not published).
+    ok only while EVERY fund is <= ETF_LIM_DAYS NYSE trading days (the older date decides). Read by data_age.py (the stale alarm)."""
+    funds = {}
+    for a in nyse.FUNDS:
+        ld, held = nyse.etf_last_fund(E, a)
+        if not ld:
+            funds[a] = {"ok": False, "why": "etf.json missing or no complete row", "held_back": held, "limit_days": ETF_LIM_DAYS}
+            continue
+        bd = nyse.biz_days(ld, t)
+        funds[a] = {"ok": bd <= ETF_LIM_DAYS, "last_date": ld, "held_back": held, "biz_days": bd, "limit_days": ETF_LIM_DAYS, "limit": f"{ETF_LIM_DAYS} NYSE trading days"}
+    ok_all = all(f.get("ok") for f in funds.values())
+    dated = [a for a in funds if funds[a].get("last_date")]
+    older = min(dated, key=lambda a: funds[a]["last_date"]) if dated else None
+    out = {"ok": ok_all, "funds": funds, "limit_days": ETF_LIM_DAYS, "limit": f"{ETF_LIM_DAYS} NYSE trading days"}
+    if older:
+        f = funds[older]
+        out.update({"last_date": f["last_date"], "held_back": f.get("held_back"), "biz_days": f["biz_days"]})
+    else:
+        helds = [funds[a].get("held_back") for a in funds if funds[a].get("held_back")]
+        out.update({"why": "etf.json missing or no complete row", "held_back": max(helds) if helds else None})
+    return out
 def market_fresh(m, t):
     u = (m or {}).get("updated")
     if not u: return {"ok": False, "why": "market.json missing or no 'updated'", "limit_h": MARKET_LIM_H}
@@ -157,7 +183,7 @@ def record():
     out = {"note": "Written by scripts/runs_log.py after each derivatives run. Freshness per feed from derivs.json latest.*_t (not 'updated'). "
                    f"Limits: oi {LIM['oi']:g}h, basis {LIM['basis']:g}h, funding 12h. sla_24h judges each hour by live data age through the hour (9 Nov), not by whether a run happened in it.",
            "last_run": iso(t), "runs": runs, "hourly": hourly, "sla_24h": sla(runs, t),
-           "market": mk, "macro": mc, "macro_checked": macro_checked(load(MACRO, {}), t)}
+           "market": mk, "macro": mc, "macro_checked": macro_checked(load(MACRO, {}), t), "etf": etf_fresh(load(ETF, {}), t)}
     tmp = RUNS + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"), allow_nan=False)

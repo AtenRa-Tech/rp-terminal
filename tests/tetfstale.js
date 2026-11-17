@@ -1,6 +1,6 @@
 // tetfstale.js (narrow no-rollback ruling, 12 Nov): the ETF stale label carries through to Studio. Frozen gate (node -r ./freeze/preload.js).
-// Fixture = frozen etf.json (T0 Sat 24 Oct 2026 15:26Z) with BTC cut back to Fri 16 Oct (120 trading hours after its last complete day, past the
-// 48h limit = stale) and ETH left at Thu 22 Oct (fresh): BTC and ETH are judged separately (17 Nov ruling).
+// Fixture = frozen etf.json (T0 Sat 24 Oct 2026 15:26Z) with BTC cut back to Fri 16 Oct (5 NYSE trading days after its last complete day, past
+// the 2-day limit of #45's etfFundState = stale) and ETH left at Thu 22 Oct (fresh): BTC and ETH are judged separately (17 Nov ruling).
 // (e) the ETF card shows its stale label (header + the BTC column, not ETH); (d) a stale ETF figure stays out of Studio captions and every export
 // path, and the 🛡 Audit fails on it; fresh ETH still captions, exports and audits normally. Control: the unmodified frozen file shows no stale label.
 const p=require('puppeteer-core'),fs=require('fs'),path=require('path');const URL=process.env.URL||'http://localhost:8765/index.html';
@@ -17,7 +17,7 @@ async function run(name,E){const b=await p.launch({executablePath:process.env.CH
  await new Promise(r=>setTimeout(r,1500));
  const r=await pg.evaluate(async()=>{const o={};const card=document.querySelector('#nxEtf .card');
   o.sw={btc:etfAStale('btc'),eth:etfAStale('eth')};o.head=card?card.querySelector('h3').innerText:'';o.note=card?card.querySelector('small.note').innerText:'';
-  o.colStale=[...document.querySelectorAll('#nxEtf [data-etfstale]')].map(e=>e.dataset.etfstale);
+  o.colStale=[...document.querySelectorAll('#nxEtf [data-etf-stale="1"]')].map(e=>e.dataset.etf);
   const fig=a=>{const s=etfStats(NX.etf,a);return s&&s.L?fM(s.L.total,0):null};o.fig={btc:fig('btc'),eth:fig('eth')};
   // count every export: render8k is what every PNG path (8K, 4K, Share) goes through
   let n=0;const r8=window.render8k;window.render8k=function(...a){n++;throw new Error('test: export blocked here')};window.__n=()=>n;
@@ -61,7 +61,7 @@ async function runPending(){const b=await p.launch({executablePath:process.env.C
 (async()=>{
  const S=await run('STALE_BTC',staleBtc()),C=await run('FRESH',BASE);
  console.log('[STALE_BTC] '+JSON.stringify({sw:S.sw,head:S.head,colStale:S.colStale,btn:S.btn,st:{btc:{...S.st.btc,box:S.st.btc.box.slice(0,200)},eth:{capFor:S.st.eth.capFor,ta:S.st.eth.ta.length,exp:S.st.eth.exp}},aud:{btc:S.aud.btc.vd,eth:S.aud.eth.vd}}).slice(0,2500));
- ok(/stale: last complete day 16 Oct 2026/.test(S.sw.btc)&&S.sw.eth==='','helper: BTC stale (last complete day 16 Oct, past 48 trading hours), ETH fresh',S.sw);
+ ok(/stale: last complete day 16 Oct 2026/.test(S.sw.btc)&&S.sw.eth==='','helper (reads etfFundState): BTC stale (last complete day 16 Oct, past 2 NYSE trading days), ETH fresh',S.sw);
  // (e) the ETF card shows its stale label
  ok(/⚠️ stale/.test(S.head),'(e) ETF card header shows the stale label',S.head);
  ok(S.colStale.length===1&&S.colStale[0]==='btc','(e) stale label on the BTC column only (BTC and ETH judged separately)',S.colStale);
