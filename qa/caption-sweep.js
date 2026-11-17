@@ -3,7 +3,10 @@
 // (qa/news-replay/*.json, frozen, so an outlet headline can't block a deploy). Live news captions are swept too but only reported as WARN.
 // Generates every caption template for every card from the page's own data and checks it.
 const {chromium}=require('playwright-core');
-const ARGS=process.argv.slice(2),URL=ARGS.find(a=>!a.startsWith('--'))||'https://atenra-tech.github.io/rp-terminal/',LIVENEWS=!ARGS.includes('--no-live-news');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
+const ARGS=process.argv.slice(2),URL=ARGS.find(a=>!a.startsWith('--'))||'https://atenra-tech.github.io/rp-terminal/',LIVEONLY=ARGS.includes('--live-news-only'),LIVENEWS=LIVEONLY||!ARGS.includes('--no-live-news');
+// 11 Nov split (data gates): the BLOCKING run is `--no-live-news` on the recorded feeds (qa/_load.js QA_NET=replay); the live-news part runs on its
+// own as `QA_NET=live ... --live-news-only`: it reports live-headline captions as WARN, never judges the blocking checks and always exits 0 once it ran.
 const fs0=require('fs'),RDIR=process.env.RDIR||(__dirname+'/news-replay'),SNAPS=fs0.existsSync(RDIR)?fs0.readdirSync(RDIR).filter(f=>/^20.*\.json$/.test(f)).sort().map(f=>({f,...JSON.parse(fs0.readFileSync(RDIR+'/'+f))})):[];
 // ONE banned-word source (supervisor ruling 8 Oct): shared/banned-words.json. This gate keeps no list of its own; the app inlines the same file (tests/tbanned.js).
 const BW=JSON.parse(require('fs').readFileSync(require('path').join(__dirname,'..','shared','banned-words.json'),'utf8')),bwRe=x=>new RegExp(x[0],x[1]);
@@ -20,7 +23,7 @@ function trivial(n){const v=parseFloat(n);return /^(19|20)\d\d$/.test(n)||(!/[%k
 (async()=>{
 const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});
 const p=await b.newPage({viewport:{width:412,height:915}});
-await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:90000});
+await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now());
 await p.waitForTimeout(8000);
 for(const t of ['signals','macro','altseason','news','chart','studio','today']){await p.evaluate(t=>{try{tab(t)}catch(e){}},t);await p.waitForTimeout(4000)}
 const rows=await p.evaluate(({SNAPS,LIVENEWS})=>{const out=[];const ctxs=[];
@@ -71,6 +74,7 @@ const warns=[];for(const r of rows){const fails0=fails;if(r.warn)fails=warns;try
 const seen=new Set();const uniq=fails.filter(f=>{const k=f.join('|');return !seen.has(k)&&seen.add(k)});
 const n=rows.filter(r=>r.t&&!r.picked).length;
 const wseen=new Set(),wq=warns.filter(f=>{const k=f.join('|');return !wseen.has(k)&&wseen.add(k)});
+if(LIVEONLY){console.log(`caption sweep LIVE NEWS ONLY (warn-only, never blocks): ${wq.length} live-news warnings; blocking checks are not judged in this run`);wq.forEach(f=>console.log(' WARN (live news, non-blocking)',f.join(' | ')));require('fs').writeFileSync(__dirname+'/caption-sweep.livenews.last.json',JSON.stringify({url:URL,at:new Date().toISOString(),warnings:wq},null,1));process.exit(0)}
 console.log(`caption sweep: ${n} captions (${SNAPS.length} replay snapshots), ${uniq.length} blocking failures, ${wq.length} live-news warnings (${URL})`);
 uniq.forEach(f=>console.log(' FAIL',f.join(' | ')));wq.forEach(f=>console.log(' WARN (live news, non-blocking)',f.join(' | ')));
 require('fs').writeFileSync(__dirname+'/caption-sweep.last.json',JSON.stringify({url:URL,at:new Date().toISOString(),captions:n,fails:uniq,warnings:wq,rows:rows.map(({ref,...r})=>r)},null,1));

@@ -1,11 +1,11 @@
 // Post-deploy smoke test. Usage: node tests/tsmoke.js https://atenra-tech.github.io/rp-terminal/
 // Every tab renders, no page errors / app console errors, india.json serves no content (no 2xx), each data file is under its age limit.
 const p=require('puppeteer-core');const URL=(process.argv[2]||'https://atenra-tech.github.io/rp-terminal/').replace(/\/?$/,'/');
-const MONTHLY_DAYS=require('../shared/freshness.json').monthly_days,monthlyOk=a=>a<=MONTHLY_DAYS;
+const MONTHLY_DAYS=require('../shared/freshness.json').monthly_days,H10_DAYS=require('../shared/freshness.json').h10_days,monthlyOk=a=>a<=MONTHLY_DAYS;
 // 11 Nov: no-India guard. Pages sometimes answers a missing file with 503 before 404, so only content (any 2xx) fails; a 5xx or a network
 // error is retried up to 3 times; anything that never returns 2xx is absent. get(u) -> {status} (throws on network error).
 const absent=async(get,u,tries=3,wait=1500)=>{let st=0;for(let i=0;i<=tries;i++){try{st=(await get(u)).status}catch(e){st=0}if(st>=200&&st<300)return{absent:false,status:st,tries:i};if(st&&st<500)return{absent:true,status:st,tries:i};if(i<tries&&wait)await new Promise(r=>setTimeout(r,wait))}return{absent:true,status:st,tries}};
-module.exports={MONTHLY_DAYS,monthlyOk,absent};
+module.exports={MONTHLY_DAYS,H10_DAYS,monthlyOk,absent};
 const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&!c?' :: '+JSON.stringify(x).slice(0,400):''));if(!c)F.push(n)};
 // bizDays = NYSE trading days after the observation date, up to and including today (UTC): ONE calendar shared/nyse.js (also inlined in index.html for the ETF line, Python twin scripts/nyse.py for the stale alarm).
 const NYSE=require('../shared/nyse.js'),DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>NYSE.bizDays(t,n),etfLast=E=>NYSE.etfLast(E);Object.assign(module.exports,{bizDays,etfLast,NYSE});
@@ -20,7 +20,7 @@ if(require.main===module)(async()=>{
  if(J.etf){const L=etfLast(J.etf);ok(!!L.last&&bizDays(Date.parse(L.last+'T00:00:00Z'))<=2,'etf.json last day within 2 US business days',L)}
  if(J.macro){const S=J.macro.series,age=id=>S[id]?(now-Date.parse(S[id].last_date+'T00:00:00Z'))/DAY:Infinity,lim={daily:['DGS10','DGS2','DFII10','T10Y2Y'],fx:['DEXUSEU','DEXJPUS','DEXCHUS','DTWEXBGS'],weekly:['WALCL','WDTGAL','WTREGEN'],monthly:['M2SL']};
   /* daily Fed series are checked in-page below with the app's FEDD limit and usBizDays (one shared limit) */
-  /* H.10 FX: daily values published weekly (Monday ~21:15 UTC, through the prior Friday; Tuesday after a Monday holiday), so a Friday value is legitimately up to ~11 days old just before the next release */lim.fx.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days (H.10 weekly release)`,S[id]?.last_date));lim.weekly.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days`,S[id]?.last_date));
+  /* H.10 FX: daily values published weekly (Monday ~21:15 UTC, through the prior Friday; Tuesday after a Monday holiday), so a Friday value is legitimately up to ~11 days old just before the next release */lim.fx.forEach(id=>ok(age(id)<=H10_DAYS,`macro ${id} within ${H10_DAYS} days (H.10 weekly release)`,S[id]?.last_date));lim.weekly.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days`,S[id]?.last_date));
   lim.monthly.forEach(id=>ok(monthlyOk(age(id)),`macro ${id} within ${MONTHLY_DAYS} days of month start`,S[id]?.last_date))}
  const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915});
  const errs=[];pg.on('pageerror',e=>errs.push('pageerror '+e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|net::ERR|CORS|status of 4\d\d|status of 5\d\d/.test(m.text()))errs.push('console '+m.text())});

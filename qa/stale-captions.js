@@ -12,6 +12,7 @@ const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 //  C4 status:    ruling 3 Oct: ages are XhYm under 48h, whole days above; age past limit never rounded into it;
 //                format "Funding: stale, 12h10m old, past 12h limit (OKX)". Also fails any text that says "Xh old (limit Yh)" with X <= Y (contradictory status)
 const {chromium}=require('playwright-core');const fs=require('fs'),path=require('path');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 const BASE=JSON.parse(fs.readFileSync(process.env.DERIVS_FIXTURE||path.join(__dirname,'../fixtures/derivs-stale.json'),'utf8'));
 const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i,H=36e5;
@@ -28,8 +29,8 @@ const FUND=[/funding[^|\n]{0,40}(neutral|positive|negative|elevated|flat)/i,/neu
 const OI=[/\bopen interest[^|\n]{0,30}[-+]?\d/i,/\bOI [-+−]?\d+(\.\d+)?%/];
 const hits=(rows,res)=>{const o=[];for(const [w,t] of rows)for(const re of res){const m=t.match(re);if(m)o.push(w+': "'+m[0]+'"')}return [...new Set(o)]};
 async function run(b,body){const p=await b.newPage({viewport:{width:412,height:915}});
- await p.route('**/*',r=>{const u=r.request().url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});r.continue()});
- await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:90000});await p.waitForTimeout(8000);
+ await p.route('**/*',r=>{const u=r.request().url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});r.fallback()});/* fallback (11 Nov): the request goes on to the loader's policy (recorded feeds on the data gate, preload replay in CI, network on the live site) */
+ await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now());await p.waitForTimeout(8000);
  for(const t of ['signals','macro','markets','chart','studio','today']){await p.evaluate(t=>{try{tab(t)}catch(e){}},t);await p.waitForTimeout(4000)}
  const rows=await p.evaluate(()=>{const rows=[];const ctxs=[];
   (SIG||[]).forEach(s=>ctxs.push([{kind:'sig',id:s.id},s]));(MAC.cards||[]).forEach(s=>ctxs.push([{kind:'mac',id:s.id}]));

@@ -1,6 +1,7 @@
 // Contact sheets for supervisor review. Usage: node qa/contact-sheet.js [URL] [OUTDIR]
 // screen-<w>.png: every chart canvas on screen per tab at phone width w (360/412/430, DPR 2), labelled; exports.png: every 4K export (downscaled), labelled.
 const {chromium}=require('playwright-core');const fs=require('fs');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/',OUT=process.argv[3]||'/workspace/rp-terminal/contact';fs.mkdirSync(OUT,{recursive:true});
 const compose=async(p,items,colW,cols,title)=>p.evaluate(async({items,colW,cols,title})=>{const imgs=await Promise.all(items.map(it=>new Promise(r=>{const im=new Image();im.onload=()=>r([it,im]);im.onerror=()=>r([it,null]);im.src=it.src})));
   const pad=16,lab=34,cells=imgs.map(([it,im])=>({it,im,h:im?Math.round(im.height*colW/im.width):40}));const rows=[];for(let i=0;i<cells.length;i+=cols)rows.push(cells.slice(i,i+cols));
@@ -9,7 +10,7 @@ const compose=async(p,items,colW,cols,title)=>p.evaluate(async({items,colW,cols,
   return c.toDataURL('image/png')},{items,colW,cols,title});
 const save=(f,d)=>{fs.writeFileSync(f,Buffer.from(d.split(',')[1],'base64'));console.log('wrote',f)};
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});
-for(const w of [360,412,430]){const p=await b.newPage({viewport:{width:w,height:900},deviceScaleFactor:2});await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:120000}).catch(()=>{});await p.waitForTimeout(8000);
+for(const w of [360,412,430]){const p=await b.newPage({viewport:{width:w,height:900},deviceScaleFactor:2});await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{timeout:120000}).catch(e=>console.error(String(e.message||e)));await p.waitForTimeout(8000);
   const items=[];const grab=async(tag)=>{const r=await p.evaluate(tag=>[...document.querySelectorAll('section.on canvas')].filter(c=>c.width>50&&c.height>50&&c.offsetParent).map((c,i)=>({label:`${tag} · ${c.id||c.dataset.sg||c.dataset.mg||c.dataset.sp||c.className||i} · ${c.width}×${c.height}`,src:c.toDataURL('image/png')})),tag);items.push(...r.filter(x=>!/data-sp|spark/.test(x.label)))};
   for(const t of ['today','signals','macro','markets','news','studio']){await p.evaluate(t=>tab(t),t);await p.waitForTimeout(t==='signals'?15000:5000);await grab(t+' @'+w)}
   await p.evaluate(()=>tab('chart'));for(const iv of ['15m','1h','4h','1d','1w']){await p.click(`[data-iv="${iv}"]`).catch(()=>{});await p.waitForTimeout(5000);await grab('chart '+iv+' @'+w)}

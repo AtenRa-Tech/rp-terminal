@@ -3,13 +3,14 @@
 // Known cards = union of SIGT keys (titles registered by the app) and the 16-card list from 7 Oct.
 // Usage: node qa/card-presence.js [URL]. Exit 1 = block.
 const {chromium}=require('playwright-core');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 // Rarity-gated cards (buildSignals returns null unless the reading is a >=30-day extreme): rv7/rv30 for BTC/ETH/LINK and linkbtc.
 // Their absence is by design, so they are not required.
 const GATED=/^(rv\d+(BTC|ETH|LINK)|linkbtc)$/;
 const BASE=['mayer','rainbow','ethbtc','2y','wrsi','fundBTC','hash','halv','gold','pi','dd','stable','fundETH','oicapBTC','oicapETH'];
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});const p=await b.newPage({viewport:{width:412,height:915}});
-await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:90000});await p.waitForTimeout(15000);
+await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now());await p.waitForTimeout(15000);
 const r=await p.evaluate(()=>({sig:(SIG||[]).map(c=>c.id),stale:(typeof SIGSTALE!=='undefined'&&Array.isArray(SIGSTALE)?SIGSTALE:[]).map(c=>({id:c.id,stale:c.stale,why:c.staleWhy})),sigt:typeof SIGT!=='undefined'?Object.keys(SIGT):[]}));await b.close();
 const known=[...new Set([...BASE,...r.sigt])].filter(id=>!GATED.test(id)),f=[];
 for(const id of known){const st=r.stale.find(s=>s.id===id);if(r.sig.includes(id)){if(st)f.push(id+': in both SIG and SIGSTALE');continue}

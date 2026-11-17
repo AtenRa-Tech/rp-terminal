@@ -4,6 +4,7 @@ const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 // Per scored signal: last point at (limit - 1 min) => fresh, score kept, FULL confidence (100 multi-source / 85 single-source);
 // (limit + 1 min) => stale: no score, no confidence, out of POST NOW. Also: no card is ever both stale and scored/full confidence.
 const p=require('puppeteer-core'),fs=require('fs'),path=require('path');const URL=process.argv[2]||'http://localhost:8765/index.html';
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const ROOT=path.join(__dirname,'..'),FR=JSON.parse(fs.readFileSync(path.join(ROOT,'shared/freshness.json'),'utf8')),SC=FR.signal_cards,CF=FR.confidence,DAY=864e5;
 const RUNS=JSON.parse(fs.readFileSync(path.join(ROOT,'data/_runs.json'),'utf8'));
 const F=[];const ok=(c,m)=>{if(!c)F.push(m)};
@@ -12,7 +13,7 @@ const fundLim=Object.entries(RUNS.runs?.at?.(-1)?.feeds||{}).filter(([k])=>/fund
 ok(fundLim.every(x=>x===SC.funding_h),`funding limit: freshness.json ${SC.funding_h}h vs _runs.json ${fundLim}`);
 function expLimit(s,now){const cd=Math.floor(now/DAY)*DAY-DAY;if(s.settled)return now-SC.funding_h*36e5;if(s.id==='wrsi')return cd-SC.weekly_lag_days*DAY;return cd-SC.daily_lag_days*DAY}
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();
- await pg.goto(URL,{waitUntil:'networkidle2',timeout:120000});await pg.waitForFunction(()=>typeof SIG!=='undefined'&&SIG&&SIG.filter(s=>s.score!=null).length>=8,{timeout:120000});
+ await QL.open(pg,URL,{timeout:120000});await pg.waitForFunction(()=>typeof SIG!=='undefined'&&SIG&&SIG.filter(s=>s.score!=null).length>=8,{timeout:120000});
  const R=await pg.evaluate(()=>{const now=Date.now(),out=[]; // in-page: Date.now() IS the page clock (T0 when frozen)
   const one=(s0,T)=>{const s=Object.assign({},s0);delete s.audit;s.closed=T;s.lastT=T;delete s.stale;const ss=SIGSTALE.slice();const keep=staleSweep([s],now);SIGSTALE.length=0;SIGSTALE.push(...ss);
     if(keep.length)oppScore(s);return{stale:!!s.stale,score:keep.length?s.score:s.score,conf:keep.length?s.opp?.conf?.[0]:null,inSIG:keep.length===1}};
