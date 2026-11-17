@@ -2,9 +2,10 @@
 // "node news-replay.js run [URL]" feeds every saved snapshot through that build's newsClusters() and diffs
 // top-10 order + cluster counts against news-replay/baseline.json (written on first run or with --rebase). Review-only: exit 0 always.
 const {chromium}=require('playwright-core');const fs=require('fs');const path=require('path');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const [mode='run',URL='https://atenra-tech.github.io/rp-terminal/']=process.argv.slice(2);const DIR=path.join(__dirname,'news-replay');
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});const p=await b.newPage();
-await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:90000});await p.waitForTimeout(8000);
+await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now());await p.waitForTimeout(8000);
 await p.evaluate(()=>{try{tab('news')}catch(e){}});await p.waitForTimeout(5000);
 if(mode==='snap'){const raw=await p.evaluate(()=>({now:Date.now(),news:D.news}));const f=path.join(DIR,new Date().toISOString().replace(/[:.]/g,'-')+'.json');fs.writeFileSync(f,JSON.stringify(raw));console.log('saved',f,raw.news.length);await b.close();return}
 const out={};for(const f of fs.readdirSync(DIR).filter(f=>/^20.*\.json$/.test(f)).sort()){const s=JSON.parse(fs.readFileSync(path.join(DIR,f)));

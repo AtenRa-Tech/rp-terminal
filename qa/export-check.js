@@ -1,8 +1,9 @@
 // Export gate. Usage: node export-check.js [URL]. Exit 1 = block deploy / roll back.
 const {chromium}=require('playwright-core');const fs=require('fs');
+const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});const p=await b.newPage({viewport:{width:412,height:915}});
-await p.goto(URL+(URL.includes('?')?'&':'?')+'v='+Date.now(),{waitUntil:'networkidle',timeout:90000});await p.waitForTimeout(8000);
+await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now());await p.waitForTimeout(8000);
 for(const t of ['markets','chart','studio','today']){await p.evaluate(t=>{try{tab(t)}catch(e){}},t);await p.waitForTimeout(5000)}
 const E=await p.evaluate(()=>{const P=CanvasRenderingContext2D.prototype,of=P.fillText;let log=[];P.fillText=function(t,...a){log.push(String(t));return of.call(this,t,...a)};
  const jobs=[];try{CAPCTX=null}catch(e){}
