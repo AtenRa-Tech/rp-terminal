@@ -158,7 +158,7 @@ jobs:
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tdeploy_proof.py
       - name: Narrow no-rollback (blocking) - live smoke skips rollback only for stale data this deploy left byte-identical; anything else rolls back
-        run: python3 tests/tnorollback.py
+        run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tnorollback.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tclosed_hours.py
@@ -251,14 +251,9 @@ jobs:
       - name: Smoke test the live site (failure rolls back, except stale data this deploy did not change)
         # narrow no-rollback ruling (12 Nov): skip the rollback ONLY when every failing smoke check is a freshness check AND each stale data file is
         # byte-identical to what live served before this deploy (live-before-files/, saved by the deploy job). Any other failure, a crash, or a stale
-        # file that changed (e.g. went backwards) still fails this step and rolls back. Decision: .github/scripts/stale_only.py (tests/tnorollback.py).
-        run: |
-          mkdir -p "$RUNNER_TEMP/gates"; set -o pipefail; out="$RUNNER_TEMP/smoke-out"; rm -rf "$out"
-          if SMOKE_OUT="$out" node tests/tsmoke.js "$SITE_URL" 2>&1 | tee "$RUNNER_TEMP/gates/smoke.log"; then exit 0; fi
-          if python3 .github/scripts/stale_only.py "$out" live-before-files | tee -a "$RUNNER_TEMP/gates/smoke.log"; then
-            { echo "### Live smoke: stale data only, no rollback"; grep '^NO ROLLBACK' "$RUNNER_TEMP/gates/smoke.log" || true; } >> "$GITHUB_STEP_SUMMARY"; exit 0
-          fi
-          exit 1
+        # file that changed (e.g. went backwards) still fails this step and rolls back. Decision: .github/scripts/smoke_or_stale.sh + stale_only.py (tests/tnorollback.py).
+        # pages-tested (below, if: success()) therefore moves after a stale-only pass ONLY when every other smoke step passed (tests/tnorollback.py).
+        run: mkdir -p "$RUNNER_TEMP/gates"; bash .github/scripts/smoke_or_stale.sh "$SITE_URL" live-before-files "$RUNNER_TEMP/gates/smoke.log"
       - name: Export check on the live site (failure rolls back)
         working-directory: ${{ runner.temp }}
         run: node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL" || { sleep 90; node "$GITHUB_WORKSPACE/qa/export-check.js" "$SITE_URL"; }
