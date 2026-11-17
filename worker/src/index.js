@@ -5,12 +5,16 @@
 //        derivatives: the oldest newest-hour among every asset's latest.oi_t / latest.basis_t is >= 3h old (a new settled OKX hour is out), or
 //        daily batch due: the oldest of macro.json checked_at / etf.json checked_at|updated is before the latest 00:20 UTC slot
 //        (same rule as .github/scripts/refresh_slot.py batch_due, which data.yml's own catch-up uses)
+//      etf.json: checked_at is written by EVERY fetch_etf.py run (17 Nov), so a held-back (pending) newest row never makes the batch due
 //   3. only then ask GitHub: skip if a data.yml run is queued / in progress, or a workflow_dispatch run was created < 55 min ago;
-//      otherwise dispatch data.yml on main ONCE (inputs.full = "true" when the daily batch is due)
+//      otherwise dispatch data.yml on main ONCE (inputs.full = "true" when the daily batch is due).
+//      Batch back-off (supervisor): a completed "Refresh data (full)" dispatch run created today (UTC) while the batch is STILL due is a failed
+//      attempt; after 3 of them, full=true is sent again only when the newest attempt is >= 6h old. Backed off, a stale-derivatives
+//      refresh still goes with full=false, and nothing goes if derivatives are fresh.
 //   4. heartbeat (optional HEARTBEAT_URL, healthchecks.io style): ping on a clean tick, <url>/fail when any feed is past its shared
 //      freshness limit (same checks as .github/scripts/data_age.py) or the timer itself could not do its job (GitHub API error, bad token).
 // Secrets only from env (GH_TOKEN, HEARTBEAT_URL); neither is ever logged or sent anywhere except its own host.
-import { DISPATCH_DERIVS_H, LAST_RUN_MAX_MIN, MACRO_FETCH_LIMIT_H, BATCH_UTC, ONE_PER_HOUR_MIN, ACTIVE } from "./limits.js";
+import { DISPATCH_DERIVS_H, LAST_RUN_MAX_MIN, MACRO_FETCH_LIMIT_H, BATCH_UTC, ONE_PER_HOUR_MIN, ACTIVE, BATCH_MAX_FAILED, BATCH_RETRY_H, FULL_TITLE } from "./limits.js";
 
 const H = 3600000;
 const ms = (x) => { const t = Date.parse(x); return Number.isFinite(t) ? t : NaN; };
@@ -72,6 +76,17 @@ export function staleProblems(R, now) {
   return bad;
 }
 
+// supervisor back-off: {ok, failed, why}. dispatchRuns = data.yml workflow_dispatch runs (newest first, GitHub API objects)
+export function batchBackoff(dispatchRuns, now) {
+  const d = new Date(now), day0 = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const tries = (dispatchRuns || []).filter((r) => r.display_title === FULL_TITLE && r.status === "completed" && ms(r.created_at) >= day0 && ms(r.created_at) <= now);
+  if (tries.length < BATCH_MAX_FAILED) return { ok: true, failed: tries.length };
+  const newest = Math.max(...tries.map((r) => ms(r.created_at)));
+  const h = (now - newest) / H;
+  if (h >= BATCH_RETRY_H) return { ok: true, failed: tries.length };
+  return { ok: false, failed: tries.length, why: `daily batch failed ${tries.length} times today (UTC); next full try ${(BATCH_RETRY_H - h).toFixed(1)}h after the last one` };
+}
+
 function ghHeaders(token) {
   return { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "rpt-refresh-timer" };
 }
@@ -106,18 +121,24 @@ export async function tick(env, deps = {}) {
       try {
         const [a, b] = await Promise.all([
           fetchFn(`${api}/runs?per_page=30`, { headers: ghHeaders(token) }),
-          fetchFn(`${api}/runs?event=workflow_dispatch&per_page=1`, { headers: ghHeaders(token) }),
+          fetchFn(`${api}/runs?event=workflow_dispatch&per_page=50`, { headers: ghHeaders(token) }),
         ]);
         if (!a.ok || !b.ok) { problems.push(`GitHub API read failed (HTTP ${a.ok ? b.status : a.status}); token missing scope or expired?`); out.skip = "github read failed"; }
         else {
           const runs = ((await a.json()).workflow_runs) || [];
-          const lastD = (((await b.json()).workflow_runs) || [])[0];
+          const dRuns = ((await b.json()).workflow_runs) || [];
+          const lastD = dRuns[0];
+          let full = due ? "true" : "false";
+          if (due) {
+            const bo = batchBackoff(dRuns, now); out.batch_failed_today = bo.failed;
+            if (!bo.ok) { full = "false"; out.batch_backoff = bo.why; problems.push(bo.why); }
+          }
           const active = runs.find((r) => ACTIVE.includes(r.status));
           const recentMin = lastD ? (now - ms(lastD.created_at)) / 60000 : Infinity;
           if (active) out.skip = `a ${wf} run is already ${active.status} (run ${active.id})`;
+          else if (full === "false" && !derivsStale) out.skip = `batch backed off and derivatives fresh: nothing to fetch`;
           else if (recentMin < ONE_PER_HOUR_MIN) out.skip = `a workflow_dispatch run was created ${Math.round(recentMin)} min ago (< ${ONE_PER_HOUR_MIN})`;
           else {
-            const full = due ? "true" : "false";
             const r = await fetchFn(`${api}/dispatches`, { method: "POST", headers: { ...ghHeaders(token), "content-type": "application/json" }, body: JSON.stringify({ ref, inputs: { full } }) });
             if (r.status === 204 || r.ok) { out.dispatched = true; out.full = full; }
             else { problems.push(`dispatch failed (HTTP ${r.status})`); out.skip = "dispatch failed"; }

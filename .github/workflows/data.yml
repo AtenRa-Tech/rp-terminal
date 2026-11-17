@@ -1,4 +1,6 @@
 name: Refresh data
+# 17 Nov: a dispatched daily-batch run is titled "Refresh data (full)" so the Cloudflare timer (worker/) can count today's failed batch attempts (back-off)
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.full && 'Refresh data (full)' || 'Refresh data' }}
 
 # 21 Oct (account suspended for excessive automation): ONE data workflow on a slow schedule.
 #  - HOURLY at :17 and :47 (9 Nov: two slots, at most one real refresh an hour; the slot job skips a run when derivs were fetched < 45 min ago): derivatives (OI, funding, basis) + market in ONE run, ONE commit, ONE push, ONE fast publish.

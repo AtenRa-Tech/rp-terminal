@@ -10,11 +10,13 @@ The code is plain JavaScript with no npm dependencies. `tests/tworker.js` tests 
 2. It decides whether a refresh has anything to fetch:
    - **Derivatives are 3h old or more.** It takes every asset's `latest.oi_t` and `latest.basis_t` (the fields `runs_log.py` and `data_age.py` use) and looks at the oldest one. An OKX hour is stored once it is 2h settled, so at 3h a new settled hour is out.
    - **The daily batch is due.** It uses the same rule as `refresh_slot.py batch_due()`, which `data.yml` uses for its own catch-up. The batch is due when the older of `macro.json` `checked_at` and `etf.json` `checked_at`/`updated` is before the most recent 00:20 UTC slot. If either is unreadable, the batch counts as due.
+   - **A held-back ETF row never makes the batch due.** `fetch_etf.py` writes `checked_at` on every run, even when nothing changed except the timestamps (for example the newest row is still `pending: true`, waiting on a fund). Before 17 Nov it only rewrote `updated` when the content changed, so an unchanged pending row left `updated` from the day before and the batch looked due all day.
    - If neither is true, it does nothing on GitHub at all, not even an API read.
 3. When there is something to fetch, it asks the GitHub API about `data.yml`:
    - It skips if any run is `queued`, `in_progress`, `waiting`, `requested` or `pending`.
    - It skips if a `workflow_dispatch` run was created in the last 55 minutes. Together with the hourly tick, this is the one-dispatch-an-hour cap, and it also counts dispatches that someone or something else started.
    - Otherwise it sends **one** `workflow_dispatch` on `main` with `inputs.full = "true"` when the batch is due and `"false"` otherwise. There are no retries.
+   - **Batch back-off (supervisor):** `data.yml` titles a full=true dispatch run "Refresh data (full)" (`run-name`). A completed run with that title created today (UTC), while the batch is still due, counts as a failed attempt. After 3 failed attempts in a UTC day, full=true is only sent again once the newest attempt is 6h old. While it is backed off, a stale-derivatives refresh still goes with full=false, nothing goes if derivatives are fresh, and the heartbeat reports `/fail` ("daily batch failed 3 times today").
 4. Heartbeat (optional `HEARTBEAT_URL`, for healthchecks.io):
    - On a clean tick it pings `<url>`.
    - It pings `<url>/fail` with the reasons when any feed is past its shared limit. These are the same checks as `data_age.py` and the stale alarm: each feed's `lim_h` from `_runs.json` (OI and basis 5h, funding 12h), market `limit_h` (3h), any macro series with `ok: false`, the macro fetch older than 26h, and `last_run` older than 90 minutes.

@@ -128,7 +128,9 @@ jobs:
         run: python3 tests/tkeep_hours.py
       - name: OKX-first chain, source-change refusal, OI continuity, funding newest-window merge, publish guard vs live (blocking, fixtures only)
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tokx_first.py
-      - name: Cloudflare Worker refresh timer (blocking; mocked fetch, no network) - fresh/in-progress/stale/batch-due/heartbeat cases
+      - name: ETF checked_at every run - a pending (held-back) ETF row never makes the daily batch due (blocking, fixtures only)
+        run: python3 tests/tetf_checked.py
+      - name: Cloudflare Worker refresh timer (blocking; mocked fetch, no network) - fresh/in-progress/stale/batch-due/back-off/heartbeat cases
         run: node tests/tworker.js
       - name: Fast publish path selection + no-regress (blocking)
         if: steps.scope.outputs.full == 'true'

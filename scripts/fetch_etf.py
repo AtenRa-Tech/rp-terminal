@@ -91,7 +91,10 @@ def main():
             prev = json.load(open(OUT, encoding="utf-8"))
         except Exception:
             prev = {}
-    out = {"updated": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"), "units": "US$m (net daily flow)",
+    # 17 Nov: 'checked_at' = time of this fetch run, written EVERY run (like macro.json), so refresh_slot.py batch_due and the
+    # Cloudflare timer see that the daily batch ran even when nothing changed (e.g. the newest row is still pending on a fund, or a
+    # weekend/holiday with no new row). 'updated' stays the time the content last changed. A pending row never makes the batch due.
+    out = {"updated": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"), "checked_at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"), "units": "US$m (net daily flow)",
            "source": "Farside Investors (farside.co.uk)", "datasets": {}}
     for k, urls in URLS.items():
         p = prev.get("datasets", {}).get(k)
@@ -124,12 +127,14 @@ def main():
     out["last_date"] = max([d.get("last_date") or "" for d in out["datasets"].values()]) or None
     # skip rewrite if nothing but timestamps changed
     def strip(o):
-        o = json.loads(json.dumps(o)); o.pop("updated", None)
+        o = json.loads(json.dumps(o)); o.pop("updated", None); o.pop("checked_at", None)
         for d in o.get("datasets", {}).values():
             d.pop("fetched", None)
         return o
     if prev and strip(prev) == strip(out):
-        print("etf.json: no data change"); return
+        prev["checked_at"] = out["checked_at"]
+        write_json(OUT, prev)
+        print(f"etf.json: no data change; checked_at={out['checked_at']} (updated stays {prev.get('updated')})"); return
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     write_json(OUT, out)
     print("etf.json written")

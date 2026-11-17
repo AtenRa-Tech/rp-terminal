@@ -18,7 +18,7 @@ function runs(o = {}) {
 const today0025 = iso(Date.UTC(2026, 10, 17, 0, 25)), yday0025 = iso(Date.UTC(2026, 10, 16, 0, 25));
 function world(o = {}) {
   return { derivs: o.derivs ?? derivs(2.1, 2.1), runs: o.runs ?? runs({ oi: 2.1 }), macro: o.macro ?? { checked_at: today0025, updated: today0025 }, etf: o.etf ?? { updated: today0025 },
-    active: o.active ?? [], lastDispatchMin: o.lastDispatchMin ?? 120, ghStatus: o.ghStatus ?? 200, dispatchStatus: o.dispatchStatus ?? 204, liveDown: o.liveDown ?? [] };
+    active: o.active ?? [], lastDispatchMin: o.lastDispatchMin ?? 120, dispatchRuns: o.dispatchRuns, ghStatus: o.ghStatus ?? 200, dispatchStatus: o.dispatchStatus ?? 204, liveDown: o.liveDown ?? [] };
 }
 function mock(w) {
   const calls = [];
@@ -28,7 +28,7 @@ function mock(w) {
     const live = url.match(/^https:\/\/atenra-tech\.github\.io\/rp-terminal\/data\/(derivs|_runs|macro|etf)\.json\?v=\d+$/);
     if (live) { const k = live[1] === '_runs' ? 'runs' : live[1]; if (w.liveDown.includes(k)) return res(503, null); return res(200, JSON.parse(JSON.stringify(w[k]))); }
     if (url === `${API}/runs?per_page=30`) return res(w.ghStatus, { workflow_runs: [...w.active.map((s, i) => ({ id: 900 + i, status: s, event: 'schedule', created_at: iso(NOW - 5 * 60000) })), { id: 1, status: 'completed', event: 'schedule', created_at: iso(NOW - 50 * 60000) }] });
-    if (url === `${API}/runs?event=workflow_dispatch&per_page=1`) return res(w.ghStatus, { workflow_runs: [{ id: 2, status: 'completed', event: 'workflow_dispatch', created_at: iso(NOW - w.lastDispatchMin * 60000) }] });
+    if (url === `${API}/runs?event=workflow_dispatch&per_page=50`) return res(w.ghStatus, { workflow_runs: w.dispatchRuns || [{ id: 2, status: 'completed', event: 'workflow_dispatch', display_title: 'Refresh data', created_at: iso(NOW - w.lastDispatchMin * 60000) }] });
     if (url === `${API}/dispatches` && init.method === 'POST') return res(w.dispatchStatus, null);
     if (url.startsWith(HB)) return res(200, null);
     throw new Error('unmocked network call: ' + url);
@@ -89,6 +89,35 @@ function mock(w) {
   ok(posts(r.calls).length === 0 && r.out.batch_due === false, '00:07 UTC with yesterday 00:25 batch: not due yet (slot is 00:20)', r.out);
   r = await run(world({ macro: { checked_at: yday0025 }, active: ['in_progress'] }));
   ok(posts(r.calls).length === 0, 'batch due but a run in progress: no dispatch', r.out);
+
+  // ETF row held back (pending: true, waiting on a fund) never makes the batch due by itself
+  const etfPending = (upd, chk) => ({ updated: upd, ...(chk ? { checked_at: chk } : {}), last_date: '2026-11-13', datasets: { btc: { status: 'ok', last_date: '2026-11-13', days: [{ date: '2026-11-13', total: 120.5, pending: false }, { date: '2026-11-16', total: null, pending: true }] }, eth: { status: 'ok', last_date: '2026-11-16', days: [{ date: '2026-11-16', total: -12.0, pending: false }] } } });
+  r = await run(world({ etf: etfPending(yday0025, today0025) }));
+  ok(r.out.batch_due === false && posts(r.calls).length === 0 && gh(r.calls).length === 0, 'ETF newest row pending, batch ran today (checked_at today, updated yesterday because content unchanged): not due, no dispatch', r.out);
+  r = await run(world({ etf: etfPending(today0025) }));
+  ok(r.out.batch_due === false && posts(r.calls).length === 0, 'ETF newest row pending, updated today (no checked_at yet): not due, no dispatch', r.out);
+  r = await run(world({ etf: etfPending(yday0025, today0025), derivs: derivs(3.1, 2.1), runs: runs() }));
+  ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'false', 'ETF pending + stale derivatives: one dispatch with full "false" (the pending row adds no batch)', r.out);
+
+  // supervisor back-off: 3 failed batch attempts in one UTC day, then one full try every 6h
+  const fullRun = (hAgo, st = 'completed', t = 'Refresh data (full)') => ({ id: Math.round(hAgo * 100), status: st, event: 'workflow_dispatch', display_title: t, created_at: iso(NOW - hAgo * H) });
+  const due0 = { macro: { checked_at: yday0025 } };
+  r = await run(world({ ...due0, dispatchRuns: [fullRun(2.1), fullRun(8), fullRun(13)] }));
+  ok(posts(r.calls).length === 0 && /failed 3 times today/.test(r.out.batch_backoff || ''), 'back-off: 3 failed full attempts today, newest 2.1h ago, 4th attempt within 6h -> NO dispatch', r.out);
+  ok(hb(r.calls)[0].url.endsWith('/fail') && /daily batch failed 3 times/.test(hb(r.calls)[0].body), 'back-off: heartbeat /fail says the batch keeps failing');
+  r = await run(world({ ...due0, derivs: derivs(3.1, 2.1), runs: runs(), dispatchRuns: [fullRun(2.1), fullRun(8), fullRun(13)] }));
+  ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'false', 'back-off + stale derivatives: one dispatch, full "false" (no 4th batch try)', r.out);
+  r = await run(world({ ...due0, dispatchRuns: [fullRun(6.1), fullRun(8), fullRun(13)] }));
+  ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true', 'back-off: newest failed attempt 6.1h ago -> one full try', r.out);
+  r = await run(world({ ...due0, dispatchRuns: [fullRun(2.1), fullRun(8)] }));
+  ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true', 'back-off: only 2 failed attempts today -> third full try goes (subject to the 55 min rule)', r.out);
+  r = await run(world({ ...due0, dispatchRuns: [fullRun(2.1), fullRun(16), fullRun(17)] }));
+  ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true', "back-off is per UTC day: yesterday's attempts (16h, 17h ago) do not count", r.out);
+  r = await run(world({ ...due0, dispatchRuns: [fullRun(2.1, 'completed', 'Refresh data'), fullRun(3, 'completed', 'Refresh data'), fullRun(4, 'completed', 'Refresh data')] }));
+  ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true', 'back-off counts only full=true runs ("Refresh data (full)"), not derivatives-only dispatches', r.out);
+  const dyText = fs.readFileSync(path.join(ROOT, '.github/workflows/data.yml'), 'utf8');
+  ok(dyText.includes(`inputs.full && '${L.FULL_TITLE}' || 'Refresh data'`) && /^run-name: /m.test(dyText), 'data.yml run-name marks a full=true dispatch with limits.js FULL_TITLE');
+  ok(L.BATCH_MAX_FAILED === 3 && L.BATCH_RETRY_H === 6, 'back-off constants: 3 failed attempts per UTC day, then every 6h');
 
   // heartbeat
   r = await run(world({ runs: runs({ oi: 2.1, funding: 13 }) }));
