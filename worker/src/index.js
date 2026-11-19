@@ -3,7 +3,7 @@
 //   1. read live data/derivs.json, _runs.json, macro.json, etf.json (cache-busted)
 //   2. decide whether a refresh has something to fetch:
 //        derivatives: the oldest newest-hour among every asset's latest.oi_t / latest.basis_t is past 3h (C4: exactly 3.0h is fresh, not dispatched),
-//        daily batch due: the oldest of macro.json checked_at / etf.json checked_at (fallback: updated, never light_checked_at) is before the latest 00:20 UTC slot
+//        daily batch due: the oldest of macro.json checked_at / etf.json checked_at (no fallback to updated; missing -> due; never light_checked_at) is before the latest 00:20 UTC slot
 //        (same rule as .github/scripts/refresh_slot.py batch_due, which data.yml's own catch-up uses)
 //      etf.json: only the full batch writes checked_at; a light re-fetch writes light_checked_at and must not make the batch look done
 //   3. only then ask GitHub: skip if a data.yml run is queued / in progress, or a workflow_dispatch run was created < 55 min ago;
@@ -68,8 +68,9 @@ export function batchDue(checked, now) {
   if (!t.length || t.some((x) => Number.isNaN(x))) return true;
   return Math.min(...t) < slot;
 }
-// checked_at only (same as refresh_slot.py); fallback to updated on old files. Never light_checked_at: a light ETF re-fetch must leave the batch due.
-const checkedAt = (j) => (j && (j.checked_at || j.updated)) || null;
+// checked_at only (same as refresh_slot.py). No fallback to updated: a light ETF run rewrites updated, so a missing checked_at means the batch is due.
+// Never light_checked_at: a light ETF re-fetch must leave the batch due.
+export const checkedAt = (j) => (j && j.checked_at) || null;
 
 // port of .github/scripts/data_age.py check(): every problem that makes the live stale alarm fail
 export function staleProblems(R, now) {

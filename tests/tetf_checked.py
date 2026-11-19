@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Supervisor: only the full batch writes checked_at; --light writes only light_checked_at.
-refresh_slot.py and the Worker read checked_at (fallback: updated on old files), never light_checked_at.
+refresh_slot.py and the Worker read checked_at only (no fallback to updated; missing -> batch due), never light_checked_at.
 ETF freshness comes only from last_date / the per-fund NYSE rule; no check-time field ever makes ETF fresh.
 Fixtures only; temp output, never data/."""
 import datetime as dt, io, contextlib, json, os, sys, tempfile
@@ -56,18 +56,22 @@ ok(j3.get("checked_at") == "2026-11-17T00:25:00Z" and j3.get("light_checked_at")
 ok(rs.batch_due(rs.checked_at([fe.OUT]) + ["2026-11-17T00:25:00Z"], now) is False,
    "after the full batch, batch_due is false", j3.get("checked_at"))
 
-# old file without checked_at: fallback is updated, still not light_checked_at
+# file without checked_at (live etf.json today): NO fallback to updated -> the batch is due (19 Nov review)
 old_path = os.path.join(T, "old.json")
-json.dump({"updated": "2026-11-16T00:25:00Z", "light_checked_at": "2026-11-17T00:24:00Z"}, open(old_path, "w"))
-ok(rs.checked_at([old_path]) == ["2026-11-16T00:25:00Z"],
-   "old file with no checked_at: fallback is updated, never light_checked_at", rs.checked_at([old_path]))
-ok(rs.batch_due(rs.checked_at([old_path]) + [macro_yday], now) is True,
-   "old file: a light stamp today does not clear a stale updated", None)
+json.dump({"updated": "2026-11-17T09:00:00Z", "light_checked_at": "2026-11-17T09:00:00Z"}, open(old_path, "w"))
+try:
+    rs.checked_at([old_path]); raised = False
+except KeyError:
+    raised = True
+ok(raised, "file with no checked_at: checked_at() never falls back to updated or light_checked_at (raises)", None)
+import subprocess
+outp = subprocess.run([sys.executable, os.path.join(ROOT, ".github/scripts/refresh_slot.py"), "--batch-due", old_path], capture_output=True, text=True).stdout.strip()
+ok(outp == "true", "--batch-due on a file with no checked_at prints true even though updated is recent", outp)
 
 # source: checked_at() body never reads light_checked_at as a value
 src = open(os.path.join(ROOT, ".github/scripts/refresh_slot.py")).read()
 body = src.split("def checked_at", 1)[1].split("if __name__", 1)[0]
-ok('j.get("light_checked_at")' not in body and 'j["light_checked_at"]' not in body and 'j.get("checked_at") or j["updated"]' in body,
+ok('j.get("light_checked_at")' not in body and 'j["light_checked_at"]' not in body and 'j["checked_at"]' in body and 'j["updated"]' not in body and 'j.get("updated")' not in body,
    "refresh_slot.checked_at implementation does not read light_checked_at as a value", body)
 
 # (c) no check-time field makes stale ETF fresh

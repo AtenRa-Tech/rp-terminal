@@ -37,7 +37,7 @@ def run_plan(event, schedule, full_input, etf_obj, batch_done=True):
     os.symlink(os.path.join(ROOT, ".github"), os.path.join(d, ".github"))
     now = dt.datetime.now(dt.timezone.utc); chk = (now if batch_done else now - dt.timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
     json.dump({"checked_at": chk, "updated": chk}, open(os.path.join(d, "data/macro.json"), "w"))
-    e = json.loads(json.dumps(etf_obj)); e["updated"] = chk; json.dump(e, open(os.path.join(d, "data/etf.json"), "w"))
+    e = json.loads(json.dumps(etf_obj)); e["updated"] = chk; e["checked_at"] = chk; json.dump(e, open(os.path.join(d, "data/etf.json"), "w"))
     script = str(plan["run"]).replace("${{ github.event_name }}", event).replace("${{ inputs.full }}", full_input).replace("${{ github.event.schedule }}", schedule)
     assert "${{" not in script, script
     out = os.path.join(d, "out"); open(out, "w").close()

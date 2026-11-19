@@ -17,7 +17,7 @@ function runs(o = {}) {
 }
 const today0025 = iso(Date.UTC(2026, 10, 17, 0, 25)), yday0025 = iso(Date.UTC(2026, 10, 16, 0, 25));
 function world(o = {}) {
-  return { derivs: o.derivs ?? derivs(2.1, 2.1), runs: o.runs ?? runs({ oi: 2.1 }), macro: o.macro ?? { checked_at: today0025, updated: today0025 }, etf: o.etf ?? { updated: today0025 },
+  return { derivs: o.derivs ?? derivs(2.1, 2.1), runs: o.runs ?? runs({ oi: 2.1 }), macro: o.macro ?? { checked_at: today0025, updated: today0025 }, etf: o.etf ?? { updated: today0025, checked_at: today0025 },
     active: o.active ?? [], lastDispatchMin: o.lastDispatchMin ?? 120, dispatchRuns: o.dispatchRuns, ghStatus: o.ghStatus ?? 200, dispatchStatus: o.dispatchStatus ?? 204, liveDown: o.liveDown ?? [] };
 }
 function mock(w) {
@@ -89,11 +89,11 @@ function mock(w) {
   ok(posts(r.calls).length === 0, 'second tick 1 min after a dispatch: no second dispatch', r.out);
 
   // daily batch due -> one dispatch with full=true
-  r = await run(world({ macro: { checked_at: yday0025 }, etf: { updated: today0025 } }));
+  r = await run(world({ macro: { checked_at: yday0025 }, etf: { checked_at: today0025, updated: today0025 } }));
   ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true' && r.out.batch_due, 'daily batch due (macro last fetched yesterday, derivs fresh): ONE dispatch, inputs.full "true"', r.out);
-  r = await run(world({ macro: { checked_at: today0025 }, etf: { updated: yday0025 } }));
+  r = await run(world({ macro: { checked_at: today0025 }, etf: { checked_at: yday0025, updated: yday0025 } }));
   ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true', 'daily batch due when ETF is the older one', r.out);
-  r = await run(world({ macro: { checked_at: yday0025 }, etf: { updated: yday0025 } }), ENV, Date.parse('2026-11-17T00:07:00Z'));
+  r = await run(world({ macro: { checked_at: yday0025 }, etf: { checked_at: yday0025, updated: yday0025 } }), ENV, Date.parse('2026-11-17T00:07:00Z'));
   ok(posts(r.calls).length === 0 && r.out.batch_due === false, '00:07 UTC with yesterday 00:25 batch: not due yet (slot is 00:20)', r.out);
   r = await run(world({ macro: { checked_at: yday0025 }, active: ['in_progress'] }));
   ok(posts(r.calls).length === 0, 'batch due but a run in progress: no dispatch', r.out);
@@ -103,7 +103,8 @@ function mock(w) {
   r = await run(world({ etf: etfPending(yday0025, today0025) }));
   ok(r.out.batch_due === false && posts(r.calls).length === 0 && gh(r.calls).length === 0, 'ETF newest row pending, batch ran today (checked_at today, updated yesterday because content unchanged): not due, no dispatch', r.out);
   r = await run(world({ etf: etfPending(today0025) }));
-  ok(r.out.batch_due === false && posts(r.calls).length === 0, 'ETF newest row pending, updated today (no checked_at yet): not due, no dispatch', r.out);
+  ok(r.out.batch_due === true && posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true',
+    'ETF with no checked_at (live today), updated today by a light run that completed the pending row: batch DUE, one full dispatch (no fallback to updated)', r.out);
   r = await run(world({ etf: etfPending(yday0025, today0025), derivs: derivs(3.1, 2.1), runs: runs() }));
   ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'false', 'ETF pending + stale derivatives: one dispatch with full "false" (the pending row adds no batch)', r.out);
 
@@ -111,9 +112,11 @@ function mock(w) {
   r = await run(world({ macro: { checked_at: yday0025 }, etf: { checked_at: yday0025, light_checked_at: today0025, updated: yday0025 } }));
   ok(r.out.batch_due === true && posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true',
     'light re-fetch after 00:20 UTC (light_checked_at today, checked_at yesterday) leaves the daily batch due', r.out);
-  r = await run(world({ macro: { checked_at: today0025 }, etf: { updated: yday0025, light_checked_at: today0025 } }));
+  r = await run(world({ macro: { checked_at: today0025 }, etf: { updated: today0025, light_checked_at: today0025 } }));
   ok(r.out.batch_due === true && posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true',
-    'ETF with no checked_at: fallback is updated, never light_checked_at, so a light stamp today cannot clear the batch', r.out);
+    'ETF with no checked_at: batch due even when updated and light_checked_at are today (no fallback, never light_checked_at)', r.out);
+  ok(W.checkedAt({ updated: today0025 }) === null && W.checkedAt({ updated: today0025, light_checked_at: today0025 }) === null && W.checkedAt({ checked_at: yday0025, updated: today0025 }) === yday0025,
+    'checkedAt reads checked_at only: never updated, never light_checked_at', null);
 
   // supervisor back-off: 3 failed batch attempts in one UTC day, then one full try every 6h
   const fullRun = (hAgo, st = 'completed', t = 'Refresh data (full)') => ({ id: Math.round(hAgo * 100), status: st, event: 'workflow_dispatch', display_title: t, created_at: iso(NOW - hAgo * H) });
