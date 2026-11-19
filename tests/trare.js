@@ -123,9 +123,9 @@ ok(/since 8 Jan 2024:/.test(FS.postText)&&/since 8 Jan 2024/.test(FS.verdict)&&!
 ok(day0(by(T,'dollar').since)==='2016-01-28'&&day0(by(T,'dgs10').since)==='1962-01-03'&&day0(by(T,'link').since)==='2019-02-15','G4 change series start one step after their raw rows (dollar 28 Jan 2016, 10Y 3 Jan 1962, LINK 15 Feb 2019)');
 // P: thresholds at the reading's own precision
 {const dec=x=>{const m=String(x).replace(/[^\d.]/g,'').split('.');return m[1]?m[1].length:0};const L=T.concat([FS]).filter(s=>s.thr);
- ok(FS.thr.lo==='−17.5%'&&FS.j.p2===by(T,'oi7').j.p2&&by(T,'oi7').thr.lo==='−17.5%'&&by(T,'oi7').thr.hi==='+18.9%','P1 OI 2% line shown to one decimal: −17.5% (not −18%), +18.9% at 98%; the example fires on the live lines (not recomputed with its synthetic bucket)',{t:by(T,'oi7').thr,fx:FS.thr});
+ ok(by(T,'oi7').cut.lo===-17.86&&by(T,'oi7').thr.lo==='−17.9%'&&by(T,'oi7').thr.hi==='+19.3%'&&FS.j.p2===by(T,'oi7').j.p2&&FS.thr.lo==='−17.9%','P1 OI label = effective cut-off −17.86% shown −17.9% (2nd percentile −17.51% is not the label); the example uses the live lines',{t:by(T,'oi7').thr,cut:by(T,'oi7').cut,fx:FS.thr});
  ok(L.every(s=>[s.thr.lo,s.thr.hi].filter(Boolean).every(x=>dec(x)===s.dp)&&dec(s.stats[0][1].replace(/[a-z ]+$/i,''))===s.dp),'P2 every threshold has the same decimals as its reading (dp per series)',L.map(s=>[s.id,s.dp,s.thr,s.stats[0][1]]));
- ok(L.every(s=>s.thr.kind!=='2%'||(s.thr.lo===s.fv(s.j.p2)&&s.thr.hi===s.fv(s.j.p98))),'P3 thresholds are the unrounded 2nd/98th percentiles rounded at that precision')}
+ ok(L.every(s=>s.thr.kind!=='2%'||(s.thr.lo===s.fv(s.cut.loLab)&&s.thr.hi===s.fv(s.cut.hiLab))),'P3 card labels are the effective cut-offs, rounded outward at the reading precision')}
 // N: notes are two short lines; stale is in the badge only
 ok(ALL.flat().every(s=>s.note.split('\n').length===2&&s.note1.length<=110&&s.note2.length<=200&&!/stale/i.test(s.note)),'N8 every note = bold line 1 (reading · verdict) + grey line 2 (source, window, data time); no stale text',ALL.flat().map(s=>[s.id,s.note1.length,s.note2.length]).filter(x=>x[1]>110||x[2]>200));
 ok(by(T,'oi7').note1==='BTC OI −11.3% in 7 days · Within its normal range','N9 OI note line 1 reads "BTC OI −11.3% in 7 days · Within its normal range"',by(T,'oi7').note1);
@@ -156,7 +156,8 @@ ok(['oi7','oilvl','etf','dgs10','t10y2y','dollar','link'].every(k=>typeof R.TPL[
  ok(s.status==='rare'&&l1===`10Y–2Y Treasury spread: −40 bp in one day, to ${(s.level<0?'−':'')+Math.abs(s.level).toFixed(2)} pp.`&&!/turned/.test(s.postText)&&/^Among the lowest 2% of daily moves in the 10Y–2Y spread since /.test(s.postText.split('\n')[1])&&R.audit(s.postText,s,i2).ok,'T7 2s10s −40 bp in one day fires on the 2% tail of its daily change, line 1 "±X bp in one day, to Y pp."',{p:s.postText,a:s.postText&&R.audit(s.postText,s,i2).checks.filter(c=>!c.pass)})}
 {const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.T10Y2Y.points,n=P.length;P[n-2][1]=-0.10;P[n-1][1]=0.25;const i2={...inp,macro:M},s=by(B(i2),'t10y2y');
  ok(s.status==='rare'&&s.j.form==='tail'&&s.cross==='positive'&&!/turned|turning/.test(s.postText)&&/^Among the highest 2%/.test(s.postText.split('\n')[1])&&R.audit(s.postText,s,i2).ok,'T8 2s10s: a big move that also crosses zero uses the tail (stronger) form; "turned" only on a crossing-only day',s.postText)}
-ok(T.concat([FS]).filter(s=>s.thr&&s.thr.kind==='2%').every(s=>{const r=s.facts.find(f=>f[0]==='2nd / 98th percentile');return r&&r[1]===s.thr.lo+' / '+s.thr.hi}),'P4 the details panel shows the same threshold text as the card');
+ok(T.concat([FS]).filter(s=>s.cut).every(s=>{const lo=s.facts.find(f=>f[0]==='Fires at (low tail)'),hi=s.facts.find(f=>f[0]==='Fires at (high tail)'||f[0]==='Fires at');return hi&&hi[1].startsWith(s.fc(s.cut.hi)+' or ')&&hi[1].includes(s.fc(s.j.p98))&&(s.cut.lo==null||lo&&lo[1].startsWith(s.fc(s.cut.lo)+' or below (2nd percentile '+s.fc(s.j.p2)+'; ties keep the share at or under 2.0%)'))}),'P4 details: "Fires at <cut-off> or below (2nd percentile <p>; ties keep the share at or under 2.0%)" from the same value',T.filter(s=>s.cut).map(s=>s.facts.filter(f=>/^Fires/.test(f[0]))));
+ok(by(T,'oi7').facts.find(f=>f[0]==='Fires at (low tail)')[1]==='−17.86% or below (2nd percentile −17.51%; ties keep the share at or under 2.0%)','P4b OI details row reads exactly as CNG wrote it');
 ok(/, 8 Jan 2024–19 Nov 2026 · snapshot/.test(by(T,'oi7').note2)&&!/1 Jan 2024/.test(by(T,'oi7').note+FS.postText),'G5 OI note line 2 and the card footer give the window from 8 Jan 2024; no "1 Jan 2024" on the 7-day change',by(T,'oi7').note2);
 
 {const floor1x=x=>Math.floor(x*10+1e-9)/10,day0=t=>new Date(t).toISOString().slice(0,10),T=B(inp);
@@ -174,10 +175,23 @@ for(const bp of [-10,11]){const [s,i2]=s2(bp);ok(s.j.cur===bp&&s.j.fires&&s.stat
  const lt=inp.link.t.filter(x=>x+DAY<=inp.now),lN=lt.length-seg(lt,(a,b)=>b-a===DAY);
  const got={oi7:[oi.j.N,P.length-7],dgs10:[d10.j.N,fN('DGS10')-1],t10y2y:[by(T,'t10y2y').j.N,fN('T10Y2Y')-1],dollar:[dl.j.N,fN('DTWEXBGS')-1],link:[lk.j.N,lN-30]};
  ok(Object.values(got).every(([a,b])=>a===b)&&oi.j.N===1047,'K5 every series counts changes, not days: OI 1,047 (buckets − 7), FRED series rows − 1, LINK closes − 30',got)}
-// the 2% line label is ALWAYS the exact threshold the engine fires on (live and example cards)
-{const L=B(inp),ex=B(R.FX.oiDrop(inp)),bad=[];for(const x of [...L,...ex])if(x.thr&&x.j&&x.thr.kind==='2%'&&(x.thr.lo!==x.fv(x.j.p2)||x.thr.hi!==x.fv(x.j.p98)))bad.push(x.id);
- const o=by(L,'oi7'),p2=o.j.p2,a=by(B(R.FX.oiDrop(inp,p2-0.01)),'oi7'),b=by(B(R.FX.oiDrop(inp,p2+0.01)),'oi7');
- const ex19=by(ex,'oi7');ok(!bad.length&&a.j.p2===p2&&b.j.p2===p2&&ex19.j.p2===p2&&ex19.thr.lo===o.thr.lo&&!b.j.fires&&!b.j.tail&&o.thr.lo==='−17.5%'&&ex19.j.fires,'L1 2% line label = the exact line the engine compares against on every card (live and example: −17.5%); never above-the-line fires',{bad,p2,lab:o.thr.lo})}
+// EFFECTIVE CUT-OFF (supervisor ruling a): checked against an INDEPENDENT oracle (own quantile + share rule), on every percentile series, both tails
+{const Q=(a,q)=>{const s=a.slice().sort((x,y)=>x-y),h=(s.length-1)*q/100,l=Math.floor(h),u=Math.ceil(h);return s[l]+(s[u]-s[l])*(h-l)};
+ const ora=(s,x,side)=>{const w=s.v.slice();w[w.length-1]=x;const N=w.length,th=Q(w,side==='low'?2:98);const n=w.filter(y=>side==='low'?y<=x:y>=x).length;return(side==='low'?x<=th:x>=th)&&floor1x(100*n/N)<=2.0};
+ const ex=by(B(R.FX.oiDrop(inp)),'oi7'),S=[...T.filter(s=>s.cut),ex],res=[];
+ for(const s of S)for(const side of s.id.startsWith('etf_')?['high']:['low','high']){const c=side==='low'?s.cut.lo:s.cut.hi,lab=side==='low'?s.cut.loLab:s.cut.hiLab,g=s.grid,d=side==='low'?-1:1,st=10**-(s.dp||0),pl=side==='low'?s.j.p2:s.j.p98;
+  const r={id:s.id+(s===ex?'(example)':''),side,c,lab,label:side==='low'?s.thr.lo:s.thr.hi,pl};
+  r.atCut=ora(s,c,side);r.insideCut=!ora(s,+(c-d*g).toFixed(8),side);r.atLab=ora(s,lab,side);r.insideLab=!ora(s,+(lab-d*st).toFixed(8),side);r.pastLab=ora(s,+(lab+d*st).toFixed(8),side);
+  r.labelText=(side==='low'?s.thr.lo:s.thr.hi)===s.fv(lab);let between=true,n=0;for(let x=+(c-d*g).toFixed(8);d*(x-pl)>=0&&n<20000;x=+(x-d*g).toFixed(8),n++)if(ora(s,x,side)){between=false;break}r.betweenNoFire=between;r.nBetween=n;
+  // the engine (judge via build) agrees with the oracle at the cut and just inside it
+  r.engine=R.cutoff(s.t,s.v,side,s.jo||{},g)===c;res.push(r)}
+ const bad=res.filter(r=>!(r.atCut&&r.insideCut&&r.atLab&&r.insideLab&&r.pastLab&&r.labelText&&r.betweenNoFire&&r.engine));
+ ok(res.length===14&&!bad.length,'L1 every percentile series, both tails (incl. the example): label = effective cut-off; the cut-off and the label fire, one grid step / one display step inside does not, nothing between the percentile line and the cut-off fires',bad.length?bad:res.map(r=>[r.id,r.side,r.c,r.label,r.nBetween]));
+ console.log('CUTOFFS '+JSON.stringify(res.map(r=>[r.id,r.side,r.c,r.label,+r.pl.toFixed(4)])));
+ // end to end through build(): OI example and 2s10s readings at / just inside the cut-off
+ const o=by(T,'oi7');const a=by(B(R.FX.oiDrop(inp,o.cut.lo)),'oi7'),b=by(B(R.FX.oiDrop(inp,o.cut.lo+0.01)),'oi7'),mid=by(B(R.FX.oiDrop(inp,-17.7)),'oi7');
+ ok(a.j.fires&&a.status==='rare'&&!b.j.fires&&!mid.j.fires&&mid.j.cur<=mid.j.p2,'L2 OI through build(): −17.86% fires, −17.85% does not, −17.70% (past the 2nd percentile, inside the cut-off) does not',{a:a.j.cur,b:b.j.cur,mid:[mid.j.cur,mid.j.p2,mid.j.share]});
+ const tt=by(T,'t10y2y');ok(tt.cut.lo===-10&&tt.cut.hi===11&&tt.thr.lo==='−10 bp'&&tt.thr.hi==='+11 bp','L3 2s10s cut-offs −10 bp / +11 bp (2nd/98th percentile −9/+10 bp)',tt.cut)}
 {const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.T10Y2Y.points,n=P.length;P[n-1][1]=+(P[n-2][1]-0.40).toFixed(2);const s=by(B({...inp,macro:M}),'t10y2y');
  ok(/: under 0\.1% of 12,612 readings were this low or lower$/.test(s.rarity)&&s.j.shareTxt==='under 0.1'&&R.shareT(0.05)==='under 0.1'&&R.shareT(0.1)==='0.1'&&R.shareT(1.57)==='1.5','U1 very rare share reads "under 0.1% of N readings"',s.rarity)}
 }

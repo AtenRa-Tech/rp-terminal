@@ -82,6 +82,15 @@ const H=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),SRC=fs.read
     const th={fx:ex.thr,lv:lv.thr,fxp2:ex.j.p2,lvp2:lv.j.p2};$('#stType').value='price';$('#stType').dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,200));return{a,b:$('#stType').selectedOptions[0].textContent,th}});
   ok(SEL.a==='Rare signal'&&SEL.b==='Price card',`(h) ${nm}: Studio type selector reads "Rare signal" on a rare-signal card`,SEL);
   ok(SEL.th.fx.lo===SEL.th.lv.lo&&SEL.th.fxp2===SEL.th.lvp2,`(h) ${nm}: the example card's 2% line is the live firing line (${SEL.th.lv.lo}), not one recomputed with the example bucket`,SEL.th);
+
+  // ---------- v4.1: badges only for Rare / Stale; details panel "Fires at" from the effective cut-off; chart line at the same value
+  const BD=await pg.evaluate(async()=>{tab('chart');await new Promise(r=>setTimeout(r,300));const rows=[...document.querySelectorAll('#rareBox [data-rs], #chRare [data-rline], #rareDesk .rrow')].map(e=>({st:e.dataset.status,b:[...e.querySelectorAll('.bias')].map(x=>x.textContent.trim())}));
+    document.querySelectorAll('[data-rd]').forEach(b=>{if(!/Hide/.test(b.textContent))b.click()});await new Promise(r=>setTimeout(r,300));const det=document.querySelector('[data-rdet="oi7"]').innerText,s=RS.find(x=>x.id==='oi7');
+    let hl=null;const L=axLog;return{rows,det,cut:s.cut,thr:s.thr,fc:s.fc(s.cut.lo),p2:s.fc(s.j.p2)}});
+  ok(BD.rows.length>=10&&BD.rows.every(r=>(r.st==='rare'||r.st==='stale')?r.b.length===1&&/RARE|Stale/.test(r.b[0]):r.b.length===0),`(i) ${nm}: a badge only on Rare or Stale rows; no "Normal range" / "Not enough history" badge`,BD.rows.filter(r=>r.b.length));
+  ok(BD.det.includes(`${BD.fc} or below (2nd percentile ${BD.p2}; ties keep the share at or under 2.0%)`)&&/Fires at \(high tail\)/.test(BD.det),`(i) ${nm}: OI details read "Fires at ${BD.fc} or below (2nd percentile ${BD.p2}; …)"`,BD.det.slice(0,400));
+  const CL=await pg.evaluate(()=>{const s=RS.find(x=>x.id==='oi7'),P=window.plot;let got=null;window.plot=function(...a){const o=a[a.length-1];if(o&&o.hl&&!got)got=o.hl.map(h=>[h.v,h.l]);return P.apply(this,a)};try{const c=document.createElement('canvas');c.width=1600;c.height=2000;drawRareCard(c.getContext('2d'),1600,2000,s)}catch(e){}window.plot=P;return{got,cut:s.cut,thr:s.thr}});
+  ok(CL.got&&CL.got[0][0]===CL.cut.lo&&CL.got[0][1]==='2% line '+CL.thr.lo&&CL.got[1][0]===CL.cut.hi,`(i) ${nm}: card chart line sits at the effective cut-off (${CL.cut&&CL.cut.lo}) with the same label (${CL.thr&&CL.thr.lo})`,CL);
   ok(!errs.length,`(e) ${nm}: no page errors`,errs);await pg.close()}}
  catch(e){ok(false,'run',String(e))}finally{await b.close()}
  console.log('FAILS: '+F.length);process.exit(F.length?1:0)})();
