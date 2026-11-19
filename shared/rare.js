@@ -41,13 +41,49 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
  function segStart(t,ok){let s=0;for(let i=1;i<t.length;i++)if(!ok(t[i-1],t[i]))s=i;return s}
  const enough=(t0,t1)=>(t1-t0)/DAY>=MIN_DAYS;
  const plus1y=t=>{const d=new Date(t);return Date.UTC(d.getUTCFullYear()+1,d.getUTCMonth(),d.getUTCDate())};
- const notEnough=(n,start)=>`Not enough history yet (${n} days since ${dD(start)}); no signal until ${dD(plus1y(start))}`;
- // fixed rarity sentence forms (wording rules section 2)
- function sentence(m,j){if(!j.fires)return'Within its normal range';
-  if(j.form==='tail')return`Among the ${j.side==='low'?'lowest':'highest'} 2% of ${m.metric} since ${dD(m.since)}: ${j.shareTxt}% of ${j.N.toLocaleString('en-US')} readings were this ${j.side==='low'?'low or lower':'high or higher'}`;
-  return`${j.winExt==='low'?'Lowest':'Highest'} ${m.wmetric||m.metric} in ${WIN_DAYS} days`}
- const noteOf=s=>`${s.readTxt} (${s.dateTxt}). ${s.rarity}. Source: ${s.source}, ${dD(s.srcFrom)}\u2013${dD(s.srcTo)}.`;
-
+ const notEnough=(n,start)=>TPL.notEnough(n,dD(start),dD(plus1y(start)));
+ // ================= WORDING TEMPLATES (the ONE place to edit wording; Crypto News GOD owns the final text) =================
+ // Every sentence of a Chart-tab note, a post and a card headline comes from TPL. f = the figures, already formatted by the series code.
+ // Post = [line 1, rarity sentence, optional 'Data to' line, source line]. The audit's fixed rarity forms (FORMS below) must match TPL.tail/window/etf*.
+ // Over 280 characters: line 1 falls back to postFit (if set), then the 'Data to' line falls back to dataFit (if set). The first form that fits is used; s.fit names the fallback.
+ const TPL={
+  normal:'Within its normal range',
+  tail:(lo,metric,since,share,N)=>`Among the ${lo?'lowest':'highest'} 2% of ${metric} since ${since}: ${share}% of ${N} readings were this ${lo?'low or lower':'high or higher'}`,
+  window:(lo,wmetric)=>`${lo?'Lowest':'Highest'} ${wmetric} in ${WIN_DAYS} days`,
+  etfTail:(n,word,through,share,since)=>`${n} straight days of net ${word}, complete days through ${through}; a streak this long has happened on ${share}% of days since ${since}`,
+  etfWindow:A=>`Longest US spot ${A} ETF flow streak in ${WIN_DAYS} days`,
+  cross:(dir,since,none)=>`The 10Y\u20132Y spread turned ${dir}, the first time since ${none?'records began on ':''}${since}`,
+  notEnough:(n,start,until)=>`Not enough history yet (${n} days since ${start}); no signal until ${until}`,
+  // Chart-tab note: bold line 1 = short reading + ' · ' + verdict; grey line 2 = source, window, data time
+  verdict:{normal:'Within its normal range',history:'Not enough history yet',tail:(lo,since)=>`${lo?'Lowest':'Highest'} 2% since ${since}`,etfTail:since=>`Among the longest 2% of streaks since ${since}`,missing:'No data'},
+  note2:(src,from,to,when,extra)=>`Source: ${src}, ${from}\u2013${to} \u00b7 ${when}${extra?' \u00b7 '+extra:''}`,
+  dataFred:d=>`Data to ${d} (FRED, latest published).`,
+  source:(src,extra)=>`Source: ${src}${extra?', '+extra:''}.`,
+  oi7:{short:f=>`BTC OI ${f.chg}% in 7 days`,head:f=>`BTC open interest on OKX: ${f.chg}% in 7 days`,
+   post:f=>`${f.cash} perpetual open interest on OKX: ${f.chg}% in the 7 days to ${f.day} (${f.coins} BTC), to ${f.level} BTC.`,
+   postFit:f=>`${f.cash} perpetual open interest on OKX: ${f.chg}% in the 7 days to ${f.day} (${f.coins} BTC).`,data:null,src:f=>`snapshot ${f.snap}`,when:f=>`snapshot ${f.snap}`},
+  oilvl:{short:f=>`BTC OI ${f.level} BTC`,head:f=>`BTC open interest on OKX: ${f.level} BTC`,
+   post:f=>`${f.cash} perpetual open interest on OKX: ${f.level} BTC, ${f.lo?'below its previous':'above its previous'} ${WIN_DAYS}-day ${f.lo?'low':'high'} of ${f.ext} BTC.`,data:null,src:f=>`snapshot ${f.snap}`,when:f=>`snapshot ${f.snap}`},
+  etf:{short:f=>f.n?`${f.A} ETFs ${f.n} day${f.n>1?'s':''} of net ${f.word} (${f.cum})`:`${f.A} ETFs no streak (last day flat)`,head:f=>`US spot ${f.A} ETFs: ${f.n} straight day${f.n===1?'':'s'} of net ${f.word}`,
+   post:f=>`US spot ${f.cash} ETFs: ${f.n} straight days of net ${f.word}, ${f.cum} in total.`,data:f=>`Data to ${f.day} UTC, complete days.`,dataFit:f=>`Data to ${f.day} UTC.`,src:null,when:f=>`complete days through ${f.date} UTC`},
+  dgs10:{short:f=>`US 10Y ${f.bp} bp to ${f.lvl}%`,head:f=>`US 10-year yield: ${f.bp} bp in one day`,
+   post:f=>`US 10-year Treasury yield: ${f.bp} bp in one day, to ${f.lvl}%.`,data:f=>TPL.dataFred(f.date),src:null,when:f=>`data ${f.date}, FRED latest published`},
+  t10y2y:{short:f=>`10Y\u20132Y ${f.bp} bp to ${f.lvl} pp${f.cross?`, turned ${f.cross}`:''}`,head:f=>`10Y\u20132Y spread: ${f.bp} bp in one day`,
+   post:f=>`10Y\u20132Y Treasury spread: ${f.bp} bp in one day, to ${f.lvl} pp${f.cross?`, turning ${f.cross}`:''}.`,data:f=>TPL.dataFred(f.date),src:null,when:f=>`data ${f.date}, FRED latest published`},
+  dollar:{short:f=>`Dollar index ${f.pct}% to ${f.lvl}`,head:f=>`Broad dollar index: ${f.pct}% in one day`,
+   post:f=>`Broad US dollar index: ${f.pct}% in one day, to ${f.lvl}.`,data:f=>TPL.dataFred(f.date),src:null,when:f=>`data ${f.date}, FRED latest published`},
+  link:{short:f=>`LINK ${f.pct}% in 30 days to $${f.px}`,head:f=>`LINK: ${f.pct}% in 30 days`,
+   post:f=>`${f.cash} on ${f.src}: ${f.pct}% in 30 days, to $${f.px}.`,data:f=>`Data to ${f.day} UTC daily close.`,src:null,when:f=>`${f.date} UTC daily close`},
+  funding:{short:f=>`BTC funding ${f.r}% per 8h`,when:f=>f.at},
+  basis:{short:f=>`BTC basis ${f.x}%`,when:f=>f.at,extra:'negative basis is the normal state and is never a signal'}
+ };
+ function sentence(m,j){if(!j.fires)return TPL.normal;
+  if(j.form==='tail')return TPL.tail(j.side==='low',m.metric,dD(m.since),j.shareTxt,j.N.toLocaleString('en-US'));
+  return TPL.window(j.winExt==='low',m.wmetric||m.metric)}
+ // 'since' = the first value of the MEASURED series (the change/streak series that is judged), never the first raw row (supervisor, 19 Nov)
+ const sinceOf=(t,lab=x=>x)=>lab(t[0]);
+ // thresholds and the reading share ONE precision per series (dp): a 1-decimal reading gets 1-decimal 2%/98% lines (-17.5%, not -18%)
+ const fmtAt=(dp,unit,signed=true)=>x=>(signed?sg(x,dp):nf(x,dp))+unit;
  // ---------- the series
  function oiSeries(DV){const A=DV&&DV.assets&&DV.assets.BTC,d=A&&A.oi_daily;if(!d||!d.points||!d.points.length)return{err:'no OKX daily open interest in derivs.json'};
   if(!/OKX/i.test(String(d.source||'')))return{err:`daily open interest came from ${d.source||'an unknown venue'}, not OKX; the OKX history is not comparable`};
@@ -58,22 +94,22 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
  function sOI7(inp,st){const O=oiSeries(inp.derivs),base={id:'oi7',title:'BTC open interest · 7-day change',group:'Derivatives',source:SRC.oi,unit:'%',cash:'$BTC'};if(O.err)return{...base,missing:O.err};
   const t=[],v=[],dc=[];for(let i=7;i<O.t.length;i++){t.push(O.t[i]);v.push((O.c[i]/O.c[i-7]-1)*100);dc.push(O.c[i]-O.c[i-7])}if(!v.length)return{...base,missing:'fewer than 8 daily buckets'};
   const since=oiDay(O.t[0]),j=judge(t,v),L=O.c.length-1,coins=dc.at(-1);
-  const m={metric:'7-day changes',wmetric:'7-day change',since:oiDay(O.t[0])};const snap=O.snap||O.t[L];
+  const m={metric:'7-day changes',wmetric:'7-day change',since:sinceOf(t,oiDay)};const snap=O.snap||O.t[L];/* first 7-day change = 8th bucket (8 Jan 2024) */
   const dateTxt=`snapshot ${dS(snap)} ${hm(snap)} UTC; daily bucket ${dS(O.t[L])} 16:00\u2013${dS(O.t[L]+DAY)} 16:00 UTC, still open`;
   const s={...base,j,t,v,since:m.since,srcFrom:since,srcTo:snap,dataT:snap,open:O.t[L]+DAY>(inp.now||Date.now()),coins,level:O.c[L],dateTxt,
    readTxt:`OKX BTC perpetual open interest ${sg(j.cur,1)}% (${sg(coins,0)} BTC) in 7 days`,rarity:sentence(m,j),hist:enough(t[0],t.at(-1)),
-   chart:{t:O.t.slice(7).map(oiDay),v,fmt:x=>sg(x,0)+'%',band:[j.p2,j.p98]},
+   chart:{t:O.t.slice(7).map(oiDay),v,fmt:x=>sg(x,0)+'%',band:[j.p2,j.p98]},dp:1,fv:fmtAt(1,'%'),
    facts:[['Reading',sg(j.cur,2)+'% ('+sg(coins,1)+' BTC)'],['2nd / 98th percentile',sg(j.p2,2)+'% / '+sg(j.p98,2)+'%'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,2)+'% / '+sg(j.win.hi,2)+'%':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' readings'],['Window',dD(m.since)+' \u2013 '+dT(snap)+' (gap-free, every step 24h)']]};
   s.stats=[['7-day change',sg(j.cur,1)+'%'],['In coins',sg(coins,0)+' BTC'],['Open interest',nf(O.c[L],0)+' BTC']];
-  s.head=`BTC open interest on OKX: ${sg(j.cur,1)}% in 7 days`;s.post=j.fires?[`${s.cash} perpetual open interest on OKX: ${sg(j.cur,1)}% in 7 days (${sg(coins,0)} BTC), to ${nf(O.c[L],0)} BTC.`,s.rarity+'.',`Data to ${dS(snap)} ${hm(snap)} UTC.`]:null;return s}
+  s.f={cash:s.cash,chg:sg(j.cur,1),coins:sg(coins,0),level:nf(O.c[L],0),day:dS(O.t[L]+DAY),snap:`${dS(snap)} ${hm(snap)} UTC`};return s}
  function sOIlvl(inp){const O=oiSeries(inp.derivs),base={id:'oilvl',title:'BTC open interest · level (coins)',group:'Derivatives',source:SRC.oi,unit:'BTC',cash:'$BTC'};if(O.err)return{...base,missing:O.err};
-  const j0=judge(O.t,O.c,{noTail:true}),L=O.c.length-1,snap=O.snap||O.t[L];const m={metric:'OKX BTC perpetual open interest',since:oiDay(O.t[0])};
+  const j0=judge(O.t,O.c,{noTail:true}),L=O.c.length-1,snap=O.snap||O.t[L];const m={metric:'OKX BTC perpetual open interest',since:sinceOf(O.t,oiDay)};
   const s={...base,j:j0,t:O.t,v:O.c,since:m.since,srcFrom:m.since,srcTo:snap,dataT:snap,usd:O.u[L],dateTxt:`snapshot ${dS(snap)} ${hm(snap)} UTC; daily bucket ${dS(O.t[L])} 16:00\u2013${dS(O.t[L]+DAY)} 16:00 UTC, still open`,
    readTxt:`OKX BTC perpetual open interest ${nf(O.c[L],0)} BTC`,rarity:sentence(m,j0),hist:enough(O.t[0],O.t[L]),levelOnly:true,
-   chart:{t:O.t.map(oiDay),v:O.c,fmt:x=>nf(x/1000,1)+'k',band:null,win:[j0.win.lo,j0.win.hi]},
+   chart:{t:O.t.map(oiDay),v:O.c,fmt:x=>nf(x/1000,1)+'k',band:null,win:[j0.win.lo,j0.win.hi]},dp:0,fv:fmtAt(0,' BTC',false),
    facts:[['Reading',nf(O.c[L],1)+' BTC ($'+(O.u[L]/1e9).toFixed(2)+'B notional)'],[`Low / high in previous ${WIN_DAYS} days`,j0.win.n?nf(j0.win.lo,1)+' / '+nf(j0.win.hi,1)+' BTC':'\u2014'],['Test','180-day high or low only (a percentile on a trending level is not used)'],['Window',dD(m.since)+' \u2013 '+dT(snap)]]};
   s.stats=[['Open interest',nf(O.c[L],0)+' BTC'],[`${WIN_DAYS}-day low`,j0.win.n?nf(j0.win.lo,0):'\u2014'],[`${WIN_DAYS}-day high`,j0.win.n?nf(j0.win.hi,0):'\u2014']];
-  s.head=`BTC open interest on OKX: ${nf(O.c[L],0)} BTC`;s.post=j0.fires?[`${s.cash} perpetual open interest on OKX: ${nf(O.c[L],0)} BTC, ${j0.winExt==='low'?'below':'above'} the previous ${WIN_DAYS}-day ${j0.winExt==='low'?'low':'high'} of ${nf(j0.winExt==='low'?j0.win.lo:j0.win.hi,0)} BTC.`,s.rarity+'.',`Data to ${dS(snap)} ${hm(snap)} UTC.`]:null;return s}
+  s.f={cash:s.cash,level:nf(O.c[L],0),lo:j0.winExt!=='high',ext:j0.win.n?nf(j0.winExt==='high'?j0.win.hi:j0.win.lo,0):'\u2014',snap:`${dS(snap)} ${hm(snap)} UTC`};return s}
  // ETF flow streaks from complete (non-pending) rows only; NYSE holidays are not gaps; a zero-total day ends a streak
  // CRYPTO GOD ruling (19 Nov): which rows to skip is decided by the NYSE calendar (shared/nyse.js), never by total == 0. A row on an NYSE holiday or weekend
  // is skipped whatever its total (Farside lists holidays as 0); a real trading day with exactly 0 net flow stays and breaks the streak. Pending rows are never read.
@@ -85,68 +121,85 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
   const s0=segStart(R.map(r=>r.t),(x,y)=>{for(let k=x+DAY;k<y;k+=DAY)if(N.open(k))return false;return true});const rows=R.slice(s0);
   const t=[],L=[],dir=[];let run=0,sgn=0;for(const r of rows){const g=r.v>0?1:r.v<0?-1:0;if(g===0){run=0;sgn=0}else if(g===sgn)run++;else{run=1;sgn=g}t.push(r.t);L.push(run);dir.push(sgn)}
   const j=judge(t,L,{side:'high'}),n=L.at(-1),dr=dir.at(-1),last=t.at(-1),cum=rows.slice(rows.length-n).reduce((x,r)=>x+r.v,0);
-  const ge=j.shareHi,word=dr<0?'outflows':'inflows';const since=t[0];
-  let rarity='Within its normal range';if(j.fires)rarity=j.form==='tail'?`${n} straight days of net ${word}, complete days through ${dD(last)}; a streak this long has happened on ${floor1(ge).toFixed(1)}% of days since ${dD(since)}`:`Longest US spot ${A} ETF flow streak in ${WIN_DAYS} days`;
+  const ge=j.shareHi,word=dr<0?'outflows':'inflows';const since=sinceOf(t);
+  let rarity=TPL.normal;if(j.fires)rarity=j.form==='tail'?TPL.etfTail(n,word,dD(last),floor1(ge).toFixed(1),dD(since)):TPL.etfWindow(A);
   const s={...base,j,t,v:L,since,srcFrom:since,srcTo:last,dataT:last,n,dir:dr,cum,dateTxt:`complete days through ${dD(last)} UTC`,
    readTxt:n?`${n} day${n>1?'s':''} of net ${word} (${cum<0?MINUS:'+'}$${nf(Math.abs(cum),1)}M) in US spot ${A} ETFs`:`No streak in US spot ${A} ETFs (last day flat)`,rarity,hist:enough(t[0],last),
-   chart:{t:rows.map(r=>r.t),v:rows.map(r=>r.v),bars:true,fmt:x=>(x<0?MINUS:'')+'$'+nf(Math.abs(x),0)+'M'},
-   facts:[['Reading',`${n} day${n===1?'':'s'} of net ${word}; ${cum<0?MINUS:'+'}$${nf(Math.abs(cum),1)}M over the streak`],['98th percentile streak',nf(j.p98,2)+' days'],[`Longest streak in previous ${WIN_DAYS} days`,j.win.n?j.win.hi+' days':'\u2014'],['Days with a streak this long',floor1(ge).toFixed(1)+'% of '+j.N.toLocaleString('en-US')+' complete days'],['Window',dD(since)+' \u2013 '+dD(last)+' (complete days; NYSE holidays are not gaps; pending rows never read)']]};
+   chart:{t:rows.map(r=>r.t),v:rows.map(r=>r.v),bars:true,fmt:x=>(x<0?MINUS:'')+'$'+nf(Math.abs(x),0)+'M'},dp:0,fv:fmtAt(0,' days',false),
+   facts:[['Reading',`${n} day${n===1?'':'s'} of net ${word}; ${cum<0?MINUS:'+'}$${nf(Math.abs(cum),1)}M over the streak`],['98th percentile streak',nf(j.p98,0)+' days'],[`Longest streak in previous ${WIN_DAYS} days`,j.win.n?j.win.hi+' days':'\u2014'],['Days with a streak this long',floor1(ge).toFixed(1)+'% of '+j.N.toLocaleString('en-US')+' complete days'],['Window',dD(since)+' \u2013 '+dD(last)+' (complete days; NYSE holidays are not gaps; pending rows never read)']]};
   s.sv=L.map((x,i)=>x*dir[i]);s.stats=[['Streak',n+' day'+(n===1?'':'s')],['Total',(cum<0?MINUS:'+')+'$'+nf(Math.abs(cum),1)+'M'],['Through',dS(last)]];
-  s.head=`US spot ${A} ETFs: ${n} day${n===1?'':'s'} of net ${word}`;s.post=j.fires?[`US spot ${s.cash} ETF net flows: ${cum<0?MINUS:'+'}$${nf(Math.abs(cum),1)}M over the streak.`,rarity+'.',`Data to ${dS(last)} UTC, complete days.`]:null;return s}
+  s.f={A,cash:s.cash,n,word,cum:(cum<0?MINUS:'+')+'$'+nf(Math.abs(cum),1)+'M',day:dS(last),date:dD(last)};return s}
  // FRED daily series: a gap longer than 5 calendar days breaks the history
  function fred(M,id){const s=M&&M.series&&M.series[id];if(!s||!s.points||!s.points.length)return null;const P=s.points.filter(p=>p&&p[1]!=null&&isFinite(+p[1])),t=P.map(p=>ymd(p[0])),v=P.map(p=>+p[1]);const k=segStart(t,(a,b)=>b-a<=5*DAY);return{t:t.slice(k),v:v.slice(k),last:s.last_date}}
  function sDGS10(inp){const base={id:'dgs10',title:'US 10-year yield · daily move',group:'Rates',source:SRC.dgs10,unit:'bp'};const F=fred(inp.macro,'DGS10');if(!F)return{...base,missing:'DGS10 missing from macro.json'};
-  const t=[],v=[];for(let i=1;i<F.t.length;i++){t.push(F.t[i]);v.push(Math.round((F.v[i]-F.v[i-1])*100))}const j=judge(t,v),last=t.at(-1),lvl=F.v.at(-1);const m={metric:'daily moves in the US 10-year yield',wmetric:'daily '+(j.cur<0?'fall':'rise')+' in the US 10-year yield',since:t[0]};
-  const s={...base,j,t,v,since:t[0],srcFrom:F.t[0],srcTo:last,dataT:last,level:lvl,dateTxt:`${dD(last)}, FRED latest published`,readTxt:`US 10-year yield ${sg(j.cur,0)} bp to ${lvl.toFixed(2)}%`,rarity:sentence(m,j),hist:enough(t[0],last),
-   chart:{t:F.t,v:F.v,fmt:x=>x.toFixed(2)+'%'},
+  const t=[],v=[];for(let i=1;i<F.t.length;i++){t.push(F.t[i]);v.push(Math.round((F.v[i]-F.v[i-1])*100))}const j=judge(t,v),last=t.at(-1),lvl=F.v.at(-1);const m={metric:'daily moves in the US 10-year yield',wmetric:'daily '+(j.cur<0?'fall':'rise')+' in the US 10-year yield',since:sinceOf(t)};
+  const s={...base,j,t,v,since:m.since,srcFrom:F.t[0],srcTo:last,dataT:last,level:lvl,dateTxt:`${dD(last)}, FRED latest published`,readTxt:`US 10-year yield ${sg(j.cur,0)} bp to ${lvl.toFixed(2)}%`,rarity:sentence(m,j),hist:enough(t[0],last),
+   chart:{t:F.t,v:F.v,fmt:x=>x.toFixed(2)+'%'},dp:0,fv:fmtAt(0,' bp'),
    facts:[['Reading',sg(j.cur,0)+' bp (level '+lvl.toFixed(2)+'%)'],['2nd / 98th percentile',sg(j.p2,0)+' / '+sg(j.p98,0)+' bp'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,0)+' / '+sg(j.win.hi,0)+' bp':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' daily moves (values are rounded to 1 bp, so ties count; above 2.0% it does not fire)'],['Window',dD(t[0])+' \u2013 '+dD(last)]]};
   s.stats=[['Daily move',sg(j.cur,0)+' bp'],['Yield',lvl.toFixed(2)+'%'],['Date',dS(last)]];
-  s.head=`US 10-year yield: ${sg(j.cur,0)} bp in a day`;s.post=j.fires?[`US 10-year Treasury yield: ${sg(j.cur,0)} bp in a day, to ${lvl.toFixed(2)}%.`,s.rarity+'.',`Data to ${dD(last)} (FRED, latest published).`]:null;return s}
- function sT10Y2Y(inp){const base={id:'t10y2y',title:'2s10s spread · zero crossing',group:'Rates',source:SRC.t10y2y,unit:'pp'};const F=fred(inp.macro,'T10Y2Y');if(!F)return{...base,missing:'T10Y2Y missing from macro.json'};
-  const N=F.v.length,cur=F.v[N-1],prev=F.v[N-2],last=F.t[N-1],sgn=x=>x>0?1:x<0?-1:0;const X=[];let ps=0;for(let i=0;i<N;i++){const g=sgn(F.v[i]);if(g&&ps&&g!==ps)X.push({t:F.t[i],up:g>0});if(g)ps=g}
-  const crossed=X.length&&X.at(-1).t===last?X.at(-1):null,prior=crossed?X.slice(0,-1).filter(x=>x.up===crossed.up&&x.t>=last-WIN):[];const fires=!!crossed&&!prior.length;
-  const j={cur,t:last,N,fires,form:fires?'cross':null,win:{method:'calendar',days:WIN_DAYS,from:last-WIN,to:last,n:F.t.filter(x=>x>=last-WIN&&x<last).length},past:{days:X.length,episodes:X.length,dates:X.slice(-5).map(x=>x.t)}};
-  const rarity=fires?`The 10Y\u20132Y spread turned ${crossed.up?'positive':'negative'} (first time in at least ${WIN_DAYS} days)`:'Within its normal range';
-  const s={...base,j,t:F.t,v:F.v,since:F.t[0],srcFrom:F.t[0],srcTo:last,dataT:last,crossed,dateTxt:`${dD(last)}, FRED latest published`,readTxt:`10Y\u20132Y Treasury spread ${sg(cur,2)} pp, ${crossed?'a sign change':'no sign change'} from ${sg(prev,2)} pp the day before`,rarity,hist:enough(F.t[0],last),
-   chart:{t:F.t,v:F.v,fmt:x=>sg(x,2),zero:true},
-   facts:[['Reading',sg(cur,2)+' pp'],['Rule','fires only on the day the sign changes and only if it is the first change in that direction in '+WIN_DAYS+' calendar days'],['Last sign change',X.length?dD(X.at(-1).t)+' ('+(X.at(-1).up?'to positive':'to negative')+')':'\u2014'],['Window',dD(F.t[0])+' \u2013 '+dD(last)]]};
-  s.stats=[['10Y\u20132Y',sg(cur,2)+' pp'],['Day before',sg(prev,2)+' pp'],['Date',dS(last)]];
-  s.head=`10Y\u20132Y spread: ${sg(cur,2)} pp`;s.post=fires?[`10Y\u20132Y Treasury spread: ${sg(cur,2)} pp, from ${sg(prev,2)} pp the day before.`,rarity+'.',`Data to ${dD(last)} (FRED, latest published).`]:null;return s}
+  s.f={bp:sg(j.cur,0),lvl:lvl.toFixed(2),date:dD(last)};return s}
+ function sT10Y2Y(inp){const base={id:'t10y2y',title:'2s10s spread · daily move',group:'Rates',source:SRC.t10y2y,unit:'bp'};const F=fred(inp.macro,'T10Y2Y');if(!F)return{...base,missing:'T10Y2Y missing from macro.json'};
+  // Two triggers (supervisor, 19 Nov 13:59): (1) like the 10Y, a 2% tail or a 180-day extreme of its DAILY CHANGE (bp);
+  // (2) a zero crossing on the latest day that is the first crossing in that direction in the previous 180 calendar days.
+  // A crossing with an earlier same-direction crossing inside 180 days (e.g. the Sep 2024 back-and-forth) is context only, never a signal.
+  const t=[],v=[];for(let i=1;i<F.t.length;i++){t.push(F.t[i]);v.push(Math.round((F.v[i]-F.v[i-1])*100))}const j0=judge(t,v),N=F.v.length,cur=F.v[N-1],prev=F.v[N-2],last=t.at(-1);
+  const sgn=x=>x>0?1:x<0?-1:0,X=[];{let ps=0;for(let i=0;i<N;i++){const g=sgn(F.v[i]);if(g&&ps&&g!==ps)X.push({t:F.t[i],up:g>0});if(g)ps=g}}/* zero readings are skipped, the last non-zero sign counts */
+  const cx=X.length&&X.at(-1).t===last?X.at(-1):null,cross=cx?(cx.up?'positive':'negative'):null,prevSame=cx?X.slice(0,-1).filter(x=>x.up===cx.up):[],lastSame=prevSame.at(-1)||null;
+  const firstCross=!!cx&&!(lastSame&&lastSame.t>=last-WIN);
+  const j={...j0,fires:j0.fires||firstCross,form:j0.fires?j0.form:firstCross?'cross':null,crossFires:firstCross,cross:cx?{dir:cross,prevSame:lastSame&&lastSame.t}:null};
+  const m={metric:'daily moves in the 10Y\u20132Y spread',wmetric:'daily '+(j.cur<0?'fall':'rise')+' in the 10Y\u20132Y spread',since:sinceOf(t)};
+  /* crossing sentence: 'since' = the previous crossing in that direction, or the start of the measured series (never before 1 Jun 1976) */
+  const rarity=j0.fires?sentence(m,j0):firstCross?TPL.cross(cross,lastSame?dD(Math.max(lastSame.t,m.since)):dD(m.since),!lastSame):TPL.normal;
+  const s={...base,j,t,v,since:m.since,srcFrom:F.t[0],srcTo:last,dataT:last,level:cur,cross,dateTxt:`${dD(last)}, FRED latest published`,readTxt:`10Y\u20132Y Treasury spread ${sg(j.cur,0)} bp to ${sg(cur,2)} pp`,rarity,hist:enough(t[0],last),
+   chart:{t:F.t,v:F.v,fmt:x=>sg(x,2),zero:true},dp:0,fv:fmtAt(0,' bp'),
+   facts:[['Reading',sg(j.cur,0)+' bp in one day, to '+sg(cur,2)+' pp (from '+sg(prev,2)+' pp)'+(cross?'; turned '+cross+' that day (context only)':'')],['2nd / 98th percentile',sg(j.p2,0)+' / '+sg(j.p98,0)+' bp'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,0)+' / '+sg(j.win.hi,0)+' bp':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' daily moves (rounded to 1 bp, so ties count; above 2.0% it does not fire)'],['Rule','rare on a 2% tail or 180-day extreme of the daily change (like the 10Y), or on the first zero crossing in that direction in 180 calendar days'],['Last crossing',X.length?dD(X.at(-1).t)+' ('+(X.at(-1).up?'to positive':'to negative')+')':'\u2014'],['Window',dD(t[0])+' \u2013 '+dD(last)]]};
+  s.stats=[['Daily move',sg(j.cur,0)+' bp'],['10Y\u20132Y',sg(cur,2)+' pp'],['Date',dS(last)]];
+  s.f={bp:sg(j.cur,0),lvl:sg(cur,2),cross,date:dD(last)};return s}
  function sDollar(inp){const base={id:'dollar',title:'Broad dollar index · daily move',group:'Dollar',source:SRC.dollar,unit:'%'};const F=fred(inp.macro,'DTWEXBGS');if(!F)return{...base,missing:'DTWEXBGS missing from macro.json'};
-  const t=[],v=[];for(let i=1;i<F.t.length;i++){t.push(F.t[i]);v.push((F.v[i]/F.v[i-1]-1)*100)}const j=judge(t,v),last=t.at(-1),lvl=F.v.at(-1);const m={metric:'daily moves in the broad dollar index',wmetric:'daily '+(j.cur<0?'fall':'rise')+' in the broad dollar index',since:F.t[0]};
-  const s={...base,j,t,v,since:F.t[0],srcFrom:F.t[0],srcTo:last,dataT:last,level:lvl,dateTxt:`last data ${dD(last)}, FRED latest published`,readTxt:`Broad dollar index ${sg(j.cur,3)}% to ${lvl.toFixed(2)}`,rarity:sentence(m,j),hist:enough(F.t[0],last),
-   chart:{t:F.t,v:F.v,fmt:x=>x.toFixed(1)},
+  const t=[],v=[];for(let i=1;i<F.t.length;i++){t.push(F.t[i]);v.push((F.v[i]/F.v[i-1]-1)*100)}const j=judge(t,v),last=t.at(-1),lvl=F.v.at(-1);const m={metric:'daily moves in the broad dollar index',wmetric:'daily '+(j.cur<0?'fall':'rise')+' in the broad dollar index',since:sinceOf(t)};
+  const s={...base,j,t,v,since:m.since,srcFrom:F.t[0],srcTo:last,dataT:last,level:lvl,dateTxt:`last data ${dD(last)}, FRED latest published`,readTxt:`Broad dollar index ${sg(j.cur,3)}% to ${lvl.toFixed(2)}`,rarity:sentence(m,j),hist:enough(F.t[0],last),
+   chart:{t:F.t,v:F.v,fmt:x=>x.toFixed(1)},dp:2,fv:fmtAt(2,'%'),
    facts:[['Reading',sg(j.cur,3)+'% (index '+lvl.toFixed(4)+', Jan 2006 = 100)'],['2nd / 98th percentile',sg(j.p2,3)+'% / '+sg(j.p98,3)+'%'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,3)+'% / '+sg(j.win.hi,3)+'%':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' daily moves'],['Window',dD(F.t[0])+' \u2013 '+dD(last)+' (starts after the last gap of more than 5 days)']]};
   s.stats=[['Daily move',sg(j.cur,2)+'%'],['Index',lvl.toFixed(2)],['Date',dS(last)]];
-  s.head=`Broad dollar index: ${sg(j.cur,2)}% in a day`;s.post=j.fires?[`Broad US dollar index: ${sg(j.cur,2)}% in a day, to ${lvl.toFixed(2)}.`,s.rarity+'.',`Data to ${dD(last)} (FRED, latest published).`]:null;return s}
+  s.f={pct:sg(j.cur,2),lvl:lvl.toFixed(2),date:dD(last)};return s}
  function sLINK(inp){const C=inp.link,src=C&&C.src==='Coinbase'?'Coinbase':'Binance',base={id:'link',title:'LINK · 30-day return',group:'Coins',source:SRC.link[src],unit:'%',cash:'$LINK'};
   if(!C||!C.t||C.t.length<31)return{...base,missing:'LINK daily closes not loaded'};const now=inp.now||Date.now();let n=C.t.length;while(n&&C.t[n-1]+DAY>now)n--;/* completed UTC days only */
   const T=C.t.slice(0,n),V=C.v.slice(0,n),k=segStart(T,(a,b)=>b-a===DAY),tt=T.slice(k),vv=V.slice(k);const t=[],v=[];for(let i=30;i<tt.length;i++){t.push(tt[i]);v.push((vv[i]/vv[i-30]-1)*100)}if(!v.length)return{...base,missing:'fewer than 31 gap-free LINK closes'};
-  const j=judge(t,v),last=t.at(-1),px=vv.at(-1);const m={metric:'LINK 30-day returns',wmetric:'LINK 30-day return',since:t[0]};
-  const s={...base,j,t,v,since:t[0],srcFrom:tt[0],srcTo:last,dataT:last,price:px,kept:!!C.kept,dateTxt:`${dD(last)} UTC daily close`,readTxt:`LINK ${sg(j.cur,1)}% over 30 days to $${px.toFixed(3)}`,rarity:sentence(m,j),hist:enough(t[0],last),
-   chart:{t:tt,v:vv,fmt:x=>'$'+x.toFixed(x<10?2:1),log:true},
+  const j=judge(t,v),last=t.at(-1),px=vv.at(-1);const m={metric:'LINK 30-day returns',wmetric:'LINK 30-day return',since:sinceOf(t)};
+  const s={...base,j,t,v,since:m.since,srcFrom:tt[0],srcTo:last,dataT:last,price:px,kept:!!C.kept,dateTxt:`${dD(last)} UTC daily close`,readTxt:`LINK ${sg(j.cur,1)}% over 30 days to $${px.toFixed(3)}`,rarity:sentence(m,j),hist:enough(t[0],last),
+   chart:{t:tt,v:vv,fmt:x=>'$'+x.toFixed(x<10?2:1),log:true},dp:1,fv:fmtAt(1,'%'),
    facts:[['Reading',sg(j.cur,2)+'% ($'+vv[vv.length-31].toFixed(3)+' \u2192 $'+px.toFixed(3)+')'],['2nd / 98th percentile',sg(j.p2,2)+'% / '+sg(j.p98,2)+'%'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,2)+'% / '+sg(j.win.hi,2)+'%':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' readings'],['Window',dD(tt[0])+' \u2013 '+dD(last)+' ('+src+', completed UTC days, gap-free)']]};
   s.stats=[['30-day return',sg(j.cur,1)+'%'],['Close',('$'+px.toFixed(2))],['Date',dS(last)]];
-  s.head=`LINK: ${sg(j.cur,1)}% in 30 days`;s.post=j.fires?[`${s.cash} on ${src}: ${sg(j.cur,1)}% in 30 days, to $${px.toFixed(2)}.`,s.rarity+'.',`Data to ${dS(last)} UTC daily close.`]:null;return s}
+  s.f={cash:s.cash,src,pct:sg(j.cur,1),px:px.toFixed(2),day:dS(last),date:dD(last)};return s}
  function sFunding(inp){const A=inp.derivs&&inp.derivs.assets&&inp.derivs.assets.BTC,f=A&&A.funding,base={id:'funding',title:'BTC funding (OKX)',group:'Derivatives',source:SRC.funding,unit:'% per 8h',never:'Funding never produces a post: under a year of history.'};
   if(!f||!f.points||!f.points.length)return{...base,missing:'no funding in derivs.json'};const P=f.points,t0=P[0][0],tl=P.at(-1)[0],r=P.at(-1)[1]*100,days=Math.round((tl-t0)/DAY);
-  return{...base,t:P.map(p=>p[0]),v:P.map(p=>p[1]*100),since:t0,srcFrom:t0,srcTo:tl,dataT:tl,hist:enough(t0,tl)&&false,days,dateTxt:dS(tl)+' '+hm(tl)+' UTC',readTxt:`Funding ${sg(r,3)}% per 8h`,rarity:notEnough(days,t0),chart:{t:P.map(p=>p[0]),v:P.map(p=>p[1]*100),fmt:x=>sg(x,3)+'%',zero:true},
+  return{...base,t:P.map(p=>p[0]),v:P.map(p=>p[1]*100),since:t0,srcFrom:t0,srcTo:tl,dataT:tl,hist:enough(t0,tl)&&false,days,f:{r:sg(r,3),at:dS(tl)+' '+hm(tl)+' UTC'},dateTxt:dS(tl)+' '+hm(tl)+' UTC',readTxt:`Funding ${sg(r,3)}% per 8h`,rarity:notEnough(days,t0),chart:{t:P.map(p=>p[0]),v:P.map(p=>p[1]*100),fmt:x=>sg(x,3)+'%',zero:true},
    facts:[['Reading',sg(r,4)+'% per 8h'],['History',days+' days since '+dD(t0)+' (OKX serves about 3 months; the file stores it from 27 Jul 2026)'],['Signal','none until '+dD(plus1y(t0))]],post:null}}
  function sBasis(inp){const A=inp.derivs&&inp.derivs.assets&&inp.derivs.assets.BTC,b=A&&A.basis_hourly,base={id:'basis',title:'BTC basis (OKX perp vs spot)',group:'Derivatives',source:SRC.basis,unit:'%',never:'Basis never produces a post: under a year of history, and negative basis is the normal state.'};
   if(!b||!b.points||!b.points.length)return{...base,missing:'no basis in derivs.json'};const P=b.points,t0=P[0][0],tl=P.at(-1)[0],x=P.at(-1)[3],days=Math.round((tl-t0)/DAY),neg=P.filter(p=>p[3]<0).length;
-  return{...base,t:P.map(p=>p[0]),v:P.map(p=>p[3]),since:t0,srcFrom:t0,srcTo:tl,dataT:tl,hist:false,days,dateTxt:dS(tl)+' '+hm(tl)+' UTC',readTxt:`Basis ${sg(x,4)}%`,rarity:notEnough(days,t0)+'. Negative basis is the normal state and is never a signal',chart:{t:P.map(p=>p[0]),v:P.map(p=>p[3]),fmt:x=>sg(x,3)+'%',zero:true},
+  return{...base,t:P.map(p=>p[0]),v:P.map(p=>p[3]),since:t0,srcFrom:t0,srcTo:tl,dataT:tl,hist:false,days,f:{x:sg(x,4),at:dS(tl)+' '+hm(tl)+' UTC'},dateTxt:dS(tl)+' '+hm(tl)+' UTC',readTxt:`Basis ${sg(x,4)}%`,rarity:notEnough(days,t0)+'. Negative basis is the normal state and is never a signal',chart:{t:P.map(p=>p[0]),v:P.map(p=>p[3]),fmt:x=>sg(x,3)+'%',zero:true},
    facts:[['Reading',sg(x,4)+'%'],['Negative hours',neg+' of '+P.length],['History',days+' days since '+dD(t0)],['Signal','never (negative basis is the normal state); no rarity test until '+dD(plus1y(t0))]],post:null}}
 
  // ---------- assemble: note, post, freshness
  const ORDER=['oi7','oilvl','etf_btc','etf_eth','dgs10','t10y2y','dollar','link','funding','basis'];
  function build(inp){const now=inp.now||Date.now(),st=inp.stale||{};const L=[sOI7(inp),sOIlvl(inp),sETF(inp,'btc'),sETF(inp,'eth'),sDGS10(inp),sT10Y2Y(inp),sDollar(inp),sLINK(inp),sFunding(inp),sBasis(inp)];
-  for(const s of L){s.stale=st[s.id]||'';s.fixture=!!inp.fixture;
-   if(s.missing){s.note=`${s.title}: \u2014 (${s.missing}).`;s.status='missing';s.post=null;continue}
-   if(!s.never&&!s.hist){s.rarity=notEnough(Math.round((s.t.at(-1)-s.since)/DAY),s.since);if(s.j)s.j.fires=false;s.post=null}
-   s.note=noteOf(s);
+  for(const s of L){s.stale=st[s.id]||'';s.fixture=!!inp.fixture;const P=TPL[s.id.startsWith('etf_')?'etf':s.id];
+   if(s.missing){s.note1=`${s.title} \u00b7 \u2014`;s.note2=s.missing;s.note=s.note1+'\n'+s.note2;s.status='missing';s.post=null;s.postText=null;continue}
+   if(!s.never&&!s.hist){s.rarity=notEnough(Math.round((s.t.at(-1)-s.since)/DAY),s.since);if(s.j)s.j.fires=false}
    s.status=s.stale?'stale':s.never||!s.hist?'history':s.j&&s.j.fires?'rare':'normal';
-   if(s.stale){s.note+=` ${s.stale} No post while stale.`}
-   if(s.post&&s.status==='rare'){const lines=s.post.filter(Boolean),txt=lines.concat(['Source: '+s.source+'.']);s.postText=txt.join('\n')}else s.postText=null}
+   // thresholds at the reading's own precision (s.dp): 2%/98% lines, or the 180-day low/high for the level
+   if(s.fv&&s.j){s.thr=s.id.startsWith('etf_')?{lo:null,hi:s.fv(s.j.p98),kind:'98% streak'}:s.levelOnly?(s.j.win&&s.j.win.n?{lo:s.fv(s.j.win.lo),hi:s.fv(s.j.win.hi),kind:'180-day'}:null):s.j.p2!=null?{lo:s.fv(s.j.p2),hi:s.fv(s.j.p98),kind:'2%'}:null}
+   // details panel uses the same precision: reading, 2nd/98th percentile and the 180-day low/high rows
+   if(s.fv&&s.j&&s.facts&&!s.id.startsWith('etf_'))s.facts=s.facts.map(([k,v])=>k==='Reading'&&!s.levelOnly?[k,String(v).replace(/^[\u2212+\-]?[\d,.]+%?( bp)?/,s.fv(s.j.cur))]:k==='2nd / 98th percentile'&&s.thr?[k,s.thr.lo+' / '+s.thr.hi]:/^Low \/ high in previous/.test(k)&&s.j.win&&s.j.win.n?[k,s.fv(s.j.win.lo)+' / '+s.fv(s.j.win.hi)]:[k,v]);
+   // Chart-tab note: line 1 (bold) = short reading · verdict; line 2 (grey) = source, window of the measured series (since -> last), data time. Stale shows in the badge only.
+   const j=s.j,V=TPL.verdict,verdict=(s.never||!s.hist)?V.history:j&&j.fires?(j.form==='cross'?s.rarity.replace('The 10Y\u20132Y spread turned','Turned'):j.form==='tail'?(s.id.startsWith('etf_')?V.etfTail(dD(s.since)):V.tail(j.side==='low',dD(s.since))):s.rarity):V.normal;
+   s.verdict=verdict;s.note1=`${P.short(s.f)} \u00b7 ${verdict}`;
+   s.note2=TPL.note2(s.source,dD(s.since),dD(s.srcTo),P.when(s.f),(s.never||!s.hist)?[`no signal until ${dD(plus1y(s.since))}`,P.extra].filter(Boolean).join('; '):'');
+   s.note=s.note1+'\n'+s.note2;
+   if(P.head)s.head=P.head(s.f);s.srcLine=TPL.source(s.source,P.src?P.src(s.f):'');
+   const mk=(l1,d)=>[l1,s.rarity+'.',d].filter(Boolean).concat([s.srcLine]).join('\n');s.post=null;s.postText=null;s.fit=null;
+   if(s.status==='rare'&&P.post){const d=P.data?P.data(s.f):null;const tries=[[P.post(s.f),d,null]];if(P.postFit)tries.push([P.postFit(s.f),d,'line 1 short form']);if(d&&P.dataFit)tries.push([P.postFit?P.postFit(s.f):P.post(s.f),P.dataFit(s.f),'Data line short form']);
+    const ok=tries.find(([a,b])=>xLen(mk(a,b))<=280)||tries[0];s.post=[ok[0],s.rarity+'.',ok[1]];s.postText=mk(ok[0],ok[1]);s.fit=ok[2]}}
   return L}
  const xLen=t=>[...String(t).replace(/https?:\/\/\S+/g,'x'.repeat(23))].length;
 
@@ -154,7 +207,7 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
  const BANNED=[/what followed/i,/last time/i,/historically leads? to/i,/signal to (buy|sell)/i,/\bbullish\b/i,/\bbearish\b/i,/capitulation/i,/smart money/i,/\bwhales?\b/i,/\bmassive\b/i,/\bhuge\b/i,/\binsane\b/i,/never seen/i,/all[- ]time/i,/\bbreaking\b/i,/\bnot rare\b/i,/most extreme 2%/i,/\bDXY\b/,/across exchanges/i,/market[- ]wide/i,/\b(buy|sell|buying|selling)\b/i,/\btargets?\b/i,/\bwill (rise|fall|go|hit|reach)\b/i,/\bINR\b|\u20b9|\bindia\b|\brupee/i];
  const NOWW=/\b(today|now|this morning|just now|tonight|currently)\b/i;
  const DATE_RE=/\b\d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)( \d{4})?\b/;
- const FORMS=[/^Among the (lowest|highest) 2% of [^.:]+ since \d{1,2} [A-Z][a-z]{2} \d{4}: (\d+\.\d)% of ([\d,]+) readings were this (low or lower|high or higher)$/,/^(Lowest|Highest) [^.]+ in 180 days$/,/^\d+ straight days of net (outflows|inflows), complete days through \d{1,2} [A-Z][a-z]{2} \d{4}; a streak this long has happened on (\d+\.\d)% of days since \d{1,2} [A-Z][a-z]{2} \d{4}$/,/^The 10Y\u20132Y spread turned (positive|negative) \(first time in at least 180 days\)$/];
+ const FORMS=[/^The 10Y\u20132Y spread turned (positive|negative), the first time since (records began on )?\d{1,2} [A-Z][a-z]{2} \d{4}$/,/^Among the (lowest|highest) 2% of [^.:]+ since \d{1,2} [A-Z][a-z]{2} \d{4}: (\d+\.\d)% of ([\d,]+) readings were this (low or lower|high or higher)$/,/^(Lowest|Highest) [^.]+ in 180 days$/,/^\d+ straight days of net (outflows|inflows), complete days through \d{1,2} [A-Z][a-z]{2} \d{4}; a streak this long has happened on (\d+\.\d)% of days since \d{1,2} [A-Z][a-z]{2} \d{4}$/];
  const toks=x=>(String(x).replace(/\u2212/g,'-').match(/[-+]?\$?\d+(,\d{3})*(\.\d+)?/g)||[]).map(z=>z.replace(/^\+/,''));
  function audit(text,sig,inp){const T=String(text||''),now=(inp&&inp.now)||Date.now(),C=[];const add=(k,name,pass,why)=>C.push({k,name,pass:!!pass,why:pass?'':why});
   const lines=T.split('\n').map(x=>x.trim()).filter(Boolean),rl=lines[1]||'';const rs=rl.replace(/\.$/,'');
@@ -165,7 +218,7 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
   // 2. any '180 days' claim must be a 180-calendar-day window, and hold on it
   {let ok=true,why='';if(/180 (trading days|sessions|readings|observations|obs|business days)/i.test(T)){ok=false;why='a 180-day window must be calendar days, not observations'}
    else if(/in 180 days/i.test(T)){const j=(R||sig).j;if(!j||!j.win||j.win.method!=='calendar'||j.win.to-j.win.from!==WIN){ok=false;why='the 180-day window was not computed over 180 calendar days'}
-    else if(R&&R.j){const r=R.j;const claimLow=/^Lowest/.test(rs),claimHigh=/^Highest/.test(rs);if(R.id==='t10y2y'){if(!R.j.fires){ok=false;why='no first crossing in 180 calendar days'}}else if((claimLow&&r.winExt!=='low')||(claimHigh&&r.winExt!=='high')){ok=false;why=`not a new ${claimLow?'low':'high'} against every reading in the previous 180 calendar days`}}}
+    else if(R&&R.j){const r=R.j;const claimLow=/^Lowest/.test(rs),claimHigh=/^Highest/.test(rs);if((claimLow&&r.winExt!=='low')||(claimHigh&&r.winExt!=='high')){ok=false;why=`not a new ${claimLow?'low':'high'} against every reading in the previous 180 calendar days`}}}
    if(ok&&sig.j&&sig.j.win&&sig.j.win.method!=='calendar'){ok=false;why='window computed in observations'}add(2,'180 days = 180 calendar days',ok,why)}
   // 3. no 'since' date earlier than the series' window start
   {let ok=true,why='';const E=EARLIEST[sig.id];const re=/since (\d{1,2} [A-Z][a-z]{2} \d{4})/g;let m;while((m=re.exec(T))){const d=Date.parse(m[1]+' UTC');if(!E||!isFinite(d)||d<ymd(E)){ok=false;why=`"since ${m[1]}" is earlier than the ${sig.id} window start ${E?dD(ymd(E)):'(unknown)'}`}else if(R&&d<ymd(iso(R.since))){ok=false;why=`"since ${m[1]}" is earlier than this history's first reading ${dD(R.since)}`}}add(3,'Since date not before the window start',ok,why)}
@@ -181,7 +234,7 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
   // R. every figure recomputed from the unrounded series at post time
   {let ok=!!(R&&R.postText),why=R?(R.postText?'':'the recomputed reading is not rare: no post'):'could not recompute from the series';if(ok){const want=new Set(toks(R.postText)),bad=toks(T).filter(x=>!want.has(x));if(bad.length){ok=false;why='figures not in the recomputed post: '+bad.join(', ')}const miss=toks(R.postText).filter(x=>!toks(T).includes(x));if(ok&&miss.length&&toks(lines[0]||'').length<toks(R.postText.split('\n')[0]).length){ok=false;why='line 1 figures missing: '+miss.join(', ')}}add('R','Every figure recomputed at post time',ok,why)}
   // S. exact source name; F. fresh data; X. post format
-  {const src=lines.at(-1)||'',ok=src==='Source: '+(R||sig).source+'.';add('S','Exact source name',ok,`source line must be "Source: ${(R||sig).source}."`)}
+  {const src=lines.at(-1)||'',want=(R||sig).srcLine||TPL.source((R||sig).source),ok=src===want;add('S','Exact source name',ok,`source line must be "${want}"`)}
   {const s=(R&&R.stale)||sig.stale;add('F','Data inside its freshness limit',!s,'stale: '+s)}
   {const cash=(T.match(/\$[A-Za-z]{2,6}\b/g)||[]).length,em=/\p{Extended_Pictographic}/u.test(T);let ok=xLen(T)<=280&&cash<=1&&!em&&lines.length<=4,why=xLen(T)>280?`${xLen(T)} characters, over 280`:cash>1?'more than one cashtag':em?'no emoji in rare-signal posts':lines.length>4?'max 3 lines plus the source line':'';add('X','X format (280, one cashtag, no emoji, 3 lines + source)',ok,why)}
   return{ok:C.every(c=>c.pass),checks:C,fixture:!!(inp&&inp.fixture)}}
@@ -201,5 +254,5 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
   tenY(inp,bp=-14){const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.DGS10.points,n=P.length;P[n-1][1]=Math.round((P[n-2][1]+bp/100)*100)/100;return{...inp,macro:M,fixture:true,stale:{}}},
   // dollar index: keep FRED's own date (13 Nov), never 'today'
   dollar(inp,pct=-1.1){const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.DTWEXBGS.points,n=P.length;P[n-1][1]=+(P[n-2][1]*(1+pct/100)).toFixed(4);return{...inp,macro:M,fixture:true,stale:{}}}};
- return{build,audit,judge,quantile,floor1,EARLIEST,SRC,BANNED,FORMS,WIN_DAYS,MIN_DAYS,FX,dD,dT,ORDER,xLen}})();
+ return{TPL,build,audit,judge,quantile,floor1,EARLIEST,SRC,BANNED,FORMS,WIN_DAYS,MIN_DAYS,FX,dD,dT,ORDER,xLen}})();
 if(typeof module==='object'&&module&&module.exports)module.exports=RARE;

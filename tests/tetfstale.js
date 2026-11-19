@@ -33,7 +33,7 @@ async function run(name,E,clock){const b=await p.launch({executablePath:process.
   MAC.etfA='eth';renderEtf();{const el=document.querySelector('#nxEtf [data-ex="4k"]');o.btn.eth_4k={dis:!!(el&&el.disabled),exp:await exp(()=>el&&el.dispatchEvent(new MouseEvent('click',{bubbles:true})))}}
   const studio=async a=>{openCaptions({kind:'etf',a});await new Promise(r=>setTimeout(r,800));makeDraft(true);const box=document.querySelector('#capBox');
    const x={capFor:document.querySelector('#capFor').textContent,ta:[...box.querySelectorAll('textarea')].map(t=>t.value),box:box.innerText,stale:!!box.querySelector('[data-etfstale]')};
-   x.exp={};for(const id of ['stExp','stX','stShare'])x.exp[id]=await exp(()=>document.getElementById(id).onclick());return x};
+   x.exp={};for(const id of ['stExp','stShare'])x.exp[id]=await exp(()=>document.getElementById(id).onclick());return x};
   o.st={btc:await studio('btc'),eth:await studio('eth')};
   window.render8k=r8;
   // Audit: the BTC ETF caption text (as it would be if pasted or left from before the feed went stale) must fail while BTC is stale
