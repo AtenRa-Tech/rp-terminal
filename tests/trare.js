@@ -191,6 +191,9 @@ for(const bp of [-10,11]){const [s,i2]=s2(bp);ok(s.j.cur===bp&&s.j.fires&&s.stat
  // end to end through build(): OI example and 2s10s readings at / just inside the cut-off
  const o=by(T,'oi7');const a=by(B(R.FX.oiDrop(inp,o.cut.lo)),'oi7'),b=by(B(R.FX.oiDrop(inp,o.cut.lo+0.01)),'oi7'),mid=by(B(R.FX.oiDrop(inp,-17.7)),'oi7');
  ok(a.j.fires&&a.status==='rare'&&!b.j.fires&&!mid.j.fires&&mid.j.cur<=mid.j.p2,'L2 OI through build(): −17.86% fires, −17.85% does not, −17.70% (past the 2nd percentile, inside the cut-off) does not',{a:a.j.cur,b:b.j.cur,mid:[mid.j.cur,mid.j.p2,mid.j.share]});
+ {const bad=T.filter(s=>s.cut).filter(s=>{const sd=s.id.startsWith('etf_')?'high':s.j.side,c=sd==='low'?s.cut.lo:s.cut.hi;return s.j.past.days!==s.v.slice(0,-1).filter(x=>sd==='low'?x<=c:x>=c).length});
+  const tx=by(T,'t10y2y'),P=inp.macro.series.T10Y2Y.points;let n=0,ps=0;for(const p of P){const g=Math.sign(p[1]);if(g&&ps&&g!==ps)n++;if(g)ps=g}
+  ok(!bad.length&&tx.j.xpast.days===n,'L4 details: past cases are counted against the same cut-off as the label; 2s10s "Sign changes" counts real zero crossings ('+n+')',bad.map(s=>s.id))}
  const tt=by(T,'t10y2y');ok(tt.cut.lo===-10&&tt.cut.hi===11&&tt.thr.lo==='−10 bp'&&tt.thr.hi==='+11 bp','L3 2s10s cut-offs −10 bp / +11 bp (2nd/98th percentile −9/+10 bp)',tt.cut)}
 {const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.T10Y2Y.points,n=P.length;P[n-1][1]=+(P[n-2][1]-0.40).toFixed(2);const s=by(B({...inp,macro:M}),'t10y2y');
  ok(/: under 0\.1% of 12,612 readings were this low or lower$/.test(s.rarity)&&s.j.shareTxt==='under 0.1'&&R.shareT(0.05)==='under 0.1'&&R.shareT(0.1)==='0.1'&&R.shareT(1.57)==='1.5','U1 very rare share reads "under 0.1% of N readings"',s.rarity)}

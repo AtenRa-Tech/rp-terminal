@@ -38,13 +38,15 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
   const from=tc-WIN;let lo=Infinity,hi=-Infinity,n=0,loT=null,hiT=null;for(let i=0;i<N-1;i++){if(t[i]<from)continue;n++;if(v[i]<lo){lo=v[i];loT=t[i]}if(v[i]>hi){hi=v[i];hiT=t[i]}}
   const winExt=n?(cur<lo?'low':cur>hi?'high':null):null;
   // past cases (details panel only): earlier readings that met today's tail condition on the same side, as a count and episode dates
-  const thr=side==='low'?p2:p98,past=[];for(let i=0;i<N-1;i++)if(side==='low'?v[i]<=thr:v[i]>=thr)past.push(t[i]);const eps=[];past.forEach(x=>{if(!eps.length||x-eps.at(-1).last>7*DAY)eps.push({first:x,last:x});else eps.at(-1).last=x});
+  const past=pastOf(t,v,side,side==='low'?p2:p98);
   return{cur,t:tc,N,p2:o.thr?o.thr.p2:p2,p98:o.thr?o.thr.p98:p98,side,share,shareTxt:shareT(share),shareLo,shareHi,tail,win:{method:'calendar',days:WIN_DAYS,from,to:tc,n,lo:n?lo:null,hi:n?hi:null,loT,hiT},winExt,
-   fires:!!(tail||(winExt&&(!o.winSide||o.winSide===winExt))),form:tail?'tail':winExt?'window':null,past:{days:past.length,episodes:eps.length,dates:eps.slice(-5).map(e=>e.first)}}}
+   fires:!!(tail||(winExt&&(!o.winSide||o.winSide===winExt))),form:tail?'tail':winExt?'window':null,past}}
  // EFFECTIVE CUT-OFF (supervisor ruling a, 19 Nov): the least extreme reading, on the series' grid, at which judge() itself fires on this tail
  // (reading at/beyond the 2nd/98th percentile AND the share at or beyond it, today included, rounded down to 0.1%, not above 2.0%).
  // Found by putting candidate readings in today's place and asking the SAME judge() — so the label, chart line, details and audit can never
  // disagree with what fires. The firing rule itself is unchanged. null = this tail can never fire on this history.
+ // past cases (details panel only): earlier readings at or beyond thr on that side, as a count and episode start dates (gaps > 7 days split episodes)
+ function pastOf(t,v,side,thr){const N=v.length,p=[];if(thr==null)return{days:0,episodes:0,dates:[]};for(let i=0;i<N-1;i++)if(side==='low'?v[i]<=thr:v[i]>=thr)p.push(t[i]);const eps=[];p.forEach(x=>{if(!eps.length||x-eps.at(-1).last>7*DAY)eps.push({first:x,last:x});else eps.at(-1).last=x});return{days:p.length,episodes:eps.length,dates:eps.slice(-5).map(e=>e.first)}}
  const gdp=g=>Math.max(0,-Math.floor(Math.log10(g)+1e-9));
  function cutoff(t,v,side,o,grid){const N=v.length;if(N<3||!grid)return null;const sg1=side==='low'?-1:1,w=v.slice(),gd=gdp(grid),oo={...o,side,noTail:false};
   const pl=quantile(v,side==='low'?2:98);if(pl==null)return null;const G0=Math.round(pl/grid)-sg1*2;
@@ -163,7 +165,7 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
   const sgn=x=>x>0?1:x<0?-1:0,X=[];{let ps=0;for(let i=0;i<N;i++){const g=sgn(F.v[i]);if(g&&ps&&g!==ps)X.push({t:F.t[i],up:g>0});if(g)ps=g}}/* zero readings are skipped, the last non-zero sign counts */
   const cx=X.length&&X.at(-1).t===last?X.at(-1):null,cross=cx?(cx.up?'positive':'negative'):null,prevSame=cx?X.slice(0,-1).filter(x=>x.up===cx.up):[],lastSame=prevSame.at(-1)||null;
   const firstCross=!!cx&&!(lastSame&&lastSame.t>=last-WIN);
-  const j={...j0,fires:j0.fires||firstCross,form:j0.fires?j0.form:firstCross?'cross':null,crossFires:firstCross,cross:cx?{dir:cross,prevSame:lastSame&&lastSame.t}:null};
+  const j={...j0,fires:j0.fires||firstCross,form:j0.fires?j0.form:firstCross?'cross':null,crossFires:firstCross,cross:cx?{dir:cross,prevSame:lastSame&&lastSame.t}:null,xpast:{days:X.length,dates:X.slice(-5).map(x=>x.t)}};/* sign changes (details panel) */
   const m={metric:'daily moves in the 10Y\u20132Y spread',wmetric:'daily '+(j.cur<0?'fall':'rise')+' in the 10Y\u20132Y spread',since:sinceOf(t)};
   /* crossing sentence: 'since' = the previous crossing in that direction, or the start of the measured series (never before 1 Jun 1976) */
   const rarity=j0.fires?sentence(m,j0):firstCross?TPL.cross(cross,sg(cur,2),sg(prev,2)):TPL.normal;
@@ -209,7 +211,7 @@ const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINU
    // Labels at the reading's precision are rounded OUTWARD (toward the tail), so the labelled value itself always fires.
    if(s.j&&s.grid&&s.j.p2!=null&&!s.levelOnly){const etf=s.id.startsWith('etf_');s.cut={lo:etf?null:cutoff(s.t,s.v,'low',s.jo||{},s.grid),hi:cutoff(s.t,s.v,'high',s.jo||{},s.grid),p2:s.j.p2,p98:s.j.p98}}
    const outw=(x,side)=>{if(x==null)return null;const k=10**(s.dp||0),y=side==='low'?Math.floor(x*k+1e-9)/k:Math.ceil(x*k-1e-9)/k;return y};
-   if(s.cut){s.cut.loLab=outw(s.cut.lo,'low');s.cut.hiLab=outw(s.cut.hi,'high')}
+   if(s.cut){s.cut.loLab=outw(s.cut.lo,'low');s.cut.hiLab=outw(s.cut.hi,'high');/* past cases counted against the same cut-off as the label */const sd=s.id.startsWith('etf_')?'high':s.j.side;s.j={...s.j,past:pastOf(s.t,s.v,sd,sd==='low'?s.cut.lo:s.cut.hi)}}
    if(s.fv&&s.j){const F=x=>x==null?'\u2014':s.fv(x);s.thr=s.id.startsWith('etf_')?{lo:null,hi:F(s.cut&&s.cut.hiLab),kind:'98% streak'}:s.levelOnly?(s.j.win&&s.j.win.n?{lo:s.fv(s.j.win.lo),hi:s.fv(s.j.win.hi),kind:'180-day'}:null):s.cut?{lo:F(s.cut.loLab),hi:F(s.cut.hiLab),kind:'2%'}:null}
    if(s.cut&&s.fc){const fc=x=>x==null?'\u2014':s.fc(x),etf=s.id.startsWith('etf_'),rows=etf?[['Fires at',TPL.firesAt('high',fc(s.cut.hi),fc(s.j.p98),true)]]:[['Fires at (low tail)',TPL.firesAt('low',fc(s.cut.lo),fc(s.j.p2))],['Fires at (high tail)',TPL.firesAt('high',fc(s.cut.hi),fc(s.j.p98))]];
     if(s.facts){const i=s.facts.findIndex(([k])=>k==='2nd / 98th percentile'||k==='98th percentile streak');if(i>=0)s.facts.splice(i,1,...rows);else s.facts.splice(1,0,...rows)}}
