@@ -60,10 +60,12 @@ def etf_pending(etf):
 
 
 def checked_at(paths):
+    """Daily-batch stamp only. Reads checked_at, with NO fallback to updated (19 Nov review: a light ETF run rewrites updated,
+    so a file without checked_at means the batch is due). Never reads light_checked_at (a light run after 00:20 UTC must leave the batch due)."""
     out = []
     for p in paths:
         j = json.load(open(p))
-        out.append(j.get("checked_at") or j["updated"])
+        out.append(j["checked_at"])  # missing -> KeyError -> caller treats as due
     return out
 
 

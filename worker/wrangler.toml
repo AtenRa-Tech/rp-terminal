@@ -1,0 +1,18 @@
+# Cloudflare Worker: outside timer for "Refresh data" (.github/workflows/data.yml). See worker/README.md.
+# No secrets in this file. GH_TOKEN and HEARTBEAT_URL are set with `wrangler secret put` (README step 4).
+name = "rpt-refresh-timer"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+# no public URL: the worker only runs on its cron trigger
+workers_dev = false
+preview_urls = false
+
+[triggers]
+# hourly at minute 7 (UTC). Supervisor ruling 15 Nov: one check an hour, at most one dispatch an hour; GitHub's own :17/:47 crons stay as backup.
+crons = ["7 * * * *"]
+
+[vars]
+REPO = "AtenRa-Tech/rp-terminal"
+WORKFLOW = "data.yml"
+REF = "main"
+SITE_URL = "https://atenra-tech.github.io/rp-terminal/"

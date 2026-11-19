@@ -7,12 +7,25 @@ Fails (exit 1, ::error) when live data is past its OWN limit, recomputed against
   - macro fetch: now - macro_checked.checked_at > MACRO_FETCH_LIMIT_H (26h: daily batch at 00:20 UTC, caught up by the first hourly run after a dropped slot (refresh_slot.py --batch-due); fetch_macro.py stopped running)
   - etf: each fund (BTC, ETH) judged on its own last complete day; a held-back pending newest row is named, never counted. Fails if EITHER fund's NYSE trading days after that date through today (UTC) > limit_days (2), counted with scripts/nyse.py (NYSE holidays only, twin of shared/nyse.js). The message names which fund(s) are stale.
   - last_run older than 90 min (the derivatives refresh itself stopped, e.g. workflows disabled)
-Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (dispatched by the Netlify stale alarm) and the live suite."""
+Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (run by hand) and the live suite."""
 import json, sys, urllib.request
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'scripts'))
 import nyse  # ONE NYSE trading-day calendar shared with the page and the smoke (shared/nyse.js)
 from datetime import datetime, timezone
+import math
+def fmt_age_h(h, lim):
+    """C4: 1-decimal hours, but a past-limit age is never rounded down to look inside the limit (3.01h stays 3.01, not 3.0)."""
+    s = f"{h:.1f}"
+    if h > lim and float(s) <= lim:
+        s2 = f"{h:.2f}"
+        if float(s2) <= lim:
+            m = math.ceil(h * 60 - 1e-12)
+            if m <= lim * 60: m = int(lim * 60) + 1
+            hh, mm = divmod(int(m), 60)
+            return f"{hh}h{mm}m"
+        return f"{s2}h"
+    return f"{s}h"
 LAST_RUN_MAX_MIN = 90
 # Daily batch at 00:20 UTC, or a catch-up once the last successful fetch is 26h old (data.yml).
 # A tighter limit_h written into older _runs.json (7, from a retired 6h cadence) is ignored:
@@ -39,12 +52,12 @@ def check(d, now):
     for f, v in feeds.items():
         if not v.get('t') or v.get('lim_h') is None: bad.append(f'{f}: no t/lim_h'); continue
         h = (now - P(v['t'])).total_seconds() / 3600
-        if h > v['lim_h']: bad.append(f'{f}: {h:.1f}h old > limit {v["lim_h"]}h')
+        if h > v['lim_h']: bad.append(f'{f}: {fmt_age_h(h, v["lim_h"])} old > limit {v["lim_h"]}h')
     mk = d.get('market') or {}
     if not mk.get('updated') or mk.get('limit_h') is None: bad.append('market: no updated/limit_h')
     else:
         h = (now - P(mk['updated'])).total_seconds() / 3600
-        if h > mk['limit_h']: bad.append(f'market: {h:.1f}h old > limit {mk["limit_h"]}h')
+        if h > mk['limit_h']: bad.append(f'market: {fmt_age_h(h, mk["limit_h"])} old > limit {mk["limit_h"]}h')
     for s, v in (d.get('macro') or {}).items():
         if isinstance(v, dict) and v.get('ok') is False: bad.append(f'macro {s}: past its limit ({v.get("limit")})')
     mc = d.get('macro_checked')
@@ -55,7 +68,7 @@ def check(d, now):
     elif not mc.get('checked_at'): bad.append('macro fetch: no checked_at')
     else:
         h = (now - P(mc['checked_at'])).total_seconds() / 3600
-        if h > MACRO_FETCH_LIMIT_H: bad.append(f'macro fetch: last successful run {h:.1f}h ago > limit {MACRO_FETCH_LIMIT_H}h')
+        if h > MACRO_FETCH_LIMIT_H: bad.append(f'macro fetch: last successful run {fmt_age_h(h, MACRO_FETCH_LIMIT_H).rstrip("h")}h ago > limit {MACRO_FETCH_LIMIT_H}h')
     et = d.get('etf')
     if et is None: print('::warning title=Live data age::etf missing from _runs.json (written by runs_log.py since the NYSE calendar change)')
     else:
