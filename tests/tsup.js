@@ -19,7 +19,7 @@ await new Promise(r=>setTimeout(r,3000));
 const e=await pg.evaluate(()=>{const mk=(rows)=>({funds:[1,2],status:'ok',days:rows.map(([date,total,pending])=>({date,total,pending:!!pending}))});
  const D0=[['2026-09-22',10],['2026-09-23',10],['2026-09-24',10],['2026-09-25',10],['2026-09-26',10],['2026-09-29',10],['2026-09-30',10]];
  const E={updated:'2026-10-02T00:00:00Z',datasets:{btc:mk([...D0.map(([d,v])=>[d,100]),['2026-10-01',500]]),eth:mk([...D0,['2026-10-01',null,true]])}};
- const m=etfComb(E);const sv=NX.etf;NX.etf=E;let s7;try{s7=etf7()}finally{NX.etf=sv}
+ const m=etfComb(E);const sv=NX.etf,real=Date.now;NX.etf=E;Date.now=()=>Date.parse('2026-10-02T12:00:00Z');let s7;try{s7=etf7()}finally{NX.etf=sv;Date.now=real}
  const E2={updated:E.updated,datasets:{btc:E.datasets.btc,eth:mk([...D0,['2026-10-01',null,false]])}};const m2=etfComb(E2);
  return{has1:m.has('2026-10-01'),has1b:m2.has('2026-10-01'),sep30:m.get('2026-09-30'),n:m.size,s7,ethL:etfStats(E,'eth').L.date}});
 ok(!e.has1&&!e.has1b,'ETF combined: 1 Oct with ETH pending/null is dropped (not summed as 0)',e);

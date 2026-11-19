@@ -5,9 +5,13 @@ Fails (exit 1, ::error) when live data is past its OWN limit, recomputed against
   - market: now - market.updated > market.limit_h
   - macro: any series with ok == false (judged by each series' last_date)
   - macro fetch: now - macro_checked.checked_at > MACRO_FETCH_LIMIT_H (26h: daily batch at 00:20 UTC, caught up by the first hourly run after a dropped slot (refresh_slot.py --batch-due); fetch_macro.py stopped running)
+  - etf: each fund (BTC, ETH) judged on its own last complete day; a held-back pending newest row is named, never counted. Fails if EITHER fund's NYSE trading days after that date through today (UTC) > limit_days (2), counted with scripts/nyse.py (NYSE holidays only, twin of shared/nyse.js). The message names which fund(s) are stale.
   - last_run older than 90 min (the derivatives refresh itself stopped, e.g. workflows disabled)
 Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (dispatched by the Netlify stale alarm) and the live suite."""
 import json, sys, urllib.request
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'scripts'))
+import nyse  # ONE NYSE trading-day calendar shared with the page and the smoke (shared/nyse.js)
 from datetime import datetime, timezone
 LAST_RUN_MAX_MIN = 90
 # Daily batch at 00:20 UTC, or a catch-up once the last successful fetch is 26h old (data.yml).
@@ -52,6 +56,26 @@ def check(d, now):
     else:
         h = (now - P(mc['checked_at'])).total_seconds() / 3600
         if h > MACRO_FETCH_LIMIT_H: bad.append(f'macro fetch: last successful run {h:.1f}h ago > limit {MACRO_FETCH_LIMIT_H}h')
+    et = d.get('etf')
+    if et is None: print('::warning title=Live data age::etf missing from _runs.json (written by runs_log.py since the NYSE calendar change)')
+    else:
+        funds = et.get('funds')
+        if funds:
+            for a in nyse.FUNDS:
+                f = funds.get(a) or {}
+                hb = f.get('held_back'); tail = f'newest row {hb} held back (pending)' if hb else 'no row held back'
+                name = a.upper()
+                if not f.get('last_date'): bad.append(f'etf {name}: no complete day ({f.get("why", "etf.json missing")}); {tail}')
+                else:
+                    lim = f.get('limit_days', et.get('limit_days', 2)); bd = nyse.biz_days(f['last_date'], now.timestamp() * 1000)
+                    if bd > lim: bad.append(f'etf {name}: last complete day {f["last_date"]} is {bd} NYSE trading days old > limit {lim}; {tail}')
+        else:
+            # older _runs.json shape (single last_date, before per-fund judgement)
+            hb = et.get('held_back'); tail = f'newest row {hb} held back (pending)' if hb else 'no row held back'
+            if not et.get('last_date'): bad.append(f'etf: no complete day ({et.get("why", "etf.json missing")}); {tail}')
+            else:
+                lim = et.get('limit_days', 2); bd = nyse.biz_days(et['last_date'], now.timestamp() * 1000)
+                if bd > lim: bad.append(f'etf: last complete day {et["last_date"]} is {bd} NYSE trading days old > limit {lim}; {tail}')
     return bad
 if __name__ == '__main__':
     a = sys.argv[1:]; now = datetime.now(timezone.utc)
