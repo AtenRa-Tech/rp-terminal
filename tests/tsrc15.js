@@ -30,7 +30,7 @@ ok(r.uns.fl===null&&r.uns.latest==null,'latest that is not a settled print gives
 ok(r.runs==null,'fixture: _runs.json missing',r.runs);
 ok(r.c2.inSig.includes('fundBTC')&&r.c2.inSig.includes('fundETH')&&!r.c2.stale.length,'C2: settled funding print 7h old stays a reading/caption source when _runs.json is missing',r.c2);
 ok(!r.c2.ds.some(x=>/derivs/.test(x)),'C2: missing _runs.json does not mark fresh funding stale',r.c2.ds);
-ok(!r.c3.inSig.length&&r.c3.ds.some(x=>/derivs\.json funding \(_runs\.json missing\) 12\.\dh old \(limit 12h\)/.test(x)),'C3: funding past 12h still stale with the _runs.json fallback',r.c3);
+ok(!r.c3.inSig.length&&r.c3.ds.some(x=>/derivs\.json funding \(_runs\.json missing\) 12h10m old \(limit 12h\)/.test(x)),'C3: funding past 12h still stale with the _runs.json fallback (C4: age shown as 12h10m, never rounded into the limit)',r.c3);
 ok(!req.some(u=>/coingecko\.com\/api\/v3\/global/.test(u)),'totals/dominance never fetched from CoinGecko /global',req.filter(u=>/global/.test(u)));
 ok(r.glob.src==null||/^CoinPaprika/.test(r.glob.src),'Global totals source is CoinPaprika',r.glob);
 ok(!r.gtxt||/CoinPaprika/.test(r.gtxt),'Global card label names CoinPaprika',r.gtxt);

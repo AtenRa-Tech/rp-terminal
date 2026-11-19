@@ -1759,9 +1759,9 @@ function freshLine(){const p=[];let stale=0;
 const DLIM={derivs:3,market:FRESHNESS.market_h,calendar:24*8};
 // Freshness of derivs comes from data/_runs.json last_run (written by scripts/runs_log.py), never from derivs.json 'updated'.
 function dataStale(){const o=[];for(const[n,h]of Object.entries(DLIM)){let u;
-  if(n==='derivs'){u=DF['_runs']?.v?.last_run;if(!u){const ft=derivsFundT();if(ft==null)continue;const age=(Date.now()-ft)/36e5;if(age>DVLIM.funding)o.push(`derivs.json funding (_runs.json missing) ${age<48?age.toFixed(1)+'h':(age/24).toFixed(1)+'d'} old (limit ${DVLIM.funding}h)`);continue}} // C2: _runs.json missing/unreadable -> fall back to the funding time inside derivs.json, 12h limit; a missing log never hides fresh data
+  if(n==='derivs'){u=DF['_runs']?.v?.last_run;if(!u){const ft=derivsFundT();if(ft==null)continue;const age=(Date.now()-ft)/36e5;if(age>DVLIM.funding)o.push(`derivs.json funding (_runs.json missing) ${ageTxt(age,1,DVLIM.funding)} old (limit ${DVLIM.funding}h)`);continue}} // C2: _runs.json missing/unreadable -> fall back to the funding time inside derivs.json, 12h limit; a missing log never hides fresh data
   else{const d=DF[n]?.v;u=d?.updated||d?.generated;if(!u)continue}
-  const age=(Date.now()-Date.parse(u))/36e5;if(age>h)o.push(n==='derivs'?`derivs.json (last run ${_runsAgeLab(u)}) ${age<48?age.toFixed(1)+'h':(age/24).toFixed(1)+'d'} old (limit ${h}h)`:`${n}.json ${age<48?age.toFixed(1)+'h':(age/24).toFixed(1)+'d'} old (limit ${h<48?h+'h':h/24+'d'})`)}return o}
+  const age=(Date.now()-Date.parse(u))/36e5;if(age>h)o.push(n==='derivs'?`derivs.json (last run ${_runsAgeLab(u)}) ${ageTxt(age,1,h)} old (limit ${h}h)`:`${n}.json ${ageTxt(age,1,h)} old (limit ${h<48?h+'h':h/24+'d'})`)}return o}
 function derivsFundT(){const V=DVRAW||DF['derivs']?.v;if(!V?.assets)return null;let m=0;for(const A of Object.values(V.assets))m=Math.max(m,fundLatest(A)?.t??0);return m||null}
 const _runsAgeLab=u=>{try{return new Date(u).toISOString().slice(0,16).replace('T',' ')+' UTC'}catch(e){return String(u)}}
 // C15: every place a backup filled in for a failed primary (app runtime + data files)

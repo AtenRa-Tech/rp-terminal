@@ -1,4 +1,6 @@
 name: Refresh data
+# 17 Nov: a dispatched daily-batch run is titled "Refresh data (full)" so the Cloudflare timer (worker/) can count today's failed batch attempts (back-off)
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.full && 'Refresh data (full)' || 'Refresh data' }}
 
 # 21 Oct (account suspended for excessive automation): ONE data workflow on a slow schedule.
 #  - HOURLY at :17 and :47 (9 Nov: two slots, at most one real refresh an hour; the slot job skips a run when derivs were fetched < 45 min ago): derivatives (OI, funding, basis) + market in ONE run, ONE commit, ONE push, ONE fast publish.
@@ -8,6 +10,8 @@ name: Refresh data
 #    they follow the 00:00 UTC close on their own. Weekly Thursday 21:00 UTC for the Fed H.4.1 release (WALCL/WDTGAL).
 #  Freshness limits: market 3h (21 Oct supervisor ruling, was 2h; shared/freshness.json market_h), OI/basis 5h from the hour start (24 Oct ruling). GitHub runs crons best-effort; a dropped hour shows as stale in the app,
 #  and ci.yml's smoke fallback dispatches at most one extra run (only when none is queued/running).
+#  17 Nov: outside timer = Cloudflare Worker (worker/, cron :07 hourly) dispatches this workflow at most once an hour, only when derivatives are past 3h old (exactly 3.0h is still fresh)
+#  or the daily batch is due (then with full=true), never while a run is queued/in progress. These crons stay as the backup.
 on:
   schedule:
     - cron: '17 * * * *'    # hourly: derivs + market
@@ -20,16 +24,6 @@ on:
         description: 'Also run the daily macro + ETF batch'
         type: boolean
         default: false
-      restore_hours:
-        description: 'One-off: restore these closed hours (ms, comma-separated) from LIVE into data/derivs.json. Allowlist: BTC oi_hourly 1791118800000,1791475200000 only. Empty = normal run.'
-        type: string
-        required: false
-        default: ''
-      repair_derivs:
-        description: 'One-off (1 Nov): remove these Binance points so the OKX fetch re-adds them, and exempt exactly them from the vs-live guard. Allowlist: BTC/ETH oi_hourly 1793473200000, basis_hourly 1793476800000 as ASSET:series:t,... Empty = normal run.'
-        type: string
-        required: false
-        default: ''
 
 permissions:
   contents: write
@@ -112,22 +106,6 @@ jobs:
           echo "full=$FULL" >> "$GITHUB_OUTPUT"; echo "etf=$ETF" >> "$GITHUB_OUTPUT"
           echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL, ETF fetch=$ETF"
 
-      - name: Restore published hours from live (dispatch input restore_hours only; empty = skipped)
-        id: restore
-        if: github.event_name == 'workflow_dispatch' && inputs.restore_hours != ''
-        env:
-          RESTORE_HOURS: ${{ inputs.restore_hours }}
-          LIVE_OUT: ${{ runner.temp }}/restore-live-derivs.json
-        run: python3 .github/scripts/restore_hours.py "$RESTORE_HOURS"
-
-      - name: Repair Binance points (dispatch input repair_derivs only; empty = skipped)
-        id: repair
-        if: github.event_name == 'workflow_dispatch' && inputs.repair_derivs != ''
-        env:
-          REPAIR_DERIVS: ${{ inputs.repair_derivs }}
-          LIVE_OUT: ${{ runner.temp }}/repair-live-derivs.json
-        run: python3 .github/scripts/repair_derivs.py "$REPAIR_DERIVS"
-
       - name: Derivatives OI / funding / basis (hourly)
         continue-on-error: true
         run: python scripts/fetch_derivs.py
@@ -160,24 +138,9 @@ jobs:
           for f in data/*.json; do python -c "import json,sys; json.load(open('$f'))" || { echo "invalid $f, restoring"; git checkout -- "$f"; }; done
           rm -f data/*.tmp
 
-      - name: Restore only - publish guard vs live on the file about to be committed (blocking)
-        id: restore_guard
-        if: steps.restore.outcome == 'success'
-        run: python3 .github/scripts/publish_guard.py data/derivs.json "$RUNNER_TEMP/restore-live-derivs.json" --ref live
-
-      - name: Repair only - the fetch must have re-added OKX values for every repaired hour (continuity-checked), then guard vs live (blocking)
-        id: repair_guard
-        if: steps.repair.outcome == 'success'
-        env:
-          REPAIR_DERIVS: ${{ inputs.repair_derivs }}
-        run: |
-          python3 .github/scripts/repair_derivs.py --verify "$REPAIR_DERIVS"
-          python3 .github/scripts/publish_guard.py data/derivs.json "$RUNNER_TEMP/repair-live-derivs.json" --ref live --allow-diff "$REPAIR_DERIVS"
-
       - name: Commit if changed
         id: commit
-        # a refused restore/repair (or one whose result fails the vs-live guard) commits/pushes nothing (not even _runs.json)
-        if: always() && steps.restore.outcome != 'failure' && steps.restore_guard.outcome != 'failure' && steps.repair.outcome != 'failure' && steps.repair_guard.outcome != 'failure'
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -334,7 +297,6 @@ jobs:
       - name: Snapshot (tested code + newest data/ from main); refuse if code or data older than live
         env:
           GH_TOKEN: ${{ github.token }}
-          PUBLISH_ALLOW_DIFF: ${{ github.event_name == 'workflow_dispatch' && inputs.repair_derivs || '' }}
         run: |
           python3 .github/scripts/no_regress.py snapshot live-before.json
           # narrow no-rollback ruling (17 Nov: data.yml too): exact bytes live serves BEFORE this publish, for the smoke's stale-and-unchanged check

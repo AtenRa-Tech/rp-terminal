@@ -25,6 +25,12 @@ M = copy.deepcopy(FRESH); M['market']['updated'] = '2026-10-15T05:00:00Z'
 rc, o = run(M); ok(rc == 0, 'market 2.5h old passes (inside its 3h limit)', o)
 M['market']['updated'] = '2026-10-15T04:24:00Z'
 rc, o = run(M); ok(rc == 1 and 'market' in o and 'limit 3' in o, 'market 3.1h old fails (past its 3h limit)', o)
+M['market']['updated'] = '2026-10-15T04:30:00Z'
+rc, o = run(M); ok(rc == 0, 'C4: market exactly 3.0h old still passes (stale only when age > limit)', o)
+M['market']['updated'] = '2026-10-15T04:29:24Z'  # 3h 0m 36s = 3.01h
+rc, o = run(M); ok(rc == 1 and 'market' in o and '3.0h old' not in o, 'C4: market 3.01h old fails and the message is not rounded down to 3.0h', o)
+M['market']['updated'] = '2026-10-15T04:30:00Z'
+rc, o = run(M, '2026-10-15T07:29:59.6Z'); ok(rc == 0, 'C4: market 2h59m59.6s old passes (not rounded up to 3h)', o)
 X = copy.deepcopy(FRESH); X['macro']['M2SL']['ok'] = False
 rc, o = run(X); ok(rc == 1 and 'M2SL' in o, 'macro series not ok fails', o)
 L = copy.deepcopy(FRESH); L['last_run'] = '2026-10-15T05:50:00Z'
@@ -65,5 +71,5 @@ o3, ch = ns['finalize'](prev, dict(out, series={'A': {'last_date': '2026-10-15'}
 src = open(os.path.join(ROOT, 'scripts/fetch_macro.py')).read()
 ok(src.index('out, changed = finalize') < src.index('write_json(OUT, out)') and 'return\n    write_json' not in src, 'fetch_macro writes macro.json on every successful run (no early return before write)')
 dy = open(os.path.join(ROOT, '.github/workflows/data.yml')).read(); rsl = open(os.path.join(ROOT, '.github/scripts/refresh_slot.py')).read()
-ok('refresh_slot.py --batch-due data/macro.json data/etf.json' in dy and 'j.get("checked_at")' in rsl, 'data.yml catch-up (11 Nov: due since the last 00:20 UTC slot) uses checked_at (a fetch that ran is not re-forced every hour)')
+ok('refresh_slot.py --batch-due data/macro.json data/etf.json' in dy and 'j["checked_at"]' in rsl, 'data.yml catch-up (11 Nov: due since the last 00:20 UTC slot) uses checked_at (a fetch that ran is not re-forced every hour)')
 print("FAILS:", len(F), F); sys.exit(1 if F else 0)
