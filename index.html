@@ -163,6 +163,24 @@ html[data-theme=ch] .btn.pri.sm,html[data-theme=ch] .btn.pri{color:var(--onac)}
 html[data-theme=bb] .btn.pri.sm,html[data-theme=bb] .btn.pri{color:#000}
 html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{color:#fff}
 @media (prefers-reduced-motion:reduce){#ticker div{animation:none!important}#ticker{overflow-x:auto}.flash{animation:none!important}*{transition:none!important;scroll-behavior:auto!important}}
+/* rare signals (19 Nov): chart notes + posting desk */
+.rgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:0 12px}@media (min-width:980px){.rgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.rsig h3 .rt,.rrow .rt{color:var(--tx);letter-spacing:0;text-transform:none;font-size:14px;min-width:0}
+.rsig[data-status=rare]{border-color:var(--ac)}.rsig .rcv{margin-top:2px}
+.rnote{margin:10px 0 8px;font-size:13px;line-height:1.5;color:var(--tx2)}
+.rts{text-transform:none;letter-spacing:0;font-size:12px;font-weight:400}.rsum{font-size:13.5px;line-height:1.5}
+.bias.rn{background:color-mix(in srgb,var(--mu) 16%,transparent);color:var(--tx2)}.bias.rh{background:color-mix(in srgb,var(--ac2) 15%,transparent);color:var(--ac2)}
+.rdet{display:none;margin-top:10px;border-top:1px solid var(--ln);padding-top:8px}.rdet.on{display:block}
+.rtab{width:100%;border-collapse:collapse;font-size:12.5px}.rtab td{padding:5px 8px 5px 0;vertical-align:top;border-bottom:1px solid var(--ln2)}.rtab td:first-child{width:40%}
+.rpast,.rmeth{font-size:12px;margin-top:8px;line-height:1.45}
+.rfxb{display:inline-block;font:700 11px var(--mono);letter-spacing:.08em;padding:4px 9px;border-radius:var(--r2);color:#fff;background:repeating-linear-gradient(135deg,#8a2222 0 10px,#661818 10px 20px);margin-bottom:8px}
+.rfx{border-style:dashed!important;border-color:#8a2222!important}.rfxwrap{margin-top:12px;border:1px dashed #8a2222;border-radius:var(--r);padding:10px}
+.rlh{font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--mu);margin-top:10px}
+.rline{font-size:12.5px;line-height:1.5;margin-top:6px;color:var(--tx2)}
+.rlist{margin-top:8px}.rrow{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--ln2);font-size:13px;flex-wrap:wrap}
+.raud .rck{font-size:12.5px;padding:2px 0;line-height:1.4}.raud .rck.ok b{color:var(--up)}.raud .rck.no b{color:var(--dn)}.raudh{font-weight:700;margin:10px 0 4px;font-size:13px}.raudh.up{color:var(--up)}.raudh.dn{color:var(--dn)}
+#rareTA{min-height:130px;margin-top:6px;width:100%}
+#s-studio.rarectx .btn:disabled{filter:grayscale(1);opacity:.35}
 </style>
 </head><body>
 <header>
@@ -200,7 +218,9 @@ html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{col
     <div class="chips" id="inds" style="margin-top:6px"></div>
     <div class="flex" style="margin-top:10px"><button class="btn pri" data-x="chart">Export 8K PNG</button><button class="btn" id="toStudio">Make post card</button></div>
     <small class="note" id="chSrc"></small>
+    <div id="chRare" aria-live="polite"></div>
   </div>
+  <div id="rareBox"></div>
 </section>
 <!-- SIGNALS -->
 <section id="s-signals">
@@ -242,6 +262,7 @@ html[data-theme=neo] .btn.pri.sm{color:#000}html[data-theme=sap] .btn.pri.sm{col
     <canvas id="stCv" class="cv"></canvas>
     <div class="flex" style="margin-top:10px"><button class="btn pri" id="stExp">Export 8K PNG</button><button class="btn" id="stX">X 4K ⬇</button><button class="btn" id="stShare">Share to X (4K)</button></div>
   </div>
+  <div class="card" id="rareDesk"></div>
   <div class="card" id="capCard"><h3>Captions<span class="sp"></span><span id="capFor" class="mu" style="text-transform:none;letter-spacing:0;font-size:12px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span></h3>
     <div id="capBox"></div>
     <small class="note">Three styles built from the chart's real numbers and dates. Edit freely: the banned-phrase check runs as you type, and 🛡 Audit checks the edited text (wording, banned phrases, figures, live BTC price). Regenerate swaps sentence templates. Open in X only pre-fills the composer; you post it yourself.</small>
@@ -1060,7 +1081,7 @@ let NF='All';function renderNews(){const kw={All:null,...Object.fromEntries(S.wa
 let DMODE='post',NEWSPICK=null;// caption engine: see CAPTION ENGINE below
 function stCoin(){return S.watch[+$('#stCoin').value||0]||S.watch[0]}
 function renderStudio(){const sel=$('#stCoin'),v=sel.value;sel.innerHTML=S.watch.map((w,i)=>`<option value="${i}">${w.sym.toUpperCase()}</option>`).join('');sel.value=v||0;
-  const [w,h]=SIZES[$('#stRatio').value],cv=$('#stCv'),cw=cv.parentElement.clientWidth-28;const ctx=fit(cv,Math.round(cw*h/w));drawStudio(ctx,cv.width,cv.height);heatGate();makeDraft()}
+  const [w,h]=SIZES[$('#stRatio').value],cv=$('#stCv'),cw=cv.parentElement.clientWidth-28;let ctx;if(CAPCTX?.kind==='rare'&&h>=w){/* rare cards are 1:1 / 4:5: capped to the viewport height so the whole card is visible */const dpr=Math.min(devicePixelRatio||1,3),cssW=Math.max(240,Math.min(cw,Math.round(innerHeight*.8*w/h)));cv.style.width=cssW+'px';cv.style.margin='0 auto';cv.style.height=Math.round(cssW*h/w)+'px';cv.width=Math.round(cssW*dpr);cv.height=Math.round(cssW*h/w*dpr);ctx=cv.getContext('2d')}else{cv.style.width='';cv.style.margin='';ctx=fit(cv,Math.round(cw*h/w))}drawStudio(ctx,cv.width,cv.height);heatGate();makeDraft();renderDesk()}
 // ---------- MACRO + NEWS DATA (data/*.json from the GitHub Actions pipeline)
 const DRAW='https://raw.githubusercontent.com/AtenRa-Tech/rp-terminal/main/data/';
 const DBASE=()=>window.RP_DATA_BASE||(location.protocol.startsWith('http')?'./data/':DRAW);
@@ -1248,6 +1269,210 @@ const NYSE=(()=>{const C={},DAY=864e5,iso=t=>new Date(t).toISOString().slice(0,1
  return {holidays:y=>[...holidays(y)].sort(),open,bizDays,bizH,etfLast,FUNDS}})();
 if(typeof module==='object'&&module&&module.exports)module.exports=NYSE;
 // nyse:end
+// rare:begin (shared/rare.js inlined verbatim; tests/trare_ui.js asserts equality)
+// RARE SIGNALS ENGINE (19 Nov 2026): CRYPTO GOD's rare-signals spec + Crypto News GOD's wording rules (section 7 audit) + supervisor rulings.
+// ONE engine for the Chart-tab notes, the posting desk and the audit. index.html inlines this file between the rare:begin/rare:end markers
+// (tests/trare_ui.js asserts the inlined copy equals this file); tests/trare.js requires it directly.
+// Rules (all computed here at call time from the unrounded series, never hard-coded):
+//  - rare = (a) at/beyond the 2nd or 98th percentile of the series' own gap-free history (numpy linear interpolation, today included) AND the
+//    computed share of history at or beyond today's reading, rounded down to 0.1, is not above 2.0% (ties, e.g. 10Y at 1 bp, can block it);
+//    or (b) a new low/high against every reading in the previous 180 CALENDAR days (supervisor ruling; never 180 observations).
+//  - OI 7-day change is judged in percent (coins shown second). OI level uses only the 180-day high/low test.
+//  - under 365 days of gap-free history: 'not enough history', never a post. Funding and basis never produce a post; negative basis is never a signal.
+//  - ETF: pending rows are never read; NYSE holidays are not gaps; a zero-total day ends a streak.
+//  - every note/post carries the data's own date in UTC; no 'today'/'now' for data older than an hour.
+const RARE=(()=>{const DAY=864e5,WIN_DAYS=180,WIN=WIN_DAYS*DAY,MIN_DAYS=365,MINUS='\u2212';
+ const nyse=()=>typeof NYSE!=='undefined'?NYSE:(typeof require==='function'?require('./nyse.js'):null);
+ // earliest legitimate 'since' date per series (wording rules section 2); the audit fails any earlier date
+ const EARLIEST={oi7:'2024-01-01',oilvl:'2024-01-01',etf_btc:'2024-01-11',etf_eth:'2024-07-23',dgs10:'1962-01-03',t10y2y:'1976-06-01',dollar:'2016-01-27',link:'2019-01-16',funding:'2026-07-27',basis:'2026-10-20'};
+ const SRC={oi:'OKX BTC perpetual (BTC-USDT-SWAP) open interest, in BTC',etf:'Farside Investors, complete days only',dgs10:'FRED DGS10',t10y2y:'FRED T10Y2Y',dollar:'FRED broad dollar index (DTWEXBGS)',
+  link:{Binance:'Binance LINKUSDT daily closes',Coinbase:'Coinbase LINK-USD daily closes'},funding:'OKX BTC-USDT-SWAP funding',basis:'OKX BTC-USDT-SWAP perp vs spot'};
+ const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+ const iso=t=>new Date(t).toISOString().slice(0,10),ymd=s=>Date.parse(String(s).slice(0,10)+'T00:00:00Z');
+ const dD=t=>{const d=new Date(t);return d.getUTCDate()+' '+MON[d.getUTCMonth()]+' '+d.getUTCFullYear()};// '1 Jan 2024'
+ const dS=t=>{const d=new Date(t);return d.getUTCDate()+' '+MON[d.getUTCMonth()]};// '19 Nov'
+ const hm=t=>{const d=new Date(t);return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')};
+ const dT=t=>dD(t)+' '+hm(t)+' UTC';
+ const sg=(x,d)=>(x<0?MINUS:x>0?'+':'')+Math.abs(x).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+ const nf=(x,d=0)=>(x<0?MINUS:'')+Math.abs(x).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+ const floor1=x=>Math.floor(x*10+1e-9)/10;
+ // numpy.percentile(a, q) with the default linear method
+ function quantile(a,q){const s=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y);if(!s.length)return null;const h=(s.length-1)*q/100,lo=Math.floor(h),hi=Math.ceil(h);return s[lo]+(s[hi]-s[lo])*(h-lo)}
+ // tail and 180-calendar-day tests on a reading series {t,v} (t ascending, last = the reading under test)
+ function judge(t,v,o={}){const N=v.length,cur=v[N-1],tc=t[N-1];const p2=quantile(v,2),p98=quantile(v,98);
+  const le=v.filter(x=>x<=cur).length,ge=v.filter(x=>x>=cur).length,shareLo=le/N*100,shareHi=ge/N*100;
+  const side=o.side||(cur<0?'low':cur>0?'high':(shareLo<=shareHi?'low':'high'));
+  const share=side==='low'?shareLo:shareHi,tail=!o.noTail&&(side==='low'?cur<=p2:cur>=p98)&&floor1(share)<=2.0;
+  const from=tc-WIN;let lo=Infinity,hi=-Infinity,n=0,loT=null,hiT=null;for(let i=0;i<N-1;i++){if(t[i]<from)continue;n++;if(v[i]<lo){lo=v[i];loT=t[i]}if(v[i]>hi){hi=v[i];hiT=t[i]}}
+  const winExt=n?(cur<lo?'low':cur>hi?'high':null):null;
+  // past cases (details panel only): earlier readings that met today's tail condition on the same side, as a count and episode dates
+  const thr=side==='low'?p2:p98,past=[];for(let i=0;i<N-1;i++)if(side==='low'?v[i]<=thr:v[i]>=thr)past.push(t[i]);const eps=[];past.forEach(x=>{if(!eps.length||x-eps.at(-1).last>7*DAY)eps.push({first:x,last:x});else eps.at(-1).last=x});
+  return{cur,t:tc,N,p2,p98,side,share,shareTxt:floor1(share).toFixed(1),shareLo,shareHi,tail,win:{method:'calendar',days:WIN_DAYS,from,to:tc,n,lo:n?lo:null,hi:n?hi:null,loT,hiT},winExt,
+   fires:!!(tail||(winExt&&(!o.winSide||o.winSide===winExt))),form:tail?'tail':winExt?'window':null,past:{days:past.length,episodes:eps.length,dates:eps.slice(-5).map(e=>e.first)}}}
+ // latest gap-free segment: index of its first point. ok(prevT, t) says whether the step is gap-free
+ function segStart(t,ok){let s=0;for(let i=1;i<t.length;i++)if(!ok(t[i-1],t[i]))s=i;return s}
+ const enough=(t0,t1)=>(t1-t0)/DAY>=MIN_DAYS;
+ const plus1y=t=>{const d=new Date(t);return Date.UTC(d.getUTCFullYear()+1,d.getUTCMonth(),d.getUTCDate())};
+ const notEnough=(n,start)=>`Not enough history yet (${n} days since ${dD(start)}); no signal until ${dD(plus1y(start))}`;
+ // fixed rarity sentence forms (wording rules section 2)
+ function sentence(m,j){if(!j.fires)return'Within its normal range';
+  if(j.form==='tail')return`Among the ${j.side==='low'?'lowest':'highest'} 2% of ${m.metric} since ${dD(m.since)} (${j.shareTxt}% of ${j.N.toLocaleString('en-US')} readings at or ${j.side==='low'?'below':'above'} this)`;
+  return`${j.winExt==='low'?'Lowest':'Highest'} ${m.wmetric||m.metric} in ${WIN_DAYS} days`}
+ const noteOf=s=>`${s.readTxt} (${s.dateTxt}). ${s.rarity}. Source: ${s.source}, ${dD(s.srcFrom)}\u2013${dD(s.srcTo)}.`;
+
+ // ---------- the series
+ function oiSeries(DV){const A=DV&&DV.assets&&DV.assets.BTC,d=A&&A.oi_daily;if(!d||!d.points||!d.points.length)return{err:'no OKX daily open interest in derivs.json'};
+  if(!/OKX/i.test(String(d.source||'')))return{err:`daily open interest came from ${d.source||'an unknown venue'}, not OKX; the OKX history is not comparable`};
+  const P=d.points.filter(p=>p&&isFinite(p[0])&&p[2]!=null&&isFinite(p[2])),t=P.map(p=>+p[0]),c=P.map(p=>+p[2]),u=P.map(p=>+p[1]);const s=segStart(t,(a,b)=>b-a===DAY);
+  return{t:t.slice(s),c:c.slice(s),u:u.slice(s),snap:Date.parse(DV.updated)||null}}
+ // OKX daily buckets run 16:00 UTC -> 16:00 UTC (00:00 UTC+8); a bucket is labelled by the UTC date it ends on (= its UTC+8 day)
+ const oiDay=t=>t+8*36e5;
+ function sOI7(inp,st){const O=oiSeries(inp.derivs),base={id:'oi7',title:'BTC open interest · 7-day change',group:'Derivatives',source:SRC.oi,unit:'%',cash:'$BTC'};if(O.err)return{...base,missing:O.err};
+  const t=[],v=[],dc=[];for(let i=7;i<O.t.length;i++){t.push(O.t[i]);v.push((O.c[i]/O.c[i-7]-1)*100);dc.push(O.c[i]-O.c[i-7])}if(!v.length)return{...base,missing:'fewer than 8 daily buckets'};
+  const since=oiDay(O.t[0]),j=judge(t,v),L=O.c.length-1,coins=dc.at(-1);
+  const m={metric:'weekly changes',wmetric:'weekly change',since:oiDay(O.t[0])};const snap=O.snap||O.t[L];
+  const dateTxt=`snapshot ${dS(snap)} ${hm(snap)} UTC; daily bucket ${dS(O.t[L])} 16:00\u2013${dS(O.t[L]+DAY)} 16:00 UTC, still open`;
+  const s={...base,j,t,v,since:m.since,srcFrom:since,srcTo:snap,dataT:snap,open:O.t[L]+DAY>(inp.now||Date.now()),coins,level:O.c[L],dateTxt,
+   readTxt:`OKX BTC perpetual open interest ${sg(j.cur,1)}% (${sg(coins,0)} BTC) in 7 days`,rarity:sentence(m,j),hist:enough(t[0],t.at(-1)),
+   chart:{t:O.t.slice(7).map(oiDay),v,fmt:x=>sg(x,0)+'%',band:[j.p2,j.p98]},
+   facts:[['Reading',sg(j.cur,2)+'% ('+sg(coins,1)+' BTC)'],['2nd / 98th percentile',sg(j.p2,2)+'% / '+sg(j.p98,2)+'%'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,2)+'% / '+sg(j.win.hi,2)+'%':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' readings'],['Window',dD(m.since)+' \u2013 '+dT(snap)+' (gap-free, every step 24h)']]};
+  s.stats=[['7-day change',sg(j.cur,1)+'%'],['In coins',sg(coins,0)+' BTC'],['Open interest',nf(O.c[L],0)+' BTC']];
+  s.post=j.fires?[`${s.cash} OKX BTC perpetual open interest ${j.cur<0?'fell':'rose'} ${nf(Math.abs(j.cur),1)}% (${nf(Math.abs(coins),0)} BTC) in 7 days, to ${dS(snap)} ${hm(snap)} UTC.`,s.rarity+'.',`Open interest: ${nf(O.c[L],0)} BTC.`]:null;return s}
+ function sOIlvl(inp){const O=oiSeries(inp.derivs),base={id:'oilvl',title:'BTC open interest · level (coins)',group:'Derivatives',source:SRC.oi,unit:'BTC',cash:'$BTC'};if(O.err)return{...base,missing:O.err};
+  const j0=judge(O.t,O.c,{noTail:true}),L=O.c.length-1,snap=O.snap||O.t[L];const m={metric:'OKX BTC perpetual open interest',since:oiDay(O.t[0])};
+  const s={...base,j:j0,t:O.t,v:O.c,since:m.since,srcFrom:m.since,srcTo:snap,dataT:snap,usd:O.u[L],dateTxt:`snapshot ${dS(snap)} ${hm(snap)} UTC; daily bucket ${dS(O.t[L])} 16:00\u2013${dS(O.t[L]+DAY)} 16:00 UTC, still open`,
+   readTxt:`OKX BTC perpetual open interest ${nf(O.c[L],0)} BTC`,rarity:sentence(m,j0),hist:enough(O.t[0],O.t[L]),levelOnly:true,
+   chart:{t:O.t.map(oiDay),v:O.c,fmt:x=>nf(x/1000,1)+'k',band:null,win:[j0.win.lo,j0.win.hi]},
+   facts:[['Reading',nf(O.c[L],1)+' BTC ($'+(O.u[L]/1e9).toFixed(2)+'B notional)'],[`Low / high in previous ${WIN_DAYS} days`,j0.win.n?nf(j0.win.lo,1)+' / '+nf(j0.win.hi,1)+' BTC':'\u2014'],['Test','180-day high or low only (a percentile on a trending level is not used)'],['Window',dD(m.since)+' \u2013 '+dT(snap)]]};
+  s.stats=[['Open interest',nf(O.c[L],0)+' BTC'],[`${WIN_DAYS}-day low`,j0.win.n?nf(j0.win.lo,0):'\u2014'],[`${WIN_DAYS}-day high`,j0.win.n?nf(j0.win.hi,0):'\u2014']];
+  s.post=j0.fires?[`${s.cash} OKX BTC perpetual open interest reached ${nf(O.c[L],0)} BTC, to ${dS(snap)} ${hm(snap)} UTC.`,s.rarity+'.',`${WIN_DAYS}-day ${j0.winExt==='low'?'low':'high'} before this: ${nf(j0.winExt==='low'?j0.win.lo:j0.win.hi,0)} BTC (${dD(j0.winExt==='low'?j0.win.loT:j0.win.hiT)}).`]:null;return s}
+ // ETF flow streaks from complete (non-pending) rows only; NYSE holidays are not gaps; a zero-total day ends a streak
+ function etfRows(E,a){const d=E&&E.datasets&&E.datasets[a];if(!d||!d.days)return null;const N=nyse();
+  return d.days.filter(r=>r&&!r.pending&&r.total!=null&&isFinite(+r.total)&&(!N||N.open(String(r.date).slice(0,10)))).map(r=>({t:ymd(r.date),v:+r.total}))}
+ function sETF(inp,a){const A=a.toUpperCase(),id='etf_'+a,base={id,title:`US spot ${A} ETF · flow streak`,group:'ETF flows',source:SRC.etf,unit:'days',cash:'$'+A};
+  const R=etfRows(inp.etf,a);if(!R||!R.length)return{...base,missing:`no complete ${A} rows in etf.json`};const N=nyse();
+  const s0=segStart(R.map(r=>r.t),(x,y)=>{if(!N)return y-x<=4*DAY;for(let k=x+DAY;k<y;k+=DAY)if(N.open(k))return false;return true});const rows=R.slice(s0);
+  const t=[],L=[],dir=[];let run=0,sgn=0;for(const r of rows){const g=r.v>0?1:r.v<0?-1:0;if(g===0){run=0;sgn=0}else if(g===sgn)run++;else{run=1;sgn=g}t.push(r.t);L.push(run);dir.push(sgn)}
+  const j=judge(t,L,{side:'high'}),n=L.at(-1),dr=dir.at(-1),last=t.at(-1),cum=rows.slice(rows.length-n).reduce((x,r)=>x+r.v,0);
+  const ge=j.shareHi,word=dr<0?'outflows':'inflows';const since=t[0];
+  let rarity='Within its normal range';if(j.fires)rarity=j.form==='tail'?`${n} straight days of net ${word}, complete days through ${dD(last)}; a streak this long has happened on ${floor1(ge).toFixed(1)}% of days since ${dD(since)}`:`Longest US spot ${A} ETF flow streak in ${WIN_DAYS} days`;
+  const s={...base,j,t,v:L,since,srcFrom:since,srcTo:last,dataT:last,n,dir:dr,cum,dateTxt:`complete days through ${dD(last)} UTC`,
+   readTxt:n?`${n} day${n>1?'s':''} of net ${word} (${cum<0?MINUS:'+'}$${nf(Math.abs(cum),1)}M) in US spot ${A} ETFs`:`No streak in US spot ${A} ETFs (last day flat)`,rarity,hist:enough(t[0],last),
+   chart:{t:rows.map(r=>r.t),v:rows.map(r=>r.v),bars:true,fmt:x=>(x<0?MINUS:'')+'$'+nf(Math.abs(x),0)+'M'},
+   facts:[['Reading',`${n} day${n===1?'':'s'} of net ${word}; ${cum<0?MINUS:'+'}$${nf(Math.abs(cum),1)}M over the streak`],['98th percentile streak',nf(j.p98,2)+' days'],[`Longest streak in previous ${WIN_DAYS} days`,j.win.n?j.win.hi+' days':'\u2014'],['Days with a streak this long',floor1(ge).toFixed(1)+'% of '+j.N.toLocaleString('en-US')+' complete days'],['Window',dD(since)+' \u2013 '+dD(last)+' (complete days; NYSE holidays are not gaps; pending rows never read)']]};
+  s.sv=L.map((x,i)=>x*dir[i]);s.stats=[['Streak',n+' day'+(n===1?'':'s')],['Total',(cum<0?MINUS:'+')+'$'+nf(Math.abs(cum),1)+'M'],['Through',dS(last)]];
+  s.post=j.fires?[`US spot ${A} ETF net flows: ${cum<0?MINUS:'+'}$${nf(Math.abs(cum),1)}M over the streak (to ${dS(last)} UTC).`,rarity+'.',null]:null;return s}
+ // FRED daily series: a gap longer than 5 calendar days breaks the history
+ function fred(M,id){const s=M&&M.series&&M.series[id];if(!s||!s.points||!s.points.length)return null;const P=s.points.filter(p=>p&&p[1]!=null&&isFinite(+p[1])),t=P.map(p=>ymd(p[0])),v=P.map(p=>+p[1]);const k=segStart(t,(a,b)=>b-a<=5*DAY);return{t:t.slice(k),v:v.slice(k),last:s.last_date}}
+ function sDGS10(inp){const base={id:'dgs10',title:'US 10-year yield · daily move',group:'Rates',source:SRC.dgs10,unit:'bp'};const F=fred(inp.macro,'DGS10');if(!F)return{...base,missing:'DGS10 missing from macro.json'};
+  const t=[],v=[];for(let i=1;i<F.t.length;i++){t.push(F.t[i]);v.push(Math.round((F.v[i]-F.v[i-1])*100))}const j=judge(t,v),last=t.at(-1),lvl=F.v.at(-1);const m={metric:'daily moves in the US 10-year yield',wmetric:'daily '+(j.cur<0?'fall':'rise')+' in the US 10-year yield',since:t[0]};
+  const s={...base,j,t,v,since:t[0],srcFrom:F.t[0],srcTo:last,dataT:last,level:lvl,dateTxt:`${dD(last)}, FRED latest published`,readTxt:`US 10-year yield ${sg(j.cur,0)} bp to ${lvl.toFixed(2)}%`,rarity:sentence(m,j),hist:enough(t[0],last),
+   chart:{t:F.t,v:F.v,fmt:x=>x.toFixed(2)+'%'},
+   facts:[['Reading',sg(j.cur,0)+' bp (level '+lvl.toFixed(2)+'%)'],['2nd / 98th percentile',sg(j.p2,0)+' / '+sg(j.p98,0)+' bp'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,0)+' / '+sg(j.win.hi,0)+' bp':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' daily moves (values are rounded to 1 bp, so ties count; above 2.0% it does not fire)'],['Window',dD(t[0])+' \u2013 '+dD(last)]]};
+  s.stats=[['Daily move',sg(j.cur,0)+' bp'],['Yield',lvl.toFixed(2)+'%'],['Date',dS(last)]];
+  s.post=j.fires?[`The US 10-year Treasury yield moved ${sg(j.cur,0)} bp to ${lvl.toFixed(2)}% on ${dD(last)} (FRED, latest published).`,s.rarity+'.',null]:null;return s}
+ function sT10Y2Y(inp){const base={id:'t10y2y',title:'2s10s spread · zero crossing',group:'Rates',source:SRC.t10y2y,unit:'pp'};const F=fred(inp.macro,'T10Y2Y');if(!F)return{...base,missing:'T10Y2Y missing from macro.json'};
+  const N=F.v.length,cur=F.v[N-1],prev=F.v[N-2],last=F.t[N-1],sgn=x=>x>0?1:x<0?-1:0;const X=[];let ps=0;for(let i=0;i<N;i++){const g=sgn(F.v[i]);if(g&&ps&&g!==ps)X.push({t:F.t[i],up:g>0});if(g)ps=g}
+  const crossed=X.length&&X.at(-1).t===last?X.at(-1):null,prior=crossed?X.slice(0,-1).filter(x=>x.up===crossed.up&&x.t>=last-WIN):[];const fires=!!crossed&&!prior.length;
+  const j={cur,t:last,N,fires,form:fires?'cross':null,win:{method:'calendar',days:WIN_DAYS,from:last-WIN,to:last,n:F.t.filter(x=>x>=last-WIN&&x<last).length},past:{days:X.length,episodes:X.length,dates:X.slice(-5).map(x=>x.t)}};
+  const rarity=fires?`The 10Y\u20132Y spread turned ${crossed.up?'positive':'negative'} (first time in at least ${WIN_DAYS} days)`:'Within its normal range';
+  const s={...base,j,t:F.t,v:F.v,since:F.t[0],srcFrom:F.t[0],srcTo:last,dataT:last,crossed,dateTxt:`${dD(last)}, FRED latest published`,readTxt:`10Y\u20132Y Treasury spread ${sg(cur,2)} pp, ${crossed?'a sign change':'no sign change'} from ${sg(prev,2)} pp the day before`,rarity,hist:enough(F.t[0],last),
+   chart:{t:F.t,v:F.v,fmt:x=>sg(x,2),zero:true},
+   facts:[['Reading',sg(cur,2)+' pp'],['Rule','fires only on the day the sign changes and only if it is the first change in that direction in '+WIN_DAYS+' calendar days'],['Last sign change',X.length?dD(X.at(-1).t)+' ('+(X.at(-1).up?'to positive':'to negative')+')':'\u2014'],['Window',dD(F.t[0])+' \u2013 '+dD(last)]]};
+  s.stats=[['10Y\u20132Y',sg(cur,2)+' pp'],['Day before',sg(prev,2)+' pp'],['Date',dS(last)]];
+  s.post=fires?[`The 10Y\u20132Y Treasury spread was ${sg(cur,2)} pp on ${dD(last)} (FRED, latest published).`,rarity+'.',null]:null;return s}
+ function sDollar(inp){const base={id:'dollar',title:'Broad dollar index · daily move',group:'Dollar',source:SRC.dollar,unit:'%'};const F=fred(inp.macro,'DTWEXBGS');if(!F)return{...base,missing:'DTWEXBGS missing from macro.json'};
+  const t=[],v=[];for(let i=1;i<F.t.length;i++){t.push(F.t[i]);v.push((F.v[i]/F.v[i-1]-1)*100)}const j=judge(t,v),last=t.at(-1),lvl=F.v.at(-1);const m={metric:'daily moves in the broad dollar index',wmetric:'daily '+(j.cur<0?'fall':'rise')+' in the broad dollar index',since:F.t[0]};
+  const s={...base,j,t,v,since:F.t[0],srcFrom:F.t[0],srcTo:last,dataT:last,level:lvl,dateTxt:`last data ${dD(last)}, FRED latest published`,readTxt:`Broad dollar index ${sg(j.cur,3)}% to ${lvl.toFixed(2)}`,rarity:sentence(m,j),hist:enough(F.t[0],last),
+   chart:{t:F.t,v:F.v,fmt:x=>x.toFixed(1)},
+   facts:[['Reading',sg(j.cur,3)+'% (index '+lvl.toFixed(4)+', Jan 2006 = 100)'],['2nd / 98th percentile',sg(j.p2,3)+'% / '+sg(j.p98,3)+'%'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,3)+'% / '+sg(j.win.hi,3)+'%':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' daily moves'],['Window',dD(F.t[0])+' \u2013 '+dD(last)+' (starts after the last gap of more than 5 days)']]};
+  s.stats=[['Daily move',sg(j.cur,2)+'%'],['Index',lvl.toFixed(2)],['Date',dS(last)]];
+  s.post=j.fires?[`The broad US dollar index (FRED) moved ${sg(j.cur,2)}% to ${lvl.toFixed(2)} on ${dD(last)}, the latest published day.`,s.rarity+'.',null]:null;return s}
+ function sLINK(inp){const C=inp.link,src=C&&C.src==='Coinbase'?'Coinbase':'Binance',base={id:'link',title:'LINK · 30-day return',group:'Coins',source:SRC.link[src],unit:'%',cash:'$LINK'};
+  if(!C||!C.t||C.t.length<31)return{...base,missing:'LINK daily closes not loaded'};const now=inp.now||Date.now();let n=C.t.length;while(n&&C.t[n-1]+DAY>now)n--;/* completed UTC days only */
+  const T=C.t.slice(0,n),V=C.v.slice(0,n),k=segStart(T,(a,b)=>b-a===DAY),tt=T.slice(k),vv=V.slice(k);const t=[],v=[];for(let i=30;i<tt.length;i++){t.push(tt[i]);v.push((vv[i]/vv[i-30]-1)*100)}if(!v.length)return{...base,missing:'fewer than 31 gap-free LINK closes'};
+  const j=judge(t,v),last=t.at(-1),px=vv.at(-1);const m={metric:'LINK 30-day returns',wmetric:'LINK 30-day return',since:t[0]};
+  const s={...base,j,t,v,since:t[0],srcFrom:tt[0],srcTo:last,dataT:last,price:px,kept:!!C.kept,dateTxt:`${dD(last)} UTC daily close`,readTxt:`LINK ${sg(j.cur,1)}% over 30 days to $${px.toFixed(3)}`,rarity:sentence(m,j),hist:enough(t[0],last),
+   chart:{t:tt,v:vv,fmt:x=>'$'+x.toFixed(x<10?2:1),log:true},
+   facts:[['Reading',sg(j.cur,2)+'% ($'+vv[vv.length-31].toFixed(3)+' \u2192 $'+px.toFixed(3)+')'],['2nd / 98th percentile',sg(j.p2,2)+'% / '+sg(j.p98,2)+'%'],[`Low / high in previous ${WIN_DAYS} days`,j.win.n?sg(j.win.lo,2)+'% / '+sg(j.win.hi,2)+'%':'\u2014'],['Share at or '+(j.side==='low'?'below':'above'),j.shareTxt+'% of '+j.N.toLocaleString('en-US')+' readings'],['Window',dD(tt[0])+' \u2013 '+dD(last)+' ('+src+', completed UTC days, gap-free)']]};
+  s.stats=[['30-day return',sg(j.cur,1)+'%'],['Close',('$'+px.toFixed(2))],['Date',dS(last)]];
+  s.post=j.fires?[`${s.cash} ${j.cur<0?'fell':'rose'} ${nf(Math.abs(j.cur),1)}% over 30 days to $${px.toFixed(2)}, ${src} daily close ${dS(last)} UTC.`,s.rarity+'.',null]:null;return s}
+ function sFunding(inp){const A=inp.derivs&&inp.derivs.assets&&inp.derivs.assets.BTC,f=A&&A.funding,base={id:'funding',title:'BTC funding (OKX)',group:'Derivatives',source:SRC.funding,unit:'% per 8h',never:'Funding never produces a post: under a year of history.'};
+  if(!f||!f.points||!f.points.length)return{...base,missing:'no funding in derivs.json'};const P=f.points,t0=P[0][0],tl=P.at(-1)[0],r=P.at(-1)[1]*100,days=Math.round((tl-t0)/DAY);
+  return{...base,t:P.map(p=>p[0]),v:P.map(p=>p[1]*100),since:t0,srcFrom:t0,srcTo:tl,dataT:tl,hist:enough(t0,tl)&&false,days,dateTxt:dS(tl)+' '+hm(tl)+' UTC',readTxt:`Funding ${sg(r,3)}% per 8h`,rarity:notEnough(days,t0),chart:{t:P.map(p=>p[0]),v:P.map(p=>p[1]*100),fmt:x=>sg(x,3)+'%',zero:true},
+   facts:[['Reading',sg(r,4)+'% per 8h'],['History',days+' days since '+dD(t0)+' (OKX serves about 3 months; the file stores it from 27 Jul 2026)'],['Signal','none until '+dD(plus1y(t0))]],post:null}}
+ function sBasis(inp){const A=inp.derivs&&inp.derivs.assets&&inp.derivs.assets.BTC,b=A&&A.basis_hourly,base={id:'basis',title:'BTC basis (OKX perp vs spot)',group:'Derivatives',source:SRC.basis,unit:'%',never:'Basis never produces a post: under a year of history, and negative basis is the normal state.'};
+  if(!b||!b.points||!b.points.length)return{...base,missing:'no basis in derivs.json'};const P=b.points,t0=P[0][0],tl=P.at(-1)[0],x=P.at(-1)[3],days=Math.round((tl-t0)/DAY),neg=P.filter(p=>p[3]<0).length;
+  return{...base,t:P.map(p=>p[0]),v:P.map(p=>p[3]),since:t0,srcFrom:t0,srcTo:tl,dataT:tl,hist:false,days,dateTxt:dS(tl)+' '+hm(tl)+' UTC',readTxt:`Basis ${sg(x,4)}%`,rarity:notEnough(days,t0)+'. Negative basis is the normal state and is never a signal',chart:{t:P.map(p=>p[0]),v:P.map(p=>p[3]),fmt:x=>sg(x,3)+'%',zero:true},
+   facts:[['Reading',sg(x,4)+'%'],['Negative hours',neg+' of '+P.length],['History',days+' days since '+dD(t0)],['Signal','never (negative basis is the normal state); no rarity test until '+dD(plus1y(t0))]],post:null}}
+
+ // ---------- assemble: note, post, freshness
+ const ORDER=['oi7','oilvl','etf_btc','etf_eth','dgs10','t10y2y','dollar','link','funding','basis'];
+ function build(inp){const now=inp.now||Date.now(),st=inp.stale||{};const L=[sOI7(inp),sOIlvl(inp),sETF(inp,'btc'),sETF(inp,'eth'),sDGS10(inp),sT10Y2Y(inp),sDollar(inp),sLINK(inp),sFunding(inp),sBasis(inp)];
+  for(const s of L){s.stale=st[s.id]||'';s.fixture=!!inp.fixture;
+   if(s.missing){s.note=`${s.title}: \u2014 (${s.missing}).`;s.status='missing';s.post=null;continue}
+   if(!s.never&&!s.hist){s.rarity=notEnough(Math.round((s.t.at(-1)-s.since)/DAY),s.since);if(s.j)s.j.fires=false;s.post=null}
+   s.note=noteOf(s);
+   s.status=s.stale?'stale':s.never||!s.hist?'history':s.j&&s.j.fires?'rare':'normal';
+   if(s.stale){s.note+=` ${s.stale} No post while stale.`}
+   if(s.post&&s.status==='rare'){const lines=s.post.filter(Boolean),txt=lines.concat(['Source: '+s.source+'.']);let p=txt.join('\n');if(xLen(p)>280)p=lines.slice(0,2).concat(['Source: '+s.source+'.']).join('\n');s.postText=p}else s.postText=null}
+  return L}
+ const xLen=t=>[...String(t).replace(/https?:\/\/\S+/g,'x'.repeat(23))].length;
+
+ // ---------- AUDIT (wording rules section 7, each check fails closed) + supervisor recompute
+ const BANNED=[/what followed/i,/last time/i,/historically leads? to/i,/signal to (buy|sell)/i,/\bbullish\b/i,/\bbearish\b/i,/capitulation/i,/smart money/i,/\bwhales?\b/i,/\bmassive\b/i,/\bhuge\b/i,/\binsane\b/i,/never seen/i,/all[- ]time/i,/\bbreaking\b/i,/\bnot rare\b/i,/most extreme 2%/i,/\bDXY\b/,/across exchanges/i,/market[- ]wide/i,/\b(buy|sell|buying|selling)\b/i,/\btargets?\b/i,/\bwill (rise|fall|go|hit|reach)\b/i,/\bINR\b|\u20b9|\bindia\b|\brupee/i];
+ const NOWW=/\b(today|now|this morning|just now|tonight|currently)\b/i;
+ const DATE_RE=/\b\d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)( \d{4})?\b/;
+ const FORMS=[/^Among the (lowest|highest) 2% of [^.]+ since \d{1,2} [A-Z][a-z]{2} \d{4} \((\d+\.\d)% of ([\d,]+) readings at or (below|above) this\)$/,/^(Lowest|Highest) [^.]+ in 180 days$/,/^\d+ straight days of net (outflows|inflows), complete days through \d{1,2} [A-Z][a-z]{2} \d{4}; a streak this long has happened on (\d+\.\d)% of days since \d{1,2} [A-Z][a-z]{2} \d{4}$/,/^The 10Y\u20132Y spread turned (positive|negative) \(first time in at least 180 days\)$/];
+ const toks=x=>(String(x).replace(/\u2212/g,'-').match(/[-+]?\$?\d+(,\d{3})*(\.\d+)?/g)||[]).map(z=>z.replace(/^\+/,''));
+ function audit(text,sig,inp){const T=String(text||''),now=(inp&&inp.now)||Date.now(),C=[];const add=(k,name,pass,why)=>C.push({k,name,pass:!!pass,why:pass?'':why});
+  const lines=T.split('\n').map(x=>x.trim()).filter(Boolean),rl=lines[1]||'';const rs=rl.replace(/\.$/,'');
+  // recompute from the unrounded series at post time
+  let R=null;try{R=inp?build({...inp,now}).find(x=>x.id===sig.id):null}catch(e){R=null}
+  // 1. rarity sentence form + recomputed percent
+  {const f=FORMS.find(re=>re.test(rs));let ok=!!f,why=f?'':'line 2 is not one of the fixed rarity forms';if(f&&R&&R.j){const m=rs.match(/\((\d+\.\d)% of ([\d,]+) readings/)||rs.match(/happened on (\d+\.\d)% of days/);if(m){const want=R.id.startsWith('etf_')?floor1(R.j.shareHi).toFixed(1):R.j.shareTxt;if(m[1]!==want){ok=false;why=`stated share ${m[1]}% but the recomputed share is ${want}%`}if(m[2]&&+m[2].replace(/,/g,'')!==R.j.N){ok=false;why=`stated ${m[2]} readings but the history has ${R.j.N}`}}if(R.rarity!==rs){ok=false;why=why||`rarity sentence differs from the recomputed one ("${R.rarity}")`}}add(1,'Rarity sentence form and recomputed percent',ok,why)}
+  // 2. any '180 days' claim must be a 180-calendar-day window, and hold on it
+  {let ok=true,why='';if(/180 (trading days|sessions|readings|observations|obs|business days)/i.test(T)){ok=false;why='a 180-day window must be calendar days, not observations'}
+   else if(/in 180 days/i.test(T)){const j=(R||sig).j;if(!j||!j.win||j.win.method!=='calendar'||j.win.to-j.win.from!==WIN){ok=false;why='the 180-day window was not computed over 180 calendar days'}
+    else if(R&&R.j){const r=R.j;const claimLow=/^Lowest/.test(rs),claimHigh=/^Highest/.test(rs);if(R.id==='t10y2y'){if(!R.j.fires){ok=false;why='no first crossing in 180 calendar days'}}else if((claimLow&&r.winExt!=='low')||(claimHigh&&r.winExt!=='high')){ok=false;why=`not a new ${claimLow?'low':'high'} against every reading in the previous 180 calendar days`}}}
+   if(ok&&sig.j&&sig.j.win&&sig.j.win.method!=='calendar'){ok=false;why='window computed in observations'}add(2,'180 days = 180 calendar days',ok,why)}
+  // 3. no 'since' date earlier than the series' window start
+  {let ok=true,why='';const E=EARLIEST[sig.id];const re=/since (\d{1,2} [A-Z][a-z]{2} \d{4})/g;let m;while((m=re.exec(T))){const d=Date.parse(m[1]+' UTC');if(!E||!isFinite(d)||d<ymd(E)){ok=false;why=`"since ${m[1]}" is earlier than the ${sig.id} window start ${E?dD(ymd(E)):'(unknown)'}`}else if(R&&d<ymd(iso(R.since))){ok=false;why=`"since ${m[1]}" is earlier than this history's first reading ${dD(R.since)}`}}add(3,'Since date not before the window start',ok,why)}
+  // 4. under 365 days of history, negative basis or funding: no post
+  {let ok=true,why='';if(['funding','basis'].includes(sig.id)||sig.never){ok=false;why=sig.id==='basis'?'basis never produces a post':'funding never produces a post'}else if(!(R||sig).hist){ok=false;why='under 365 days of gap-free history'}else if(/\bbasis\b/i.test(T)&&/negative/i.test(T)){ok=false;why='negative basis is never a signal'}add(4,'History of at least 365 days; never funding or basis',ok,why)}
+  // 5. banned phrases
+  {const hit=BANNED.filter(re=>re.test(T)).map(re=>(T.match(re)||[''])[0]);add(5,'No banned phrase',!hit.length,'banned: '+hit.map(h=>'"'+h+'"').join(', '))}
+  // 6. data date present (UTC), and no 'today'/'now' on data older than an hour
+  {let ok=DATE_RE.test(T)&&/UTC|FRED, latest published|latest published day/.test(T),why=ok?'':'no data date in UTC';const age=(now-(sig.dataT||0))/36e5;if(ok&&NOWW.test(T)&&age>1){ok=false;why=`says "${T.match(NOWW)[0]}" on data ${age.toFixed(1)}h old`}add(6,'Data date shown; no "today"/"now" on old data',ok,why)}
+  // 7. 10Y ties: a share above 2.0% does not fire
+  {let ok=true,why='';const r=R||sig;if(r.id==='dgs10'&&r.j&&r.j.form==='tail'&&floor1(r.j.share)>2.0){ok=false;why=`10Y share with ties is ${floor1(r.j.share).toFixed(1)}%, above 2.0%`}
+   if(r.id==='dgs10'&&/Among the (lowest|highest) 2%/.test(T)&&!(r.j&&r.j.form==='tail')){ok=false;why=`10Y share with ties is ${r.j?floor1(r.j.share).toFixed(1):'?'}%, above 2.0%: it does not fire`}add(7,'10Y ties above 2.0% do not fire',ok,why)}
+  // R. every figure recomputed from the unrounded series at post time
+  {let ok=!!(R&&R.postText),why=R?(R.postText?'':'the recomputed reading is not rare: no post'):'could not recompute from the series';if(ok){const want=new Set(toks(R.postText)),bad=toks(T).filter(x=>!want.has(x));if(bad.length){ok=false;why='figures not in the recomputed post: '+bad.join(', ')}const miss=toks(R.postText).filter(x=>!toks(T).includes(x));if(ok&&miss.length&&toks(lines[0]||'').length<toks(R.postText.split('\n')[0]).length){ok=false;why='line 1 figures missing: '+miss.join(', ')}}add('R','Every figure recomputed at post time',ok,why)}
+  // S. exact source name; F. fresh data; X. post format
+  {const src=lines.at(-1)||'',ok=src==='Source: '+(R||sig).source+'.';add('S','Exact source name',ok,`source line must be "Source: ${(R||sig).source}."`)}
+  {const s=(R&&R.stale)||sig.stale;add('F','Data inside its freshness limit',!s,'stale: '+s)}
+  {const cash=(T.match(/\$[A-Za-z]{2,6}\b/g)||[]).length,em=/\p{Extended_Pictographic}/u.test(T);let ok=xLen(T)<=280&&cash<=1&&!em&&lines.length<=4,why=xLen(T)>280?`${xLen(T)} characters, over 280`:cash>1?'more than one cashtag':em?'no emoji in rare-signal posts':lines.length>4?'max 3 lines plus the source line':'';add('X','X format (280, one cashtag, no emoji, 3 lines + source)',ok,why)}
+  return{ok:C.every(c=>c.pass),checks:C,fixture:!!(inp&&inp.fixture)}}
+
+ // ---------- TEST FIXTURES (examples; never shown as live): built from real history with the newest point replaced
+ const FX={
+  // newest OKX bucket set so the 7-day change lands exactly on the 2nd-percentile line (a tie fires)
+  oiAtLine(inp){const D=JSON.parse(JSON.stringify(inp.derivs)),O=D.assets.BTC.oi_daily;O.points=O.points.slice(-1008);/* 1,001 seven-day readings: (N-1)*2% = 20 exactly, so the 2% line is one reading, no interpolation */
+   const P=O.points,n=P.length,ch=[];for(let i=7;i<n-1;i++)ch.push(P[i][2]/P[i-7][2]-1);ch.sort((a,b)=>a-b);const x=(ch[19]+ch[20])/2;/* 20 readings below it: with it included it is the 21st smallest = the 2nd percentile itself */
+   P[n-1][2]=P[n-8][2]*(1+x);P[n-1][1]=P[n-1][2]*(P[n-2][1]/P[n-2][2]);return{...inp,derivs:D,fixture:true,stale:{}}},
+  // a sharp fall: newest bucket 19% below the bucket 7 days earlier (example preview)
+  oiDrop(inp,pct=-19.2){const D=JSON.parse(JSON.stringify(inp.derivs)),P=D.assets.BTC.oi_daily.points,n=P.length;P[n-1][2]=P[n-8][2]*(1+pct/100);P[n-1][1]=P[n-1][2]*(P[n-2][1]/P[n-2][2]);return{...inp,derivs:D,fixture:true,stale:{}}},
+  // ETF: a long outflow streak whose newest row is still pending (the pending row must never count)
+  etfPending(inp,a='btc',len=15){const E=JSON.parse(JSON.stringify(inp.etf)),d=E.datasets[a],rows=d.days.filter(r=>!r.pending);let c=0;for(let i=rows.length-1;i>=0&&c<len;i--){const N=nyse();if(N&&!N.open(rows[i].date))continue;rows[i].total=-100-c;c++}
+   const lastT=ymd(rows.at(-1).date);let t=lastT+DAY;const N=nyse();while(N&&!N.open(t))t+=DAY;d.days=rows.concat([{date:iso(t),total:null,funds:{},pending:true}]);return{...inp,etf:E,fixture:true,stale:{}}},
+  // 10Y: newest published move set to bp basis points (moves are rounded to 1 bp, so this ties with every past move of that size)
+  tenY(inp,bp=-14){const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.DGS10.points,n=P.length;P[n-1][1]=Math.round((P[n-2][1]+bp/100)*100)/100;return{...inp,macro:M,fixture:true,stale:{}}},
+  // dollar index: keep FRED's own date (13 Nov), never 'today'
+  dollar(inp,pct=-1.1){const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.DTWEXBGS.points,n=P.length;P[n-1][1]=+(P[n-2][1]*(1+pct/100)).toFixed(4);return{...inp,macro:M,fixture:true,stale:{}}}};
+ return{build,audit,judge,quantile,floor1,EARLIEST,SRC,BANNED,FORMS,WIN_DAYS,MIN_DAYS,FX,dD,dT,ORDER,xLen}})();
+if(typeof module==='object'&&module&&module.exports)module.exports=RARE;
+// rare:end
 // ETF freshness counts NYSE trading hours only (one calendar with tests/tsmoke.js and the stale alarm), not every weekday hour
 const bizH=NYSE.bizH;
 /* combined BTC+ETH daily total: only dates where BOTH funds have a published (non-pending, finite) total; a pending side is never counted as 0 */
@@ -1746,7 +1971,7 @@ function capFirst(ctx,obj){const F=capFacts(ctx,obj);return F?capPick(F,'simple'
 let CAPCTX=null,CAPK='',CAPST={},CAPRNG=mb32(Date.now()&0xffff);
 const xLen=t=>[...t.replace(/https?:\/\/\S+/g,'x'.repeat(23))].length;
 function curCtx(){if(NEWSPICK&&(!CAPCTX||CAPCTX.kind!=='news'||CAPCTX.n!==NEWSPICK))CAPCTX={kind:'news',n:NEWSPICK};return CAPCTX||{kind:'studio',t:$('#stType').value,coin:stCoin()}}
-function makeDraft(force){const box=$('#capBox');if(!box)return;const ctx=curCtx(),key=ctxKey(ctx);
+function makeDraft(force){const box=$('#capBox');if(!box)return;const ctx=curCtx();if(ctx.kind==='rare')return rareDraft(box);$('#s-studio').classList.remove('rarectx');const key=ctxKey(ctx);
   if(ctx.kind==='etf'){const sw=etfAStale(ctx.a);if(sw){CAPF=null;CAPK='';$('#capFor').textContent=`US spot ${String(ctx.a).toUpperCase()} ETF flows · ⚠️ stale`;box.innerHTML=`<div class="mu etfstale" data-etfstale="${esc(ctx.a)}"><span class="bias b-dn">⚠️ stale</span> ${esc(sw)} No caption: a stale ETF figure is not for posting.</div>`;return}}
   const F=capFacts(ctx);CAPF=F;
   if(!F){box.innerHTML='<div class="mu">Loading data for captions…</div>';CAPK='';return}
@@ -1772,7 +1997,7 @@ function threadSplit(t,lim=280){t=(t||'').trim();if(xLen(t)<=lim)return[t];const
 const ABBR=/\b(Corp|Inc|Ltd|Co|Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|No|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|[A-Z])\./g;
 function splitSent(p){const k=(p||'').replace(ABBR,'$1\u0007');return k.split(/(?<=[.!?])\s+/).map(s=>s.replace(/\u0007/g,'.').trim()).filter(Boolean)}
 function openCaptions(ctx){NEWSPICK=ctx.kind==='news'?ctx.n:null;CAPCTX=ctx;CAPK='';tab('studio');requestAnimationFrame(()=>{const c=$('#capCard');if(c)scrollTo(0,c.getBoundingClientRect().top+scrollY-64)});toast('3 caption styles ready')}
-function drawStudio(x,W,H){const c=CAPCTX;if(c&&c.kind==='alt'&&ALTOBJ)return drawSig(x,W,H,ALTOBJ);const ty=$('#stType').value;if((!c||c.kind==='news')&&(ty==='dd'||ty==='perf')&&SIGD?.CL)return ty==='dd'?drawDD(x,W,H,stSym()):drawPerf(x,W,H,stSym());if(c){if(c.kind==='sig'){const s=SIG?.find(z=>z.id===c.id);if(s)return drawSig(x,W,H,s)}if(c.kind==='mac'){const s=MAC.cards.find(z=>z.id===c.id);if(s)return drawSig(x,W,H,s)}if(c.kind==='etf'&&NX.etf)return drawEtf(x,W,H,c.a);}
+function drawStudio(x,W,H){const c=CAPCTX;if(c&&c.kind==='rare'){const R=rareSig(c);return drawRareCard(x,W,H,R&&R.s)}if(c&&c.kind==='alt'&&ALTOBJ)return drawSig(x,W,H,ALTOBJ);const ty=$('#stType').value;if((!c||c.kind==='news')&&(ty==='dd'||ty==='perf')&&SIGD?.CL)return ty==='dd'?drawDD(x,W,H,stSym()):drawPerf(x,W,H,stSym());if(c){if(c.kind==='sig'){const s=SIG?.find(z=>z.id===c.id);if(s)return drawSig(x,W,H,s)}if(c.kind==='mac'){const s=MAC.cards.find(z=>z.id===c.id);if(s)return drawSig(x,W,H,s)}if(c.kind==='etf'&&NX.etf)return drawEtf(x,W,H,c.a);}
   drawCard(x,W,H,$('#stType').value,stCoin())}
 function etfCtxStale(){const c=CAPCTX;const sw=c&&c.kind==='etf'?etfAStale(c.a):'';if(sw)toast(sw+' Not for captions or exports.');return!!sw}
 function studioName(){const c=CAPCTX;if(c&&c.kind==='alt')return'altseason';if(c&&c.kind!=='news')return c.kind+'-'+(c.id||c.a||'card');const t=$('#stType').value;return t+'-'+(t==='pulse'||t==='heat'?'market':stCoin().sym)}
@@ -2159,9 +2384,96 @@ document.addEventListener('keydown',e=>{
   const t=e.target;if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.tagName!=='BUTTON'){e.preventDefault();t.click();return}
   if((e.key==='ArrowRight'||e.key==='ArrowLeft')&&t&&t.closest&&t.closest('nav')){const bs=[...document.querySelectorAll('nav button')],i=bs.indexOf(t.closest('button'));if(i<0)return;const j=(i+(e.key==='ArrowRight'?1:-1)+bs.length)%bs.length;bs[j].focus();e.preventDefault()}});
 
+// ================= RARE SIGNALS: Chart-tab notes + posting desk (19 Nov). Engine: RARE (shared/rare.js, inlined above).
+// Every note is built at render time from the loaded series; the posting desk re-runs RARE.audit (seven wording checks + a full recompute) on every edit,
+// Copy, Open in X, export and share. Examples (TEST FIXTURE) are built by the same engine from real history with the newest point replaced; they are labelled
+// on screen and on the card, and Copy, Open in X, export and share stay off for them.
+let RS=null,RSIN=null,RSAT=0,RSX=null,RSP=null,RSL=null;const RSOPEN=new Set();
+const RSCH={rare:['RARE','b-up'],normal:['Normal range','rn'],history:['Not enough history','rh'],stale:['⚠️ Stale','b-dn'],missing:['No data','b-dn']};
+async function rareInputs(){await Promise.allSettled([ensureDV(),NX.etf?null:dataFile('etf').then(r=>{NX.etf=r.v}),ensureMac()]);if(!SIGD){try{SIGD=sigdLoad()}catch(e){}}
+  const st={};if(STALEM['BTC oi'])st.oi7=st.oilvl='Data '+staleTxt('BTC oi')+'.';
+  for(const a of ['btc','eth']){try{const w=NX.etf?etfAStale(a):'';if(w)st['etf_'+a]=w}catch(e){}}
+  for(const [id,k] of [['DGS10','dgs10'],['T10Y2Y','t10y2y'],['DTWEXBGS','dollar']]){try{const f=fresh(id,MAC.M);if(f.over)st[k]=`Data stale: ${id} ${f.why}.`}catch(e){}}
+  const C=SIGD?.CL?.LINK;if(C?.kept)st.link='Data stale: LINK closes are a saved copy from an earlier load; the exchange did not answer.';else if(C?.t?.length&&(Date.now()-C.t.at(-1))/DAY>2.5)st.link='Data stale: LINK daily closes are more than 2 days old.';
+  return{now:Date.now(),derivs:DVRAW,etf:NX.etf,macro:MAC.M,link:C?.t?.length?{t:C.t,v:C.v,src:C.src,kept:!!C.kept}:null,stale:st}}
+async function rareLoad(force){if(RS&&!force&&Date.now()-RSAT<DATA_TTL)return RS;if(RSL)return RSL;RSL=(async()=>{try{RSIN=await rareInputs();RS=RARE.build(RSIN);RSAT=Date.now();
+  try{const fi=RARE.FX.oiDrop(RSIN);RSX={inp:fi,s:RARE.build(fi).find(x=>x.id==='oi7')};if(RSX.s?.status!=='rare')RSX=null}catch(e){RSX=null}}catch(e){console.warn('rare',e);RS=RS||[]}RSL=null;return RS})();return RSL}
+async function renderRare(force){const box=$('#rareBox');if(!box)return;if(!RS)box.innerHTML='<div class="card mu">Checking every series for rare readings…</div>';await rareLoad(force);paintRare();paintChRare();
+  if(!RSIN?.link&&!RSP)RSP=ensureSig().then(()=>{if(SIGD?.CL?.LINK?.t?.length){RS=null;return renderRare(true)}}).catch(()=>{}).finally(()=>{RSP=null})}
+function rareCard(s,fx){const [cl,cc]=RSCH[s.status]||RSCH.missing,k=(fx?'fx-':'')+s.id,o=RSOPEN.has(k);
+  return`<div class="card rsig${fx?' rfx':''}" data-rs="${k}" data-status="${s.status}">${fx?'<div class="rfxb">EXAMPLE · TEST FIXTURE · NOT LIVE DATA</div>':''}<h3><span class="rt">${esc(s.title)}</span><span class="sp"></span><span class="bias ${cc}">${cl}</span></h3>
+  ${s.missing?'':`<canvas class="cv rcv" data-rcv="${k}" aria-label="${esc(s.title)} chart"></canvas>`}<p class="rnote" data-rnote="${k}">${esc(s.note)}</p>
+  <div class="flex"><button class="btn sm" data-rd="${k}" aria-expanded="${o}">${o?'Hide details':'Details'}</button>${s.status==='rare'?`<button class="btn sm pri" data-ro="${k}">${fx?'Preview example in Studio':'Open in posting desk'}</button>`:''}</div>
+  <div class="rdet${o?' on':''}" data-rdet="${k}">${o?rareDet(s):''}</div></div>`}
+function rareDet(s){const j=s.j,P=j&&j.past,dd=t=>RARE.dD(t);const rows=(s.facts||[]).map(([a,b])=>`<tr><td class="mu">${esc(a)}</td><td class="num">${esc(b)}</td></tr>`).join('');
+  const lst=a=>a.length<2?a.join(''):a.slice(0,-1).join(', ')+' and '+a.at(-1);const past=s.missing||s.never?'':s.id==='t10y2y'?`Sign changes since ${dd(s.since)}: ${P.days}; the latest ${Math.min(3,P.dates.length)} on ${lst(P.dates.slice(-3).map(dd))||'—'}.`:s.levelOnly?'Past cases are not counted for the level (it uses the 180-day test only).':P?`Past cases on today's side of the 2% line (${j.side==='low'?'lowest':'highest'} 2%): ${P.days.toLocaleString('en-US')} day${P.days===1?'':'s'} in ${P.episodes} episode${P.episodes===1?'':'s'}${P.dates.length?`; the latest ${Math.min(3,P.dates.length)} began ${lst(P.dates.slice(-3).map(dd))}`:''}. Counts and dates only.`:'';
+  return`<table class="rtab">${rows}</table>${past?`<div class="mu rpast">${esc(past)}</div>`:''}<div class="mu rmeth">${s.never||!s.hist?'Under 365 days of gap-free history: no rarity test and no post.':'Rule: rare when at or beyond the 2nd or 98th percentile of its own gap-free history (and that share, rounded down to 0.1%, is not above 2.0%), or a new low or high against every reading in the previous 180 calendar days. Computed now from the loaded series.'}</div>`}
+function rareSum(){const c=k=>RS.filter(s=>s.status===k).length,live=RS.filter(s=>s.status==='rare'),n=c('normal'),st=c('stale'),mi=c('missing');
+  return(live.length?`<b>${live.length} rare reading${live.length>1?'s':''}</b>: ${live.map(s=>esc(s.title)).join(', ')}.`:'<b>Nothing is rare right now.</b>')+` ${n} series within their normal range${st?`, ${st} stale (shown with their last data, no post)`:''}${mi?`, ${mi} with no data`:''}. Funding and basis have under a year of history, so they never signal.`}
+function paintRare(){const box=$('#rareBox');if(!box||!RS)return;
+  const head=`<div class="card"><h3>Rare signals · chart notes<span class="sp"></span><span class="mu rts">checked ${esc(dtU(RSAT))}</span></h3><div class="rsum" data-rsum>${rareSum()}</div>
+  <small class="note">Rare means the lowest or highest 2% of the series' own gap-free history, or a new low or high against the previous 180 calendar days. Each note gives the reading, how rare it is, the source and the data's own UTC date. Not financial advice.</small></div>`;
+  box.innerHTML=head+`<div class="rgrid">${RS.map(s=>rareCard(s,false)).join('')}</div>`+(RSX?`<div class="card rfxh"><h3>Example · what a rare note looks like</h3><div class="mu" style="font-size:12.5px">Test fixture, not live data: real OKX history with the newest bucket replaced by a made-up 19.2% weekly fall. The same engine and audit run on it.</div></div><div class="rgrid">${rareCard(RSX.s,true)}</div>`:'');
+  $$('[data-rcv]').forEach(cv=>{const k=cv.dataset.rcv,s=k.startsWith('fx-')?RSX?.s:RS.find(x=>x.id===k);if(s)try{drawRareMini(cv,s)}catch(e){console.warn('rare mini',k,e)}})}
+function rareFmt(s){const id=s.id,sg=(x,d)=>(x<0?'−':x>0?'+':'')+Math.abs(x).toFixed(d);return id==='oi7'?x=>sg(x,0)+'%':id==='oilvl'?x=>(x/1000).toFixed(1)+'k':id.startsWith('etf_')?x=>String(Math.round(Math.abs(x)))+(x<0?' out':x>0?' in':''):id==='dgs10'?x=>sg(x,0)+'bp':id==='t10y2y'?x=>sg(x,2):id==='dollar'?x=>sg(x,1)+'%':id==='link'?x=>sg(x,0)+'%':id==='funding'?x=>sg(x,3)+'%':x=>sg(x,3)+'%'}
+function drawRareMini(cv,s){const ph=innerWidth<700?150:176,ctx=fit(cv,ph),W=cv.width,H=cv.height,dpr=W/Math.max(1,cv.getBoundingClientRect().width||W),u=.72*dpr;
+  ctx.fillStyle=hexA(TH.p1||TH.bg,1);ctx.fillRect(0,0,W,H);const V=s.sv||s.v,T=s.t;if(!T?.length)return;const from=T.at(-1)-(s.id==='dgs10'||s.id==='dollar'?365:730)*DAY;let i0=T.findIndex(x=>x>=from);if(i0<0)i0=0;
+  const t=T.slice(i0),v=V.slice(i0),j=s.j,f=rareFmt(s),hl=[];
+  if(j&&!s.levelOnly&&j.p2!=null&&!s.id.startsWith('etf_')){hl.push({v:j.p2,c:hexA(TH.dn,.85),l:'2% line '+f(j.p2)},{v:j.p98,c:hexA(TH.up,.85),l:'98% line '+f(j.p98)})}
+  if(s.id.startsWith('etf_')&&j){hl.push({v:-j.p98,c:hexA(TH.dn,.85),l:'98% streak '+Math.round(j.p98)+'d out'},{v:j.p98,c:hexA(TH.up,.85),l:'98% streak in'})}
+  if(s.levelOnly&&j?.win?.n){hl.push({v:j.win.lo,c:hexA(TH.dn,.85),l:'180-day low '+f(j.win.lo)},{v:j.win.hi,c:hexA(TH.up,.85),l:'180-day high '+f(j.win.hi)})}
+  if(['t10y2y','funding','basis'].includes(s.id))hl.push({v:0,c:hexA(TH.mu,.6),l:'0'});
+  const col=s.status==='rare'?TH.ac:TH.ac2||TH.ac;plot(ctx,8*u,26*u,W-16*u,H-80*u,u,{t,series:[{v,c:col,w:1.6,fill:!s.id.startsWith('etf_')}],hl,marks:[{t:t.at(-1),v:v.at(-1),c:TH.ac,l:f(v.at(-1))}],yf:f})}
+function paintChRare(){const el=$('#chRare');if(!el)return;if(!RS){el.innerHTML='';return}const sym=String(chartCoin()?.sym||'').toUpperCase(),ids={BTC:['oi7','oilvl','etf_btc'],ETH:['etf_eth'],LINK:['link']}[sym]||[];
+  el.innerHTML=`<div class="rlh">Rare-signal notes for this chart</div>`+(ids.length?ids.map(id=>{const s=RS.find(x=>x.id===id);if(!s)return'';const [cl,cc]=RSCH[s.status]||RSCH.missing;return`<div class="rline" data-rline="${id}" data-status="${s.status}"><span class="bias ${cc}">${cl}</span> ${esc(s.note)}</div>`}).join(''):`<div class="rline mu" data-rline="none">${esc(sym)} has no rare-signal series yet. Notes for open interest, ETF flows, rates, the dollar and LINK are below.</div>`)}
+// ---------- posting desk (Studio)
+function renderDesk(){const el=$('#rareDesk');if(!el)return;if(!RS){el.innerHTML='<h3>Rare-signal posting desk</h3><div class="mu">Checking every series…</div>';rareLoad().then(()=>{if(RS)renderDesk()});return}
+  const live=RS.filter(s=>s.status==='rare');
+  el.innerHTML=`<h3>Rare-signal posting desk<span class="sp"></span><span class="mu rts">checked ${esc(dtU(RSAT))}</span></h3>
+  <div class="rsum" data-dsum>${rareSum()} ${live.length?'Each post must pass the audit before Copy or Open in X.':'No post is offered.'}</div>
+  <div class="rlist">${RS.map(s=>{const [cl,cc]=RSCH[s.status]||RSCH.missing;return`<div class="rrow" data-status="${s.status}"><span class="rt">${esc(s.title)}</span><span class="sp"></span><span class="bias ${cc}">${cl}</span>${s.status==='rare'?`<button class="btn sm pri" data-ro="${s.id}">Open post</button>`:''}</div>`}).join('')}</div>
+  ${RSX?`<div class="rfxwrap"><div class="rfxb">EXAMPLE · TEST FIXTURE · NOT LIVE DATA</div><div class="mu" style="font-size:12.5px;margin:8px 0">This shows what a rare post looks like. The same engine built it from the real OKX history, with the newest bucket replaced by a made-up 19.2% weekly fall. Copy, Open in X, export and share stay off for examples.</div><button class="btn" data-ro="fx-oi7"${CAPCTX?.kind==='rare'&&CAPCTX.fx?' disabled':''}>Preview example in Studio</button></div>`:''}`}
+function rareSig(c=CAPCTX){if(!c||c.kind!=='rare')return null;if(c.fx)return RSX?{s:RSX.s,inp:RSX.inp}:null;const s=RS?.find(x=>x.id===c.id);return s?{s,inp:RSIN}:null}
+function openRare(k){const fx=k.startsWith('fx-'),id=fx?k.slice(3):k;NEWSPICK=null;CAPCTX={kind:'rare',id,fx};CAPK='';const r=$('#stRatio');if(r&&r.value==='16:9')r.value='4:5';tab('studio');requestAnimationFrame(()=>{const c=$('#stCv');if(c)scrollTo(0,c.getBoundingClientRect().top+scrollY-70)})}
+function rareDraft(box){const R=rareSig();$('#capFor').textContent=R?(R.s.fixture?'EXAMPLE · ':'')+R.s.title:'';if(!R){CAPK='';box.innerHTML='<div class="mu">That rare reading is no longer available. Reopen it from the Chart tab.</div>';rareGate();return}
+  const key='rare|'+(R.s.fixture?'fx|':'')+R.s.id+'|'+RSAT;if(CAPK===key&&$('#rareTA')){rareAud();return}CAPK=key;CAPF=null;
+  box.innerHTML=`${R.s.fixture?'<div class="rfxb">EXAMPLE · TEST FIXTURE · NOT LIVE DATA</div>':''}<div class="capS"><div class="msh"><b>X post · rare signal</b><span class="sp"></span><span class="mu num" id="rareCC"></span></div><textarea id="rareTA" aria-label="Rare-signal post">${esc(R.s.postText||'')}</textarea>
+  <div class="flex" style="margin-top:6px"><button class="btn sm" id="rareCopy">Copy</button><button class="btn sm pri" id="rareX">Open in X</button><button class="btn sm" id="rareReset">↺ Reset text</button></div><div id="rareAud" class="raud" aria-live="polite"></div></div>
+  <div class="mu" style="font-size:12px">The audit recomputes every figure from the unrounded series whenever you edit, copy, open X, export or share. A failed check, stale data or an example keeps those off.</div>
+  <div class="rdet on" style="margin-top:8px"><div class="rlh">Details</div>${rareDet(R.s)}</div>`;rareAud()}
+// audit at post time: recompute from the series with the clock now; returns {A, why} ('' = allowed)
+function rareAud(){const R=rareSig(),ta=$('#rareTA');if(!R||!ta)return rareGate();const A=RARE.audit(ta.value,R.s,{...R.inp,now:Date.now()});
+  const why=R.s.fixture?'Example only: test-fixture data is never copied, exported or shared.':!A.ok?'Audit failed: fix the checks marked ✗.':'';const cc=$('#rareCC');if(cc){const n=RARE.xLen(ta.value);cc.textContent=n+'/280';cc.className='num '+(n>280?'dn':'mu')}
+  const el=$('#rareAud');if(el)el.innerHTML=`<div class="raudh ${A.ok?'up':'dn'}">🛡 Audit ${A.ok?'passed':'failed'} · ${A.checks.filter(c=>c.pass).length} of ${A.checks.length} checks${R.s.fixture?' · on example data':''}</div>`+A.checks.map(c=>`<div class="rck ${c.pass?'ok':'no'}" data-rck="${esc(String(c.k))}"><b>${c.pass?'✓':'✗'} ${esc(String(c.k))}</b> ${esc(c.name)}${c.pass?'':` <span class="dn">— ${esc(c.why)}</span>`}</div>`).join('');
+  return rareGate({A,why})}
+function rareGate(r){const c=CAPCTX,on=c&&c.kind==='rare';$('#s-studio')?.classList.toggle('rarectx',!!on);const why=on?(r?r.why:'No rare reading is open.'):'';['#rareCopy','#rareX'].forEach(id=>{const b=$(id);if(b){b.disabled=!!why;b.title=why}});
+  const rw=on&&!why&&$('#stRatio')?.value==='16:9'?'Rare-signal cards are 1:1 or 4:5 only: pick one of those sizes.':'';
+  if(on)['#stExp','#stX','#stShare'].forEach(id=>{const b=$(id);if(b){b.disabled=!!(why||rw);b.title=why||rw}});return{...(r||{why}),rw}}
+// export/share guard for the Studio buttons: true = blocked
+function rareBlock(){if(CAPCTX?.kind!=='rare')return false;const r=rareAud();if(r.why||r.rw){toast(r.why||r.rw);return true}return false}
+function drawRareCard(ctx,W,H,s){const u=Math.min(W,H)/1000,m=60*u;ctx.fillStyle=TH.bg;ctx.fillRect(0,0,W,H);const g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,hexA(TH.ac,.12));g.addColorStop(1,hexA(TH.ac2||TH.ac,.03));ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  if(!s||!s.postText){ctx.fillStyle=TH.mu;ctx.font=F(64*u,700);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('—',W/2,H/2);ctx.textAlign='left';return null}
+  const stamp=stampCheck(`Data: ${s.source}, to ${RARE.dD(s.dataT)}`);ctx.strokeStyle=hexA(TH.ac,.35);ctx.lineWidth=2*u;ctx.strokeRect(24*u,24*u,W-48*u,H-48*u);
+  ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillStyle=TH.ac;ctx.font=FT(30*u);ctx.fillText('RP Terminal · rare signal',m,m+34*u);ctx.textAlign='right';ctx.fillStyle=TH.tx;ctx.font=F(30*u,600);ctx.fillText(HDL(),W-m,m+34*u);ctx.textAlign='left';
+  const head=String(s.postText.split('\n')[0]).replace(/^\$[A-Z]+\s+/,'');ctx.fillStyle=TH.tx;ctx.font=FT(64*u);let y=wrap(ctx,head,m,m+140*u,W-2*m,76*u,4);
+  const st=(s.stats||[]).slice(0,3),cw=(W-2*m)/Math.max(1,st.length);y+=24*u;st.forEach(([l,v],i)=>{ctx.fillStyle=TH.mu;ctx.font=F(30*u,600);ctx.fillText(l,m+i*cw,y);ctx.fillStyle=i===0?TH.ac:TH.tx;ctx.font=F(72*u,800);let fs=72;while(fs>40&&ctx.measureText(v).width>cw-20*u){fs-=4;ctx.font=F(fs*u,800)}ctx.fillText(v,m+i*cw,y+82*u)});y+=150*u;
+  ctx.fillStyle=TH.tx;ctx.font=F(34*u,600);y=wrap(ctx,s.rarity+'.',m,y,W-2*m,46*u,4);
+  ctx.font=F(24*u,500);const foot=['Source: '+s.source+'.',s.dateTxt.charAt(0).toUpperCase()+s.dateTxt.slice(1)+'.'],fl=[];for(const t of foot){let ln='';for(const w of t.split(' ')){const x=ln?ln+' '+w:w;if(ctx.measureText(x).width>W-2*m&&ln){fl.push(ln);ln=w}else ln=x}fl.push(ln)}
+  const fy=H-m-(fl.length-1)*32*u;if(fy-y>300*u&&s.t?.length){const V=s.sv||s.v,from=s.t.at(-1)-730*DAY;let i0=s.t.findIndex(x=>x>=from);if(i0<0)i0=0;const f=rareFmt(s);plot(ctx,m,y+40*u,W-2*m,fy-y-190*u,u*1.6,{t:s.t.slice(i0),series:[{v:V.slice(i0),c:TH.ac,w:2,fill:true}],hl:s.j&&s.j.p2!=null&&!s.levelOnly?[{v:s.j.p2,c:hexA(TH.dn,.9),l:'2% line '+f(s.j.p2)},{v:s.j.p98,c:hexA(TH.up,.9),l:'98% line '+f(s.j.p98)}]:[],marks:[{t:s.t.at(-1),v:V.at(-1),c:TH.ac,l:f(V.at(-1))}],yf:f})}
+  ctx.fillStyle=TH.mu;ctx.font=F(24*u,500);ctx.textAlign='left';ctx.textBaseline='alphabetic';fl.forEach((t,i)=>ctx.fillText(t,m,fy+i*32*u));axLog({fn:'rareCard',data:stamp,rarity:s.rarity,fixture:!!s.fixture});
+  if(s.fixture){ctx.save();ctx.translate(W/2,H/2);ctx.rotate(-Math.atan2(H,W));ctx.fillStyle='rgba(160,30,30,.78)';ctx.fillRect(-W,-46*u,2*W,92*u);ctx.fillStyle='#fff';ctx.font=F(40*u,800);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('EXAMPLE · TEST FIXTURE · NOT LIVE DATA',0,0);ctx.restore();
+    ctx.fillStyle='rgba(160,30,30,.9)';ctx.fillRect(0,0,W,14*u);ctx.fillRect(0,H-14*u,W,14*u)}return{u,m}}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-rd],[data-ro],#rareCopy,#rareX,#rareReset');if(!b)return;const ds=b.dataset;
+  if(ds.rd){const k=ds.rd,o=!RSOPEN.has(k);o?RSOPEN.add(k):RSOPEN.delete(k);$$(`[data-rdet="${k}"]`).forEach(el=>{const s=k.startsWith('fx-')?RSX?.s:RS?.find(x=>x.id===k);el.classList.toggle('on',o);el.innerHTML=o&&s?rareDet(s):''});$$(`[data-rd="${k}"]`).forEach(x=>{x.textContent=o?'Hide details':'Details';x.setAttribute('aria-expanded',o)});return}
+  if(ds.ro){openRare(ds.ro);return}
+  const ta=$('#rareTA');if(!ta)return;if(b.id==='rareReset'){CAPK='';makeDraft();return}
+  const r=rareAud();if(r.why){toast(r.why);return}
+  if(b.id==='rareCopy'){try{await navigator.clipboard.writeText(ta.value)}catch(err){ta.select();document.execCommand('copy')}toast('Copied')}
+  if(b.id==='rareX')open('https://x.com/intent/post?text='+encodeURIComponent(ta.value),'_blank')});
+document.addEventListener('input',e=>{if(e.target.id==='rareTA')rareAud()});
 // ---------- tabs & events
 let TAB='today';function tab(t,keep){const y=scrollY;let goIns=false;if(t==='insights'){t='markets';goIns=true}TAB=t;$$('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t||(t==='markets'&&s.id==='s-insights')));$$('nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===t);b.setAttribute('aria-current',b.dataset.t===t?'page':'false')});if(!keep)scrollTo(0,0);else requestAnimationFrame(()=>{if(Math.abs(scrollY-y)>2)scrollTo(0,y)});
-  if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart()}if(t==='markets'){renderAlt();renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(goIns)requestAnimationFrame(()=>{const e=$('#s-insights');scrollTo(0,e.getBoundingClientRect().top+scrollY-60)});if(t==='today')renderToday();if(t==='news'){renderNews();renderNewsX();if(!D.news.length)loadNews().then(renderNews)}if(t==='macro')renderMacro();if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
+  if(t==='chart'){renderChartCtl();CH.d?drawChartScreen():loadChart();renderRare()}if(t==='markets'){renderAlt();renderFng();if(!Object.keys(D.ins).length)renderInsights()}if(goIns)requestAnimationFrame(()=>{const e=$('#s-insights');scrollTo(0,e.getBoundingClientRect().top+scrollY-60)});if(t==='today')renderToday();if(t==='news'){renderNews();renderNewsX();if(!D.news.length)loadNews().then(renderNews)}if(t==='macro')renderMacro();if(t==='studio')renderStudio();if(t==='signals')renderSignals();if(t==='markets')renderHeat()}
 document.addEventListener('click',e=>{const b=e.target.closest('button,[data-i]');if(!b)return;const ds=b.dataset;
   if(ds.t)tab(ds.t);
   if(ds.iv){CH.iv=ds.iv;renderChartCtl();loadChart()}
@@ -2190,15 +2502,15 @@ async function coinSearch(q){const row=c=>`<div><button class="btn sm" data-add=
     [...(D.top||[]).map(c=>({id:String(c.id).replace(/^[a-z0-9]+-(?=[a-z])/,''),symbol:c.symbol,name:c.name})),...((mk?.universe_now)||[]).map(u=>({id:null,symbol:u.sym,name:u.sym}))].forEach(c=>{if(!c.symbol)return;const k=c.symbol.toUpperCase();if(seen.has(k))return;if(k.toLowerCase().startsWith(ql)||String(c.name||'').toLowerCase().includes(ql)){seen.add(k);L.push(c)}});
     const ok=L.filter(c=>c.id).slice(0,8);if(D.top?.length||mk){el.innerHTML=`<div class="mu" id="sNote">CoinGecko search did not answer; matches from the app's loaded coin list (top 50).</div>`+(ok.map(row).join('')||'<div class="mu">No matches in the local list.</div>');return'local'}}catch(e){}
   el.innerHTML='<div class="dn" id="sErr">Search unavailable: CoinGecko did not answer and no local coin list is loaded. Try again in a minute.</div>';return'err'}
-$('#chCoin').onchange=e=>{CH.i=+e.target.value;loadChart()};
+$('#chCoin').onchange=e=>{CH.i=+e.target.value;loadChart();paintChRare()};
 $('#zoom').oninput=e=>{CH.n=+e.target.value;if(CH.rng){CH.rng=null;renderRng()}drawChartScreen()};
 const cvx=$('#chart');const crossAt=e=>{if(!CH.lay||!CH.d)return;const r=cvx.getBoundingClientRect(),x=(e.clientX-r.left)*cvx.width/r.width;CH.cross=Math.max(CH.lay.st,Math.min(CH.lay.N-1,Math.floor((x-CH.lay.left)/CH.lay.cw)+CH.lay.st));drawChartScreen()};
 cvx.addEventListener('pointerdown',crossAt);cvx.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||e.pressure>0)crossAt(e)});cvx.addEventListener('pointerup',()=>{setTimeout(()=>{CH.cross=null;drawChartScreen()},1500)});
 $('#toStudio').onclick=()=>{$('#stType').value='chart';NEWSPICK=null;CAPCTX=null;tab('studio')};
 ['stType','stCoin','stRatio'].forEach(id=>$('#'+id).onchange=()=>{if(id!=='stRatio'){NEWSPICK=null;CAPCTX=null}renderStudio()});
-$('#stExp').onclick=()=>{if(etfCtxStale())return;if($('#stType').value==='heat'&&!heatGate())return;const [w,h]=SIZES[$('#stRatio').value];exportPNG(drawStudio,studioName(),w,h)};
-$('#stX').onclick=()=>{if(etfCtxStale())return;if($('#stType').value==='heat'&&!heatGate())return;const [w,h]=SIZES[$('#stRatio').value].map(x=>x/2);exportPNG(drawStudio,studioName()+'-X',w,h)};
-$('#stShare').onclick=()=>{if(etfCtxStale())return;if($('#stType').value==='heat'&&!heatGate())return;const [w,h]=SIZES[$('#stRatio').value].map(x=>x/2);exportPNG(drawStudio,studioName(),w,h,true)};
+$('#stExp').onclick=()=>{if(etfCtxStale()||rareBlock())return;if($('#stType').value==='heat'&&!heatGate())return;const [w,h]=SIZES[$('#stRatio').value];exportPNG(drawStudio,studioName(),w,h)};
+$('#stX').onclick=()=>{if(etfCtxStale()||rareBlock())return;if($('#stType').value==='heat'&&!heatGate())return;const [w,h]=SIZES[$('#stRatio').value].map(x=>x/2);exportPNG(drawStudio,studioName()+'-X',w,h)};
+$('#stShare').onclick=()=>{if(etfCtxStale()||rareBlock())return;if($('#stType').value==='heat'&&!heatGate())return;const [w,h]=SIZES[$('#stRatio').value].map(x=>x/2);exportPNG(drawStudio,studioName(),w,h,true)};
 $('#oppInfo').textContent=OPP_INFO;
 function applyTheme(t){THEME=t;S.theme=t;save();document.documentElement.dataset.theme=t;Object.keys(TH).forEach(k=>delete TH[k]);Object.assign(TH,THEMES[t]);document.querySelector('meta[name=theme-color]').content=TH.bg;$$('nav button').forEach((b,i)=>{b.innerHTML=`<i aria-hidden="true">${TH.nav[i][0]}</i>${TH.nav[i][1]}`;b.setAttribute('aria-label',NAVN[i]+(THEME==='bb'?` (F${i+1})`:''))});}
 const TNAME={sap:'Obsidian Sapphire',neo:'AMOLED Neon',ch:'Onyx & Champagne',bb:'Bloomberg terminal'},TORD=['neo','sap','ch','bb'];$('#thBtn').onclick=()=>{applyTheme(TORD[(TORD.indexOf(THEME)+1)%4]);tab(TAB,1);toast(TNAME[THEME])};
@@ -2215,7 +2527,7 @@ function offBanner(){const el=$('#offBan');if(!el)return;const off=!navigator.on
   if(off||dead){el.style.display='block';el.textContent=`${off?'Offline':'Live sources unreachable'} · data as of ${at?hmU(at):'unknown (no saved copy yet)'}`}else el.style.display='none'}
 addEventListener('online',()=>{offBanner();refresh()});addEventListener('offline',offBanner);
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol)&&(!navigator.webdriver||/[?&]sw=1/.test(location.search)))navigator.serviceWorker.register('sw.js').catch(()=>{});
-async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);offBanner();ensureCC().then(()=>{if(TAB==='studio')renderStudio()}).catch(()=>{});const _y=scrollY;requestAnimationFrame(()=>{if(_y>0&&scrollY<_y-2)scrollTo(0,_y)});renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else refreshChart()}if(TAB==='markets'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio();if(TAB==='today')renderToday()}
+async function refresh(full){await Promise.all([loadMarkets(),loadRate(),loadFng(),loadTrend()]);offBanner();ensureCC().then(()=>{if(TAB==='studio')renderStudio()}).catch(()=>{});const _y=scrollY;requestAnimationFrame(()=>{if(_y>0&&scrollY<_y-2)scrollTo(0,_y)});renderTicker();renderGlobal();renderWL();renderTrend();if(TAB==='markets')renderHeat();if(TAB==='chart'){if(full)loadChart();else refreshChart();renderRare(full)}if(TAB==='markets'){renderFng();if(full)renderInsights()}if(TAB==='studio')renderStudio();if(TAB==='today')renderToday()}
 applyTheme(THEME);const BOOT_TAB=document.fonts.ready.then(()=>new Promise(r=>setTimeout(()=>{try{tab(TAB)}finally{r()}},300))),BOOT_REF=refresh();setInterval(()=>{if(!document.hidden)refresh()},90000);
 // Ready signal (11 Nov, QA gates): set ONCE when the first load has finished - the first refresh(), the first tab render and that render's own data
 // (signals, macro, ETF, calendar, run log; news is left out, its proxy fetch has no timeout). allSettled + finally: a failed, blocked or timed-out
