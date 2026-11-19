@@ -22,7 +22,7 @@ const T=B(inp);const ALL=[T];
 {const s=by(T,'link');ok(s.status==='normal'&&r2(s.j.cur)===-24.68&&r2(s.j.p2)===-43.64&&r2(s.j.p98)===109.67&&r2(s.j.win.lo)===-28.7&&r2(s.j.win.hi)===61.59&&s.j.N===2834,'S1 LINK -24.68%, 2%/98% -43.64/+109.67%, 180-day -28.70/+61.59%: normal')}
 ok(['funding','basis'].every(id=>by(T,id).status==='history'&&by(T,id).postText===null),'S1 funding and basis: not enough history, no post');
 ok(T.every(s=>!s.postText)&&T.filter(s=>s.status==='rare').length===0,'S1 nothing is rare today: no post anywhere');
-ok(R.audit('$BTC OKX BTC perpetual open interest fell 11.3% (4,233 BTC) in 7 days, to 19 Nov 02:50 UTC.\nAmong the lowest 2% of weekly changes since 1 Jan 2024 (7.5% of 1,047 readings at or below this).\nSource: '+R.SRC.oi+'.',by(T,'oi7'),inp).ok===false,'S1 a post written for today\'s non-rare reading fails the audit');
+ok(R.audit('$BTC perpetual open interest on OKX: −11.3% in 7 days (−4,233 BTC), to 33,122 BTC.\nAmong the lowest 2% of 7-day changes since 1 Jan 2024: 7.5% of 1,047 readings were this low or lower.\nData to 19 Nov 02:50 UTC.\nSource: '+R.SRC.oi+'.',by(T,'oi7'),inp).ok===false,'S1 a post written for today\'s non-rare reading fails the audit');
 
 // ---------- S2: 7-day OI drop exactly at the 2% line fires on the tie
 {const fi=R.FX.oiAtLine(inp),L=B(fi),s=by(L,'oi7');ALL.push(L);ok(s.j.cur===s.j.p2&&s.j.N===1001&&s.status==='rare'&&s.j.form==='tail'&&s.j.shareTxt==='2.0','S2 reading == 2nd percentile (1,001 readings, share 2.0%): fires',{cur:s.j.cur,p2:s.j.p2,share:s.j.share});
@@ -38,26 +38,39 @@ ok(R.audit('$BTC OKX BTC perpetual open interest fell 11.3% (4,233 BTC) in 7 day
 // ---------- S4: dollar index dated 13 Nov, never 'today'
 {const s=by(T,'dollar');ok(/last data 13 Nov 2026/.test(s.note)&&!/\b(today|now)\b/i.test(s.note),'S4 dollar note carries its own date (last data 13 Nov 2026), never today',s.note);
  const fi=R.FX.dollar(inp,-1.1),L=B(fi),d=by(L,'dollar');ALL.push(L);ok(d.status==='rare'&&/13 Nov 2026/.test(d.postText)&&R.audit(d.postText,d,fi).ok,'S4 a rare dollar move posts with 13 Nov 2026 and passes',d.postText);
- const bad=d.postText.replace('on 13 Nov 2026','today');const A=R.audit(bad,d,fi);ok(!A.ok&&!chk(A,6).pass,'S4 the same post saying "today" fails check 6',chk(A,6))}
+ const bad=d.postText.replace('Data to 13 Nov 2026 (FRED, latest published).','Data: today (FRED, latest published).');const A=R.audit(bad,d,fi);ok(!A.ok&&!chk(A,6).pass,'S4 the same post saying "today" fails check 6',chk(A,6))}
+
+// ---------- ETF streaks: NYSE calendar decides what to skip (CRYPTO GOD ruling 19 Nov), thresholds from the data
+{const b=by(T,'etf_btc'),e=by(T,'etf_eth');ok(b.j.p98===13&&e.j.p98===16&&b.j.win.hi===13&&e.j.win.hi===17&&b.j.N===717&&e.j.N===585,'E1 thresholds from the data: 98th percentile streak 13 days BTC / 16 ETH; longest in 180 days 13 BTC / 17 ETH (717 / 585 trading days)',{b:[b.j.p98,b.j.win.hi,b.j.N],e:[e.j.p98,e.j.win.hi,e.j.N]});
+ const hol=J.etf.datasets.btc.days.filter(r=>!r.pending&&!require('../shared/nyse.js').open(r.date));ok(hol.length===15&&hol.every(r=>(+r.total||0)===0),'E1 the 15 BTC holiday rows in etf.json (total 0) are skipped by the calendar, not by their total',hol.map(r=>r.date))}
+const NY=require('../shared/nyse.js');
+// synthetic tail after the last complete day (17 Nov, outflow): 18-25 Nov trading days, 26 Nov = Thanksgiving (NYSE closed), 27 Nov trading day
+const etfTail=(rows,now='2026-11-28T12:00:00Z')=>{const E=JSON.parse(JSON.stringify(inp.etf)),d=E.datasets.btc;d.days=d.days.filter(r=>!r.pending).concat(rows.map(([date,total,pending])=>({date,total,pending:!!pending})));return{...inp,now:Date.parse(now),etf:E}};
+const run=[['2026-11-18',-10],['2026-11-19',-20],['2026-11-20',-30],['2026-11-23',-40],['2026-11-24',-50],['2026-11-25',-60]];
+ok(!NY.open('2026-11-26')&&NY.open('2026-11-25')&&NY.open('2026-11-27'),'E2 calendar: 26 Nov 2026 (Thanksgiving) closed, 25 and 27 Nov open');
+{const s=by(B(etfTail(run.concat([['2026-11-26',0],['2026-11-27',-70]]))),'etf_btc');ok(s.n===8&&s.dir<0&&R.dD(s.dataT)==='27 Nov 2026','E2 a holiday row (total 0) inside a run does not break the streak: 17-27 Nov = 8 trading days',{n:s.n})}
+{const s=by(B(etfTail(run.concat([['2026-11-26',-55],['2026-11-27',-70]]))),'etf_btc');ok(s.n===8&&Math.round(s.cum*10)/10===-519.9,'E2 a holiday row with a non-zero total is still skipped (calendar decides, not the total): 8 days, holiday flow not summed',{n:s.n,cum:s.cum})}
+{const s=by(B(etfTail(run.slice(0,5).concat([['2026-11-25',0],['2026-11-26',0],['2026-11-27',-70]]))),'etf_btc');ok(s.n===1&&R.dD(s.dataT)==='27 Nov 2026','E3 a trading day with total exactly 0 (25 Nov) breaks the streak: only 27 Nov counts',{n:s.n})}
+{const s0=by(B(etfTail(run)),'etf_btc'),s=by(B(etfTail(run.concat([['2026-11-27',-999,true]]))),'etf_btc');ok(s.n===s0.n&&s.n===7&&s.cum===s0.cum&&R.dD(s.dataT)==='25 Nov 2026','E4 a pending row (even with a total) is never counted: streak stays 7 through 25 Nov',{n:s.n,s0:s0.n})}
 
 // ---------- audit checks: one test each (wording rules section 7) + recompute
 const FX=R.FX.oiDrop(inp,-19.2),FL=B(FX),FS=by(FL,'oi7');ALL.push(FL);ok(FS.status==='rare'&&R.audit(FS.postText,FS,FX).ok,'fixture: OI -19.2% example passes every check',R.audit(FS.postText,FS,FX).checks.filter(c=>!c.pass));
 const fail=(txt,k,m,sig=FS,i=FX)=>{const A=R.audit(txt,sig,i);ok(!A.ok&&!chk(A,k).pass,m,{k,check:chk(A,k)})};
 fail(FS.postText.replace('Among the lowest 2%','Among the most extreme 2%'),1,'C1 a rarity sentence outside the fixed forms fails');
-fail(FS.postText.replace('(1.5% of','(1.4% of'),1,'C1 a stated percent that differs from the recomputed share fails');
-fail(FS.postText.replace(/Among the lowest[^\n]+/,'Lowest weekly change in 180 trading days.'),2,'C2 "180 trading days" fails (calendar days only)');
-{const sig={...FS,j:{...FS.j,win:{...FS.j.win,method:'obs'}}};fail(FS.postText.replace(/Among the lowest[^\n]+/,'Lowest weekly change in 180 days.'),2,'C2 a window computed in observations fails',sig)}
-{const fi=R.FX.oiDrop(inp,-12),s=by(B(fi),'oi7');fail('$BTC OKX BTC perpetual open interest fell 12.0% in 7 days, to 19 Nov 02:50 UTC.\nLowest weekly change in 180 days.\nSource: '+R.SRC.oi+'.',2,'C2 a "lowest in 180 days" claim that is not a 180-calendar-day low fails',s,fi)}
+fail(FS.postText.replace(': 1.5% of',': 1.4% of'),1,'C1 a stated percent that differs from the recomputed share fails');
+fail(FS.postText.replace(/Among the lowest[^\n]+/,'Lowest 7-day change in 180 trading days.'),2,'C2 "180 trading days" fails (calendar days only)');
+{const sig={...FS,j:{...FS.j,win:{...FS.j.win,method:'obs'}}};fail(FS.postText.replace(/Among the lowest[^\n]+/,'Lowest 7-day change in 180 days.'),2,'C2 a window computed in observations fails',sig)}
+{const fi=R.FX.oiDrop(inp,-12),s=by(B(fi),'oi7');fail('$BTC perpetual open interest on OKX: −12.0% in 7 days, to 33,122 BTC.\nLowest 7-day change in 180 days.\nData to 19 Nov 02:50 UTC.\nSource: '+R.SRC.oi+'.',2,'C2 a "lowest in 180 days" claim that is not a 180-calendar-day low fails',s,fi)}
 fail(FS.postText.replace('since 1 Jan 2024','since 1 Dec 2023'),3,'C3 a since date before the OI window start (1 Jan 2024) fails');
 {const f=by(T,'funding'),b=by(T,'basis');const A=R.audit('Funding −0.001% per 8h (19 Nov 00:00 UTC).\nLowest funding in 180 days.\nSource: '+R.SRC.funding+'.',f,inp),Bq=R.audit('Basis −0.0458% (19 Nov 01:00 UTC).\nLowest basis in 180 days.\nSource: '+R.SRC.basis+'.',b,inp);ok(!chk(A,4).pass&&!chk(Bq,4).pass,'C4 funding and basis can never produce a post')}
 {const D=JSON.parse(JSON.stringify(inp.derivs));D.assets.BTC.oi_daily.points=D.assets.BTC.oi_daily.points.slice(-300);const P=D.assets.BTC.oi_daily.points;P[P.length-1][2]=P[P.length-8][2]*0.7;const i2={...inp,derivs:D},s=by(B(i2),'oi7');
  ok(s.status==='history'&&!s.postText&&/Not enough history yet/.test(s.note),'C4 a series under 365 days shows "Not enough history yet" and has no post',s.note);fail(FS.postText,4,'C4 the audit fails a post for a series under 365 days',s,i2)}
 for(const w of ['what followed','last time this happened','bullish','bearish','whales','massive','BREAKING','not rare','DXY','buy','all-time','capitulation','smart money','huge','INR'])fail(FS.postText.replace('in 7 days','in 7 days, '+w),5,'C5 banned phrase "'+w+'" fails');
-fail(FS.postText.replace(', to 19 Nov 02:50 UTC',''),6,'C6 a post with no data date fails');
-fail(FS.postText.replace(', to 19 Nov 02:50 UTC',' now, to 19 Nov 02:50 UTC'),6,'C6 "now" on data older than one hour fails');
+fail(FS.postText.replace('\nData to 19 Nov 02:50 UTC.',''),6,'C6 a post with no data date fails');
+fail(FS.postText.replace('Data to 19 Nov','Data now to 19 Nov'),6,'C6 "now" on data older than one hour fails');
 {const fi=R.FX.tenY(inp,-14),s=by(B(fi),'dgs10');ok(s.j.cur<=s.j.p2&&R.floor1(s.j.share)>2.0&&s.status==='normal'&&!s.postText,'C7 10Y -14 bp sits on the 2% line but ties push the share to '+R.floor1(s.j.share).toFixed(1)+'%: does not fire',{share:s.j.share});
- const t='The US 10-year Treasury yield moved −14 bp to '+s.level.toFixed(2)+'% on 17 Nov 2026 (FRED, latest published).\nAmong the lowest 2% of daily moves in the US 10-year yield since 3 Jan 1962 ('+R.floor1(s.j.share).toFixed(1)+'% of 16,203 readings at or below this).\nSource: FRED DGS10.';fail(t,7,'C7 a post claiming the 2% tail on that tie fails',s,fi);
- const f15=R.FX.tenY(inp,-15),s15=by(B(f15),'dgs10');ALL.push(B(f15));ok(s15.status==='rare'&&R.audit(s15.postText,s15,f15).ok&&/\((1\.9)% of 16,203/.test(s15.postText),'C7 -15 bp: computed share 1.9% is stated and it fires',s15.postText)}
+ const t='US 10-year Treasury yield: −14 bp in a day, to '+s.level.toFixed(2)+'%.\nAmong the lowest 2% of daily moves in the US 10-year yield since 3 Jan 1962: '+R.floor1(s.j.share).toFixed(1)+'% of 16,203 readings were this low or lower.\nData to 17 Nov 2026 (FRED, latest published).\nSource: FRED DGS10.';fail(t,7,'C7 a post claiming the 2% tail on that tie fails',s,fi);
+ const f15=R.FX.tenY(inp,-15),s15=by(B(f15),'dgs10');ALL.push(B(f15));ok(s15.status==='rare'&&R.audit(s15.postText,s15,f15).ok&&/: 1\.9% of 16,203 readings were this low or lower/.test(s15.postText),'C7 -15 bp: computed share 1.9% is stated and it fires',s15.postText)}
 fail(FS.postText.replace('19.2%','19.3%'),'R','R an edited figure fails the recompute');
 {const D=JSON.parse(JSON.stringify(FX.derivs)),P=D.assets.BTC.oi_daily.points;P[P.length-1][2]*=1.01;fail(FS.postText,'R','R the series moved before posting: the old figures fail the recompute',FS,{...FX,derivs:D})}
 fail(FS.postText.replace(R.SRC.oi,'Open interest across exchanges'),'S','S a source line other than the exact source name fails');
@@ -82,4 +95,17 @@ ok(posts.every(([,t])=>!/180 (trading days|sessions|observations|readings)/i.tes
 ok(notes.concat(posts).every(([,t])=>!/\u20b9|\bINR\b|\bIndia/i.test(t)),'W USD only: no INR or India');
 ok(posts.every(([,t])=>!/what followed|last time/i.test(t))&&ALL.flat().every(s=>!s.facts||s.facts.every(f=>!/what followed|last time/i.test(f.join(' ')))),'W no "what followed" or "last time" anywhere');
 ok(posts.every(([,t])=>R.xLen(t)<=280&&t.split('\n').length<=4),'W every post fits 280 characters and 3 lines + source');
+
+// ---------- CNG review (19 Nov): '7-day' wording, exact OI post shape, card headline
+ok(FS.postText==='$BTC perpetual open interest on OKX: −19.2% in 7 days (−7,172 BTC), to 30,183 BTC.\nAmong the lowest 2% of 7-day changes since 1 Jan 2024: 1.5% of 1,047 readings were this low or lower.\nData to 19 Nov 02:50 UTC.\nSource: OKX BTC perpetual (BTC-USDT-SWAP) open interest, in BTC.','N1 OI post matches CNG\'s template exactly',FS.postText);
+ok(FS.head==='BTC open interest on OKX: −19.2% in 7 days'&&!/UTC|\d\d:\d\d/.test(FS.head),'N2 card headline has no timestamp',FS.head);
+{const fi=R.FX.oiDrop(inp,-26),s=by(B(fi),'oi7');ok(!/weekly/i.test(s.note+s.postText)&&/7-day changes/.test(s.rarity),'N3 "7-day", never "weekly", in notes and posts')}
+{/* synthetic OKX series (deterministic): a volatile first 420 days sets wide 2% tails, a calm last 180+ days; the newest 7-day change is a new 180-day low but inside the tail */
+ let z=12345;const rnd=()=>{z=(z*1103515245+12345)%2147483648;return z/2147483648-0.5};const D=JSON.parse(JSON.stringify(inp.derivs)),O=D.assets.BTC.oi_daily,t0=O.points.at(-1)[0]-619*DAY;let c=30000;const P=[];
+ for(let i=0;i<620;i++){c*=Math.exp((i<420?0.06:0.004)*rnd());P.push([t0+i*DAY,c*70000,c])}O.points=P;const n=P.length;let lo=Infinity;for(let i=n-180;i<n-1;i++)lo=Math.min(lo,P[i][2]/P[i-7][2]-1);
+ P[n-1][2]=P[n-8][2]*(1+lo-0.01);const i2={...inp,derivs:D},s=by(B(i2),'oi7');
+ ok(s.j.form==='window'&&s.rarity==='Lowest 7-day change in 180 days'&&R.audit(s.postText,s,i2).ok,'N4 180-day form reads "Lowest 7-day change in 180 days" and passes the audit',{form:s.j.form,r:s.rarity,p2:s.j.p2,cur:s.j.cur,post:s.postText,A:s.postText&&R.audit(s.postText,s,i2).checks.filter(c=>!c.pass)})}
+ok(R.FORMS.some(re=>re.test('Highest 7-day change in 180 days'))&&!R.FORMS.some(re=>re.test('Among the lowest 2% of weekly changes since 1 Jan 2024 (1.5% of 1,047 readings at or below this)')),'N5 audit forms: new "7-day" tail and window forms allowed, the old parenthesised form is not');
+ok(posts.every(([,t])=>{const L=t.split('\n');return L.length===4&&/^Data to \d{1,2} [A-Z][a-z]{2}/.test(L[2])&&/^Source: /.test(L[3])}),'N6 every post: 3 lines + source, date on its own line ("Data to …")',posts.map(p=>p[1].split('\n')[2]));
+ok(ALL.flat().filter(s=>s.postText).every(s=>s.head&&!/UTC|\d\d:\d\d/.test(s.head)),'N7 every rare card headline is free of timestamps');
 console.log('FAILS: '+F);process.exit(F?1:0);
