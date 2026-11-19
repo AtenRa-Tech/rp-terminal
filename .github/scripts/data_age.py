@@ -7,7 +7,7 @@ Fails (exit 1, ::error) when live data is past its OWN limit, recomputed against
   - macro fetch: now - macro_checked.checked_at > MACRO_FETCH_LIMIT_H (26h: daily batch at 00:20 UTC, caught up by the first hourly run after a dropped slot (refresh_slot.py --batch-due); fetch_macro.py stopped running)
   - etf: each fund (BTC, ETH) judged on its own last complete day; a held-back pending newest row is named, never counted. Fails if EITHER fund's NYSE trading days after that date through today (UTC) > limit_days (2), counted with scripts/nyse.py (NYSE holidays only, twin of shared/nyse.js). The message names which fund(s) are stale.
   - last_run older than 90 min (the derivatives refresh itself stopped, e.g. workflows disabled)
-Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (dispatched by the Netlify stale alarm) and the live suite."""
+Unreadable/seed _runs.json fails too. Used by stale-alarm.yml (run by hand) and the live suite."""
 import json, sys, urllib.request
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'scripts'))
