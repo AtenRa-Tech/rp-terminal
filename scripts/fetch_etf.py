@@ -3,8 +3,9 @@
 stdlib only. If Farside blocks or the layout changes, keep previous data for that
 asset and record status ('blocked' / 'error').
 --light (17 Nov): the hourly re-fetch data.yml runs while the newest BTC/ETH row is pending. It writes a top-level `light_checked_at` (every light run,
-also when no data changed) and NEVER writes `checked_at` (that stays the full batch's). Both stamps are carried over unchanged otherwise. Neither is ever
-a freshness signal: ETF freshness comes only from each fund's last complete day."""
+also when no data changed) and NEVER writes `checked_at`. Only the full batch writes `checked_at` (every full run, also when no data changed), so a light
+re-fetch never makes the daily batch look done. Both stamps are carried over unchanged otherwise. Neither is ever a freshness signal: ETF freshness comes
+only from each fund's last complete day."""
 import datetime as dt, html, json, os, re, sys, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -127,7 +128,7 @@ def main(argv=None):
         print(f"{k}: status={d['status']} last_date={d.get('last_date')} rows={len(d.get('days', []))} "
               f"{d.get('error', '')}", file=sys.stderr)
     out["last_date"] = max([d.get("last_date") or "" for d in out["datasets"].values()]) or None
-    for k in STAMPS:  # carried over unchanged; a light run only ever sets light_checked_at
+    for k in STAMPS:  # carried over unchanged; a light run only ever sets light_checked_at, a full run only ever sets checked_at
         if prev.get(k): out[k] = prev[k]
     stamp = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
     # skip rewrite if nothing but timestamps changed
@@ -140,8 +141,10 @@ def main(argv=None):
     if prev and strip(prev) == strip(out):
         if light:  # light run: keep the file as it was, only stamp light_checked_at (checked_at untouched)
             prev["light_checked_at"] = stamp; write_json(OUT, prev); print(f"etf.json: no data change; light_checked_at={stamp}"); return
-        print("etf.json: no data change"); return
+        # full batch: stamp checked_at even when content is unchanged (pending row / weekend), so the daily batch is not left due
+        prev["checked_at"] = stamp; write_json(OUT, prev); print(f"etf.json: no data change; checked_at={stamp} (updated stays {prev.get('updated')})"); return
     if light: out["light_checked_at"] = stamp
+    else: out["checked_at"] = stamp
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     write_json(OUT, out)
     print("etf.json written")

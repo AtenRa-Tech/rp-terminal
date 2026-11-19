@@ -2,10 +2,10 @@
 // Each tick:
 //   1. read live data/derivs.json, _runs.json, macro.json, etf.json (cache-busted)
 //   2. decide whether a refresh has something to fetch:
-//        derivatives: the oldest newest-hour among every asset's latest.oi_t / latest.basis_t is >= 3h old (a new settled OKX hour is out), or
-//        daily batch due: the oldest of macro.json checked_at / etf.json checked_at|updated is before the latest 00:20 UTC slot
+//        derivatives: the oldest newest-hour among every asset's latest.oi_t / latest.basis_t is past 3h (C4: exactly 3.0h is fresh, not dispatched),
+//        daily batch due: the oldest of macro.json checked_at / etf.json checked_at (fallback: updated, never light_checked_at) is before the latest 00:20 UTC slot
 //        (same rule as .github/scripts/refresh_slot.py batch_due, which data.yml's own catch-up uses)
-//      etf.json: checked_at is written by EVERY fetch_etf.py run (17 Nov), so a held-back (pending) newest row never makes the batch due
+//      etf.json: only the full batch writes checked_at; a light re-fetch writes light_checked_at and must not make the batch look done
 //   3. only then ask GitHub: skip if a data.yml run is queued / in progress, or a workflow_dispatch run was created < 55 min ago;
 //      otherwise dispatch data.yml on main ONCE (inputs.full = "true" when the daily batch is due).
 //      Batch back-off (supervisor): a completed "Refresh data (full)" dispatch run created today (UTC) while the batch is STILL due is a failed
@@ -25,6 +25,26 @@ async function getJSON(fetchFn, url) {
     if (!r.ok) return { err: `HTTP ${r.status}` };
     return { j: await r.json() };
   } catch (e) { return { err: String((e && e.message) || e).slice(0, 120) }; }
+}
+
+
+// C4: unrounded age is the decision; the number we show is never rounded into or onto the other side of the limit
+// (2h59m59.6s stays 2.99, not 3.00; 3.01 stays 3.01, not 3.0).
+export function displayAgeH(age, lim) {
+  const r = Math.round(age * 100) / 100;
+  if (age < lim && r >= lim) return Math.floor(age * 100 + 1e-12) / 100; // 2h59m59.6s stays 2.99, never 3.00
+  if (age > lim && r <= lim) return Math.ceil(age * 100 - 1e-12) / 100;  // 3.01 stays 3.01, never 3.00
+  return r;
+}
+export function fmtAgeH(age, lim) {
+  const n = displayAgeH(age, lim);
+  const s = n.toFixed(2);
+  return `${s}h`;
+}
+export function fmtAgeH1(age, lim) { // 1-decimal messages (data_age.py twin); bump precision when .1f would land on/inside the limit
+  const s = age.toFixed(1);
+  if (age > lim && Number(s) <= lim) return fmtAgeH(age, lim);
+  return `${s}h`;
 }
 
 // age (hours) of the derivatives: the OLDEST newest-hour across assets and the oi/basis feeds; null when unknown
@@ -48,6 +68,7 @@ export function batchDue(checked, now) {
   if (!t.length || t.some((x) => Number.isNaN(x))) return true;
   return Math.min(...t) < slot;
 }
+// checked_at only (same as refresh_slot.py); fallback to updated on old files. Never light_checked_at: a light ETF re-fetch must leave the batch due.
 const checkedAt = (j) => (j && (j.checked_at || j.updated)) || null;
 
 // port of .github/scripts/data_age.py check(): every problem that makes the live stale alarm fail
@@ -63,16 +84,16 @@ export function staleProblems(R, now) {
   for (const [f, v] of Object.entries(feeds)) {
     if (!v || !v.t || v.lim_h == null) { bad.push(`${f}: no t/lim_h`); continue; }
     const h = (now - ms(v.t)) / H;
-    if (!(h <= v.lim_h)) bad.push(`${f}: ${h.toFixed(1)}h old > limit ${v.lim_h}h`);
+    if (!(h <= v.lim_h)) bad.push(`${f}: ${fmtAgeH1(h, v.lim_h)} old > limit ${v.lim_h}h`);
   }
   const mk = R.market || {};
   if (!mk.updated || mk.limit_h == null) bad.push("market: no updated/limit_h");
-  else { const h = (now - ms(mk.updated)) / H; if (!(h <= mk.limit_h)) bad.push(`market: ${h.toFixed(1)}h old > limit ${mk.limit_h}h`); }
+  else { const h = (now - ms(mk.updated)) / H; if (!(h <= mk.limit_h)) bad.push(`market: ${fmtAgeH1(h, mk.limit_h)} old > limit ${mk.limit_h}h`); }
   for (const [s, v] of Object.entries(R.macro || {})) if (v && typeof v === "object" && v.ok === false) bad.push(`macro ${s}: past its limit (${v.limit})`);
   const mc = R.macro_checked;
   if (mc == null) bad.push("macro_checked missing (macro fetch time unknown)");
   else if (!mc.checked_at) bad.push("macro fetch: no checked_at");
-  else { const h = (now - ms(mc.checked_at)) / H; if (!(h <= MACRO_FETCH_LIMIT_H)) bad.push(`macro fetch: last successful run ${h.toFixed(1)}h ago > limit ${MACRO_FETCH_LIMIT_H}h`); }
+  else { const h = (now - ms(mc.checked_at)) / H; if (!(h <= MACRO_FETCH_LIMIT_H)) bad.push(`macro fetch: last successful run ${fmtAgeH1(h, MACRO_FETCH_LIMIT_H).replace(/h$/, "")}h ago > limit ${MACRO_FETCH_LIMIT_H}h`); }
   return bad;
 }
 
@@ -104,14 +125,15 @@ export async function tick(env, deps = {}) {
   for (const [n, x] of [["derivs.json", D], ["_runs.json", R], ["macro.json", MA], ["etf.json", ET]]) if (x.err) problems.push(`live ${n} unreadable (${x.err})`);
 
   const age = D.j ? derivsAgeH(D.j, now) : null;
-  out.derivs_age_h = age == null ? null : Math.round(age * 100) / 100;
+  // C4: compare the unrounded age; display rounding must never pull a just-under value up to the 3h limit or a just-over value down into it.
+  out.derivs_age_h = age == null ? null : displayAgeH(age, DISPATCH_DERIVS_H);
   const due = batchDue([checkedAt(MA.j), checkedAt(ET.j)], now);
   out.batch_due = due;
   const stale = staleProblems(R.j, now);
   if (R.j) problems.push(...stale);
-  const derivsStale = age == null || age >= DISPATCH_DERIVS_H;
+  const derivsStale = age == null || age > DISPATCH_DERIVS_H;
   out.want = derivsStale || due;
-  out.reason = derivsStale ? (age == null ? "derivatives age unknown" : `derivatives ${age.toFixed(2)}h old (>= ${DISPATCH_DERIVS_H}h)`) : due ? "daily batch due (not run since the last 00:20 UTC slot)" : `derivatives ${age.toFixed(2)}h old, daily batch done: nothing to fetch`;
+  out.reason = derivsStale ? (age == null ? "derivatives age unknown" : `derivatives ${fmtAgeH(age, DISPATCH_DERIVS_H)} old (> ${DISPATCH_DERIVS_H}h)`) : due ? "daily batch due (not run since the last 00:20 UTC slot)" : `derivatives ${fmtAgeH(age, DISPATCH_DERIVS_H)} old, daily batch done: nothing to fetch`;
 
   if (out.want) {
     const token = env.GH_TOKEN;

@@ -10,7 +10,7 @@ run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.full && 'Refres
 #    they follow the 00:00 UTC close on their own. Weekly Thursday 21:00 UTC for the Fed H.4.1 release (WALCL/WDTGAL).
 #  Freshness limits: market 3h (21 Oct supervisor ruling, was 2h; shared/freshness.json market_h), OI/basis 5h from the hour start (24 Oct ruling). GitHub runs crons best-effort; a dropped hour shows as stale in the app,
 #  and ci.yml's smoke fallback dispatches at most one extra run (only when none is queued/running).
-#  17 Nov: outside timer = Cloudflare Worker (worker/, cron :07 hourly) dispatches this workflow at most once an hour, only when derivatives are >= 3h old
+#  17 Nov: outside timer = Cloudflare Worker (worker/, cron :07 hourly) dispatches this workflow at most once an hour, only when derivatives are past 3h old (exactly 3.0h is still fresh)
 #  or the daily batch is due (then with full=true), never while a run is queued/in progress. These crons stay as the backup.
 on:
   schedule:

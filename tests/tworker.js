@@ -50,7 +50,13 @@ function mock(w) {
   ok(hb(r.calls).length === 1 && hb(r.calls)[0].url === HB && r.out.heartbeat === 'ok 200', '(a) heartbeat: one success ping (no /fail)', hb(r.calls).map((x) => x.url));
   ok(r.calls.filter((x) => x.url.includes('github.io')).every((x) => /\?v=\d+$/.test(x.url)) && r.calls.filter((x) => x.url.includes('github.io')).length === 4, 'live derivs/_runs/macro/etf read cache-busted (?v=now)');
   r = await run(world({ derivs: derivs(2.99, 2.0) }));
-  ok(posts(r.calls).length === 0, '(a) 2.99h old: still no dispatch (threshold is >= 3h)', r.out);
+  ok(posts(r.calls).length === 0, '(a) 2.99h old: still no dispatch (threshold is past 3h; exactly 3.0h is fresh)', r.out);
+  r = await run(world({ derivs: derivs(3.0, 2.0) }));
+  ok(posts(r.calls).length === 0 && r.out.derivs_age_h === 3, 'C4: derivatives exactly 3.0h old: no dispatch (fresh, not rounded into stale)', r.out);
+  r = await run(world({ derivs: derivs((2 * H + 59 * 60000 + 59600) / H, 2.0) }));
+  ok(posts(r.calls).length === 0 && r.out.derivs_age_h < 3 && !/derivatives 3\.00h/.test(r.out.reason || ''), 'C4: 2h59m59.6s is not dispatched and is not shown as 3.00h', r.out);
+  r = await run(world({ derivs: derivs(3.01, 2.0), runs: runs() }));
+  ok(posts(r.calls).length === 1 && r.out.derivs_age_h > 3, 'C4: derivatives 3.01h old: one dispatch', r.out);
 
   // (b) stale derivatives but a data.yml run queued / in progress -> no dispatch
   for (const s of ['queued', 'in_progress', 'waiting', 'pending', 'requested']) {
@@ -65,8 +71,10 @@ function mock(w) {
   ok(p.length === 1 && JSON.parse(p[0].body).ref === 'main' && JSON.parse(p[0].body).inputs.full === 'false' && p[0].headers.Authorization === `Bearer ${TOKEN}`, '(c) dispatch: ref main, inputs.full "false", Bearer GH_TOKEN', p[0] && p[0].body);
   ok(r.calls.filter((x) => x.method === 'POST' && x.url.startsWith('https://api.github.com/')).length === 1, '(c) no other GitHub write call');
   ok(noLeak(r), '(c) GH_TOKEN and HEARTBEAT_URL never in logs, heartbeat body or non-GitHub requests');
-  r = await run(world({ derivs: derivs(2.1, 3.0), runs: runs() }));
-  ok(posts(r.calls).length === 1, '(c) basis exactly 3h old (OI fresh): one dispatch (oldest of oi_t / basis_t decides)', r.out);
+  r = await run(world({ derivs: derivs(2.1, 3.01), runs: runs() }));
+  ok(posts(r.calls).length === 1, '(c) basis 3.01h old (OI fresh): one dispatch (oldest of oi_t / basis_t decides)', r.out);
+  r = await run(world({ derivs: derivs(2.1, 3.0) }));
+  ok(posts(r.calls).length === 0, 'C4: basis exactly 3.0h old (OI fresh): no dispatch', r.out);
   const D1 = derivs(2.1, 2.1); D1.assets.ETH.latest.oi_t = NOW - 3.2 * H;
   r = await run(world({ derivs: D1, runs: runs() }));
   ok(posts(r.calls).length === 1, '(c) only ETH stale: one dispatch (every asset counts)', r.out);
@@ -98,6 +106,14 @@ function mock(w) {
   ok(r.out.batch_due === false && posts(r.calls).length === 0, 'ETF newest row pending, updated today (no checked_at yet): not due, no dispatch', r.out);
   r = await run(world({ etf: etfPending(yday0025, today0025), derivs: derivs(3.1, 2.1), runs: runs() }));
   ok(posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'false', 'ETF pending + stale derivatives: one dispatch with full "false" (the pending row adds no batch)', r.out);
+
+  // a light re-fetch after 00:20 UTC leaves the daily batch due: light_checked_at is never read
+  r = await run(world({ macro: { checked_at: yday0025 }, etf: { checked_at: yday0025, light_checked_at: today0025, updated: yday0025 } }));
+  ok(r.out.batch_due === true && posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true',
+    'light re-fetch after 00:20 UTC (light_checked_at today, checked_at yesterday) leaves the daily batch due', r.out);
+  r = await run(world({ macro: { checked_at: today0025 }, etf: { updated: yday0025, light_checked_at: today0025 } }));
+  ok(r.out.batch_due === true && posts(r.calls).length === 1 && JSON.parse(posts(r.calls)[0].body).inputs.full === 'true',
+    'ETF with no checked_at: fallback is updated, never light_checked_at, so a light stamp today cannot clear the batch', r.out);
 
   // supervisor back-off: 3 failed batch attempts in one UTC day, then one full try every 6h
   const fullRun = (hAgo, st = 'completed', t = 'Refresh data (full)') => ({ id: Math.round(hAgo * 100), status: st, event: 'workflow_dispatch', display_title: t, created_at: iso(NOW - hAgo * H) });
@@ -175,12 +191,18 @@ function mock(w) {
   ok(new RegExp(`^BATCH_UTC = \\(${L.BATCH_UTC[0]}, ${L.BATCH_UTC[1]}\\)`, 'm').test(rs), 'limits.js BATCH_UTC = refresh_slot.py BATCH_UTC');
   const fr = JSON.parse(fs.readFileSync(path.join(ROOT, 'shared/freshness.json'), 'utf8'));
   ok(L.DISPATCH_DERIVS_H < fr.derivs_hourly_h && L.DISPATCH_DERIVS_H > fr.oi_settle_h, 'dispatch threshold 3h sits between the 2h OKX settle and the 5h OI/basis limit', [fr.oi_settle_h, fr.derivs_hourly_h]);
+  ok(/age > DISPATCH_DERIVS_H/.test(fs.readFileSync(path.join(ROOT, 'worker/src/index.js'), 'utf8')) && !/age >= DISPATCH_DERIVS_H/.test(fs.readFileSync(path.join(ROOT, 'worker/src/index.js'), 'utf8')), 'Worker dispatch compares unrounded age > 3h (exactly 3.0h is fresh)');
   const cases = [runs({ oi: 2.1 }), runs({ oi: 5.2 }), runs({ funding: 13 }), runs({ market: 3.4 }), runs({ macroBad: true }), runs({ lastRunMin: 95 }), runs({ macroChecked: 27 }), { last_run: null }, { ...runs({ oi: 2.1 }), macro_checked: undefined }];
   const T = fs.mkdtempSync(path.join(require('os').tmpdir(), 'tworker-'));
   cases.forEach((c, i) => {
     const f = path.join(T, `r${i}.json`); fs.writeFileSync(f, JSON.stringify(c));
-    const pyBad = py(`import sys,json; sys.path.insert(0,'.github/scripts'); import data_age as d; print(json.dumps(d.check(json.load(open(${JSON.stringify(f)})), d.P(${JSON.stringify(iso(NOW))}))))`);
-    const a = JSON.parse(pyBad).length, b = W.staleProblems(JSON.parse(JSON.stringify(c)), NOW).length;
+    const pyBad = py(`import sys,json; sys.path.insert(0,'.github/scripts'); import data_age as d
+warn=sys.stdout
+sys.stdout=sys.stderr
+r=d.check(json.load(open(${JSON.stringify(f)})), d.P(${JSON.stringify(iso(NOW))}))
+sys.stdout=warn
+print(json.dumps(r))`);
+    const a = JSON.parse(pyBad.trim().split('\n').filter((l) => /^[\[\{]/.test(l)).pop()).length, b = W.staleProblems(JSON.parse(JSON.stringify(c)), NOW).length;
     ok(a === b, `staleProblems = data_age.check (case ${i}: ${a} problem(s))`, { py: JSON.parse(pyBad), js: W.staleProblems(c, NOW) });
   });
   const bcases = [[today0025, today0025, '2026-11-17T15:07:00Z'], [yday0025, today0025, '2026-11-17T15:07:00Z'], [yday0025, yday0025, '2026-11-17T00:07:00Z'], [yday0025, yday0025, '2026-11-17T00:21:00Z'], ['2026-11-17T00:20:00Z', today0025, '2026-11-17T00:30:00Z']];

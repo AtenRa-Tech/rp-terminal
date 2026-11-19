@@ -60,6 +60,8 @@ def etf_pending(etf):
 
 
 def checked_at(paths):
+    """Daily-batch stamp only. Reads checked_at; falls back to updated only on old files that lack it. Never reads light_checked_at
+    (the hourly ETF re-fetch writes that; a light run after 00:20 UTC must leave the batch due)."""
     out = []
     for p in paths:
         j = json.load(open(p))

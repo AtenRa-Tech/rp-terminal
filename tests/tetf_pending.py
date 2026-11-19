@@ -85,7 +85,12 @@ try:
     P1 = {k: v for k, v in P0.items() if k != "checked_at"}
     o = fe_run(P1, ["--light"], changed=True); ok("checked_at" not in o and o.get("light_checked_at"), "light re-fetch never creates checked_at", list(o))
     P2 = dict(P0, light_checked_at="2026-10-24T09:17:00Z")
-    o = fe_run(P2, [], changed=True); ok(o.get("light_checked_at") == "2026-10-24T09:17:00Z" and o.get("checked_at") == P0["checked_at"], "full (no flag) run carries both stamps over and never stamps light_checked_at", {k: o.get(k) for k in ("checked_at", "light_checked_at")})
+    o = fe_run(P2, [], changed=True)
+    ok(o.get("light_checked_at") == "2026-10-24T09:17:00Z" and o.get("checked_at") and o.get("checked_at") != P0["checked_at"],
+       "full (no flag) run writes a new checked_at and never stamps light_checked_at (carries the old one)", {k: o.get(k) for k in ("checked_at", "light_checked_at")})
+    o = fe_run(P2, [])  # no data change
+    ok(o.get("light_checked_at") == "2026-10-24T09:17:00Z" and o.get("checked_at") and o.get("checked_at") != P0["checked_at"] and o.get("updated") == P2.get("updated"),
+       "full run with no data change still writes checked_at; light_checked_at and updated stay", {k: o.get(k) for k in ("checked_at", "light_checked_at", "updated")})
     # ---- ETF freshness comes ONLY from each fund's last complete day: fresh run stamps never make stale ETF fresh ----
     T0 = int(dt.datetime(2026, 10, 24, 15, 26, tzinfo=dt.timezone.utc).timestamp() * 1000)  # runs_log takes ms
     ST = json.loads(json.dumps(BASE))

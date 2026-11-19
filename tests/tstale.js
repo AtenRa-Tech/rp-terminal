@@ -42,16 +42,24 @@ const ds=await pg.evaluate(()=>{const o={},H=36e5,now=Date.now(),iso=t=>new Date
  DF['derivs']={v:{updated:iso(now-9*H)},at:now,src:'live'};DF['_runs']={v:{last_run:iso(now-0.5*H)},at:now,src:'live'};o.freshRun=dataStale().filter(x=>/^derivs/.test(x));
  DF['_runs']={v:{last_run:null},at:now,src:'live'};o.seed=dataStale().filter(x=>/^derivs/.test(x));
  if(sv.r)DF['_runs']=sv.r;else delete DF['_runs'];if(sv.d)DF['derivs']=sv.d;else delete DF['derivs'];return o});
-ok(ds.oldRun.length===1&&/5\.0h old/.test(ds.oldRun[0]),"dataStale: _runs.json last_run 5h old -> derivs banner, even though derivs.json 'updated' is fresh",ds);
+ok(ds.oldRun.length===1&&/5h0m old/.test(ds.oldRun[0]),"dataStale: _runs.json last_run 5h old -> derivs banner (C4 XhYm), even though derivs.json 'updated' is fresh",ds);
 ok(ds.freshRun.length===0,"dataStale: _runs.json last_run 30 min old -> no derivs banner, even though derivs.json 'updated' is 9h old",ds);
 ok(ds.seed.length===0,"dataStale: _runs.json without last_run (seed) -> no derivs reading invented",ds);
 // market.json banner limit 3h (21 Oct ruling, was 2h), weekly macro 12 days
 const mk=await pg.evaluate(()=>{const now=Date.now(),iso=t=>new Date(t).toISOString(),sv=DF.market,o={lim:DLIM.market,wk:CAD.Weekly};
  DF.market={v:{updated:iso(now-3.1*36e5)},at:now,src:'live'};o.old=dataStale().filter(x=>/^market/.test(x));
  DF.market={v:{updated:iso(now-2.5*36e5)},at:now,src:'live'};o.fresh=dataStale().filter(x=>/^market/.test(x));
+ DF.market={v:{updated:iso(now-3.0*36e5)},at:now,src:'live'};o.exact=dataStale().filter(x=>/^market/.test(x));
+ DF.market={v:{updated:iso(now-3.01*36e5)},at:now,src:'live'};o.just=dataStale().filter(x=>/^market/.test(x));
+ DF.market={v:{updated:iso(now-(2*36e5+59*60e3+59600))},at:now,src:'live'};o.under=dataStale().filter(x=>/^market/.test(x));
+ o.ageTxt={under:ageTxt(2+59/60+59.6/3600,0,3),exact:ageTxt(3,0,3),just:ageTxt(3.01,1,3)};
  const M={series:{W:{freq:'Weekly',last_date:new Date(now-13*864e5).toISOString().slice(0,10),points:[[0,1]]},W2:{freq:'Weekly',last_date:new Date(now-11*864e5).toISOString().slice(0,10),points:[[0,1]]}}};
  o.w13=fresh('W',M).over;o.w11=fresh('W2',M).over;if(sv)DF.market=sv;else delete DF.market;return o});
 ok(mk.lim===3&&mk.old.length===1&&/limit 3h/.test(mk.old[0])&&mk.fresh.length===0,'banner: market.json 3.1h old -> stale (limit 3h); 2.5h -> fresh',mk);
+ok(mk.exact.length===0,'C4: market.json exactly 3.0h old is fresh (age > 3h is stale, not >=)',mk);
+ok(mk.just.length===1&&/limit 3h/.test(mk.just[0])&&!/3\.0h old/.test(mk.just[0])&&/3h1m/.test(mk.just[0]),'C4: market.json 3.01h old is stale and the label is not rounded down to 3.0h',mk);
+ok(mk.under.length===0&&mk.ageTxt.under==='2h59m','C4: 2h59m59.6s is fresh and ageTxt floors to 2h59m, never shown as 3h',mk);
+
 ok(mk.wk===12&&mk.w13===true&&mk.w11===false,'macro weekly: 13 days old stale, 11 days fresh (limit 12 days)',mk);
 ok(!errs.length,'no page errors',errs.slice(0,3));
 console.log('FAILS:',F.length,JSON.stringify(F));await b.close();process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(2)});
