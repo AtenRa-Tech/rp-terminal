@@ -1,6 +1,6 @@
 // tqa3.js — QA batch 3 regression tests: C14 (one POST NOW count), N11 (M2 one since-claim), export text (as-of + own sources, no internal paths),
 // date axes on every chart/export (last label = last data point, calendar ticks, year on first label + year change, no overlap),
-// @RPTIME in the header of every chart/export, Chart tab header (live OHLC/RSI/MACD, EMA values at last close, Data line), nice price steps inside the price panel.
+// handle (19 Nov, CNG): while HANDLE_CONFIRMED is false NO chart/export carries @RPTIME; once confirmed, every one does (both states tested), Chart tab header (live OHLC/RSI/MACD, EMA values at last close, Data line), nice price steps inside the price panel.
 const p=require('puppeteer-core');const URL=process.env.URL||'http://localhost:8765/index.html';
 (async()=>{const b=await p.launch({executablePath:'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915,deviceScaleFactor:2});
 pg.on('pageerror',e=>console.log('pageerror',e.message));
@@ -23,7 +23,7 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
      if(a.labels.length>(a.cls==='dh'?Math.round(a.maxN*1.5):Math.min(10,a.maxN+1))||(a.cls==='dh'&&a.row2.labels.length>a.maxN))bad.push('too many labels for width: '+a.labels.length+' > '+a.maxN)}
    for(const a of ax.filter(a=>a.fn==='bars'&&a.lastT!=null)){const want=a.mon?calLab(a.lastT,'m',true):axFull(a.lastT);if(a.last!==want)bad.push('bars last '+a.last+' != '+want);for(let i=1;i<a.boxes.length;i++)if(a.boxes[i][0]<a.boxes[i-1][1])bad.push('bars overlap')}
    return{n:A.length,bad}};
- const textOK=(tx,asof=true)=>{const bad=[],j=tx.join(' | ');if(!tx.some(t=>t.includes(HDL())))bad.push('no handle');const dl=tx.find(t=>/^Data: /.test(t));if(!dl)bad.push('no Data line');
+ const HC=typeof HCONF==='boolean'?HCONF:true;const textOK=(tx,asof=true)=>{const bad=[],j=tx.join(' | ');if(HC&&!tx.some(t=>t.includes('@RPTIME')))bad.push('no handle (confirmed)');if(!HC&&tx.some(t=>t.includes('@RPTIME')))bad.push('@RPTIME shown before HANDLE_CONFIRMED');const dl=tx.find(t=>/^Data: /.test(t));if(!dl)bad.push('no Data line');
    else{if(asof&&!/(through|as of) \d{1,2} [A-Z][a-z]{2}( \d{4}| \d\d:\d\d)|through [A-Z][a-z]{2} \d{4}|through \d{1,2} [A-Z][a-z]{2} \d{4}/.test(dl))bad.push('no as-of: '+dl);if(/data\/|\.json/.test(dl))bad.push('internal path: '+dl);if(/blockchain\.com, Binance, DefiLlama/.test(dl))bad.push('generic source')}
    if(/data\/[a-z]+\.json/.test(j))bad.push('internal path in image');return{dl,bad}};
  // ---- C14
@@ -34,9 +34,11 @@ const R=await pg.evaluate(async()=>{const out={};const T=(k,f)=>{try{out[k]=f()}
  if(NX.etf)['btc','eth'].forEach(a=>ex.push(['etf:'+a,(x,W,H)=>drawEtf(x,W,H,a)]));if(SIGD?.CL?.BTC){ex.push(['dd:BTC',(x,W,H)=>drawDD(x,W,H,'BTC')]);ex.push(['perf:BTC',(x,W,H)=>drawPerf(x,W,H,'BTC')])}
  {const dvMiss=typeof STALEM==='object'&&Object.keys(STALEM).some(k=>/ (funding|oi)$/.test(k))?Math.max(0,4-SIG.filter(s=>/^(fund|oicap)/.test(s.id)).length):0;// stale gate: funding/OI cards are removed while derivs.json is past its limit
  out.EXPORT_COUNT={n:ex.length,dvMiss,ids:ex.map(e=>e[0]),pass:ex.length>=25-dvMiss}}
- for(const [id,fn] of ex)T('EX_'+id,()=>{const r=run(fn,3840,2160),t=textOK(r.tx),a=axOK(r.ax);const wm=r.ax.some(x=>x.fn==='wm')||r.tx.some(z=>z.includes(HDL()));return{dl:t.dl,axes:a.n,bad:[...t.bad,...a.bad,...(wm?[]:['no watermark'])],pass:!t.bad.length&&!a.bad.length&&wm}});
- // handle fallback: blank handle still draws @RPTIME
- T('WM_blank_handle_fallback',()=>{const h=S.handle;S.handle='';const r=run((x,W,H)=>drawSig(x,W,H,SIG[0]),1920,1080);S.handle=h;return{pass:r.tx.some(t=>t.includes('@RPTIME'))}});
+ for(const [id,fn] of ex)T('EX_'+id,()=>{const r=run(fn,3840,2160),t=textOK(r.tx),a=axOK(r.ax);const wm=r.ax.some(x=>x.fn==='wm')||(HC?r.tx.some(z=>z.includes('@RPTIME')):true);return{dl:t.dl,axes:a.n,bad:[...t.bad,...a.bad,...(wm?[]:['no watermark'])],pass:!t.bad.length&&!a.bad.length&&wm}});
+ // handle in BOTH states (blank Settings handle): unconfirmed = @RPTIME absent from every export; confirmed = present on every export
+ T('WM_handle_states',()=>{const h=S.handle;S.handle='';const fns=ex.slice(0,8).concat([['chart',(x,W,H)=>drawChart(x,W,H,{...CH,cross:null})],['heat',(x,W,H)=>drawHeat(x,W,H,true)]]);const has=()=>fns.map(([id,fn])=>[id,run(fn,1920,1080).tx.some(t=>t.includes('@RPTIME'))]);
+  if(typeof HCONF!=='boolean'){const a=has();S.handle=h;return{legacy:true,a,pass:a.every(x=>x[1])}}
+  const c0=HCONF;HCONF=false;const off=has();HCONF=true;const on=has();HCONF=c0;S.handle=h;return{off:off.filter(x=>x[1]).map(x=>x[0]),on:on.filter(x=>!x[1]).map(x=>x[0]),pass:off.every(x=>!x[1])&&on.every(x=>x[1])}});
  // ---- Chart tab: synthetic candles for every timeframe, ending at an open candle now, at 3 phone widths + 4K export
  const ivMs={'15m':9e5,'1h':36e5,'4h':144e5,'1d':864e5,'1w':6048e5};
  const syn=(iv,n)=>{const st=ivMs[iv],t1=Math.floor(Date.now()/st)*st- (iv==='1w'?((new Date(Math.floor(Date.now()/864e5)*864e5).getUTCDay()+6)%7)*864e5-0:0);const t=[],o=[],h=[],l=[],c=[],v=[];let px=60000;for(let i=n-1;i>=0;i--){const tt=iv==='1w'?(()=>{const d=Math.floor(Date.now()/864e5)*864e5;return d-((new Date(d).getUTCDay()+6)%7)*864e5-i*6048e5})():t1-i*st;const op=px;px*=1+Math.sin(i/7)*.01+.002;t.push(tt);o.push(op);c.push(px);h.push(Math.max(op,px)*1.01);l.push(Math.min(op,px)*.99);v.push(100+i%17)}return{t,o,h,l,c,v,src:'Binance',pair:'BTC/USDT'}};

@@ -41,12 +41,12 @@ const H=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),SRC=fs.read
     const fst=el=>{const b=[...el.querySelectorAll('button')].filter(b=>b.offsetParent);return b[0]};const ch=document.querySelector('#s-chart [data-x="chartx"]').parentElement,st=$('#stShare').parentElement;
     const pos=(el,sel)=>{const x=el.querySelector(sel).getBoundingClientRect();return[x.top,x.left]};
     return{rc:RARECARD,post:$('#rareTA').value.split('\n')[0],stFirst:st.querySelector('button').id,stPri:$('#stShare').classList.contains('pri')&&!$('#stExp').classList.contains('pri'),chFirst:ch.querySelector('button').dataset.x,chPri:ch.querySelector('[data-x="chartx"]').classList.contains('pri')&&!ch.querySelector('[data-x="chart"]').classList.contains('pri'),
-     stAhead:(([t1,l1],[t2,l2])=>t1<t2||t1===t2&&l1<l2)(pos(st,'#stShare'),pos(st,'#stExp')),chAhead:!!(ch.querySelector('[data-x="chartx"]').compareDocumentPosition(ch.querySelector('[data-x="chart"]'))&4)&&getComputedStyle(ch).flexDirection==='row',hdl:HDL()}});
+     stAhead:(([t1,l1],[t2,l2])=>t1<t2||t1===t2&&l1<l2)(pos(st,'#stShare'),pos(st,'#stExp')),chAhead:!!(ch.querySelector('[data-x="chartx"]').compareDocumentPosition(ch.querySelector('[data-x="chart"]'))&4)&&getComputedStyle(ch).flexDirection==='row',hdl:HDL(),hdlx:HDLX()}});
   ok(N.rc&&N.rc.lines<=2&&!/UTC|\d\d:\d\d/.test(N.rc.head)&&/^BTC open interest on OKX: −\d+\.\d% in 7 days$/.test(N.rc.head),`(f) ${nm}: card headline "BTC open interest on OKX: −X% in 7 days", no timestamp, ≤2 lines`,N.rc);
   ok(/^\$BTC perpetual open interest on OKX: −\d+\.\d% in the 7 days to \d{1,2} [A-Z][a-z]{2} \(−[\d,]+ BTC\)(, to [\d,]+ BTC)?\.$/.test(N.post),`(f) ${nm}: post line 1 has CNG's shape ("in the 7 days to <date>", no time)`,N.post);
   ok(N.stFirst==='stShare'&&N.stPri&&N.stAhead,`(f) ${nm}: Studio: Share to X is primary and ahead of Save image`,N);
   ok(N.chFirst==='chartx'&&N.chPri&&N.chAhead,`(f) ${nm}: Chart tab: Share to X is primary and ahead of Save image`,N);
-  ok(N.hdl==='@RPTIME',`(f) ${nm}: handle stays @RPTIME`,N.hdl);
+  ok(N.hdl===''&&N.hdlx==='@RPTIME',`(f) ${nm}: until HANDLE_CONFIRMED, live exports get no handle (HDL() is empty); the example card keeps @RPTIME`,N);
   ok(N.rc&&N.rc.handle===null,`(g) ${nm}: a live rare card shows no handle until RP confirms it`,N.rc);
   // ---------- round 3: notes as 2 lines, button labels, thresholds, handle, phone live price
   const G=await pg.evaluate(async()=>{tab('chart');await new Promise(r=>setTimeout(r,300));const n=[...document.querySelectorAll('#rareBox [data-rnote], #chRare [data-rline]')].map(e=>{const a=e.querySelector('.rn1'),b=e.querySelector('.rn2');return{a:a&&a.textContent,b:b&&b.textContent,aw:a&&getComputedStyle(a.querySelector('b')||a).fontWeight,bf:b&&parseFloat(getComputedStyle(b).fontSize),af:a&&parseFloat(getComputedStyle(a).fontSize),hA:a&&a.getBoundingClientRect().height,hB:b&&b.getBoundingClientRect().height,lh:a&&parseFloat(getComputedStyle(a).lineHeight)}});
@@ -61,6 +61,27 @@ const H=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),SRC=fs.read
   ok(G.thr&&/^[−+]\d+\.\d%$/.test(G.thr.lo)&&/^[−+]\d+\.\d%$/.test(G.thr.hi),`(g) ${nm}: OI 2% line labelled at one decimal (${G.thr&&G.thr.lo})`,G.thr);
   ok(G.hc==='@RPTIME'&&G.hconf===false&&(H.match(/@RPTIME/g)||[]).length===1,`(g) ${nm}: handle is one config value (HANDLE), not yet confirmed`,{hc:G.hc,n:(H.match(/@RPTIME/g)||[]).length});
   if(nm==='phone')ok(!G.live||G.live.x+G.live.w<=G.live.max+1,`(g) phone: when the live price does not fit the OHLC row it moves to the title row and fits (not clipped)`,G.live);
+
+  // ---------- round 4 (CNG A/C + supervisor 19 Nov): handle in BOTH states, sign/number never split at phone width, Studio says "Rare signal", example 2% line = live line
+  const HS=await pg.evaluate(async()=>{const P=CanvasRenderingContext2D.prototype,of=P.fillText;let log=[];P.fillText=function(t,...a){log.push(String(t));return of.call(this,t,...a)};
+    const cv=()=>{const c=document.createElement('canvas');c.width=1600;c.height=2000;return c.getContext('2d')};const fx=RSX&&RSX.s,lv=RS.find(s=>s.id==='oi7');
+    const jobs={chart:x=>drawChart(x,1600,900,{...CH,cross:null}),heat:x=>drawHeat(x,1600,900,true),fng:x=>drawFng(x,440,220),price:x=>drawCard(x,1600,900,'price',stCoin()),insight:x=>drawCard(x,1600,900,'insight',stCoin()),pulse:x=>drawCard(x,1600,900,'pulse'),rareLive:x=>drawRareCard(x,1600,2000,lv),rareExample:x=>drawRareCard(x,1600,2000,fx)};
+    const run=()=>{const o={};for(const [k,f] of Object.entries(jobs)){log=[];try{f(cv());o[k]=log.some(t=>t.includes('@RPTIME'))}catch(e){o[k]='ERR '+e}}return o};
+    const h0=S.handle;S.handle='@RPTIME';const off=run();HCONF=true;const on=run();HCONF=HANDLE_CONFIRMED;S.handle=h0;P.fillText=of;return{off,on}});
+  ok(Object.entries(HS.off).every(([k,v])=>v===(k==='rareExample')),`(h) ${nm}: HANDLE_CONFIRMED=false: @RPTIME only on the example card (not the chart header, heatmap, gauge, Studio cards or live rare card)`,HS.off);
+  ok(Object.values(HS.on).every(v=>v===true),`(h) ${nm}: HANDLE_CONFIRMED=true: @RPTIME on every chart, card and export`,HS.on);
+  const SJ=await pg.evaluate(async()=>{tab('chart');await new Promise(r=>setTimeout(r,300));document.querySelectorAll('[data-rd]').forEach(b=>{try{b.click()}catch(e){}});await new Promise(r=>setTimeout(r,300));
+    const sp=[...document.querySelectorAll('#rareBox .nw, #chRare .nw')].filter(e=>e.offsetParent);const split=sp.filter(e=>e.getClientRects().length!==1).map(e=>e.textContent);
+    const t=document.createElement('p');t.className='rnote';t.style.width='70px';t.innerHTML=escN('US spot $ETH ETFs: net outflow (−$239.9M) in 3 days, −19.2% and +18 bp');document.querySelector('#rareBox').appendChild(t);
+    const syn=[...t.querySelectorAll('.nw')].map(e=>[e.textContent,e.getClientRects().length]);t.remove();
+    const ws=[...document.querySelectorAll('#rareBox [data-rnote], #chRare [data-rline]')].map(e=>e.innerHTML).join(' ');const bare=(ws.replace(/<span class="nw">[^<]*<\/span>/g,'').match(/[+\u2212$]\d[\d,.]*/g)||[]);
+    return{n:sp.length,split,syn,bare}});
+  ok(SJ.n>=10&&!SJ.split.length&&!SJ.bare.length,`(h) ${nm}: every sign/currency+number in the notes and details is one unbreakable token (${SJ.n} tokens, none split)`,SJ);
+  ok(SJ.syn.length===3&&SJ.syn.every(([t,n])=>n===1)&&SJ.syn.some(([t])=>t==='(−$239.9M)'),`(h) ${nm}: a 70px-wide note never splits "(−$239.9M)", "−19.2%" or "+18 bp"`,SJ.syn);
+  const SEL=await pg.evaluate(async()=>{openRare('fx-oi7');await new Promise(r=>setTimeout(r,300));const a=$('#stType').selectedOptions[0].textContent;const lv=RARE.build(RSIN).find(s=>s.id==='oi7'),ex=RARE.build(RARE.FX.oiDrop(RSIN)).find(s=>s.id==='oi7');/* rebuilt from the current inputs (section d changed them) */
+    const th={fx:ex.thr,lv:lv.thr,fxp2:ex.j.p2,lvp2:lv.j.p2};$('#stType').value='price';$('#stType').dispatchEvent(new Event('change'));await new Promise(r=>setTimeout(r,200));return{a,b:$('#stType').selectedOptions[0].textContent,th}});
+  ok(SEL.a==='Rare signal'&&SEL.b==='Price card',`(h) ${nm}: Studio type selector reads "Rare signal" on a rare-signal card`,SEL);
+  ok(SEL.th.fx.lo===SEL.th.lv.lo&&SEL.th.fxp2===SEL.th.lvp2,`(h) ${nm}: the example card's 2% line is the live firing line (${SEL.th.lv.lo}), not one recomputed with the example bucket`,SEL.th);
   ok(!errs.length,`(e) ${nm}: no page errors`,errs);await pg.close()}}
  catch(e){ok(false,'run',String(e))}finally{await b.close()}
  console.log('FAILS: '+F.length);process.exit(F.length?1:0)})();

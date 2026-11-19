@@ -74,7 +74,7 @@ fail(FS.postText.replace('in the 7 days to 19 Nov','in the 7 days to now'),6,'C6
  const f15=R.FX.tenY(inp,-15),s15=by(B(f15),'dgs10');ALL.push(B(f15));ok(s15.status==='rare'&&R.audit(s15.postText,s15,f15).ok&&/: 1\.9% of 16,203 readings were this low or lower/.test(s15.postText),'C7 -15 bp: computed share 1.9% is stated and it fires',s15.postText)}
 fail(FS.postText.replace('19.2%','19.3%'),'R','R an edited figure fails the recompute');
 {const D=JSON.parse(JSON.stringify(FX.derivs)),P=D.assets.BTC.oi_daily.points;P[P.length-1][2]*=1.01;fail(FS.postText,'R','R the series moved before posting: the old figures fail the recompute',FS,{...FX,derivs:D})}
-fail(FS.postText.replace(R.SRC.oi,'Open interest across exchanges'),'S','S a source line other than the exact source name fails');
+fail(FS.postText.replace('Source: OKX BTC perpetual open interest','Source: Open interest across exchanges'),'S','S a source line other than the exact source name fails');
 {const i2={...FX,stale:{oi7:'Data stale, 6h0m old, past 5h limit (OKX).'}},s=by(B(i2),'oi7');ok(s.status==='stale'&&!/stale/i.test(s.note),'F stale OI: status stale (badge), never in the note sentence',s.note);fail(FS.postText,'F','F stale data blocks the post',s,i2)}
 fail(FS.postText+' 🚀','X','X emoji in a rare-signal post fails');
 
@@ -98,8 +98,11 @@ ok(posts.every(([,t])=>!/what followed|last time/i.test(t))&&ALL.flat().every(s=
 ok(posts.every(([,t])=>R.xLen(t)<=280&&t.split('\n').length<=4),'W every post fits 280 characters and 3 lines + source');
 
 // ---------- CNG review (19 Nov): '7-day' wording, exact OI post shape, card headline
-ok(R.TPL.oi7.post(FS.f)==='$BTC perpetual open interest on OKX: −19.2% in the 7 days to 19 Nov (−7,172 BTC), to 30,183 BTC.'&&FS.srcLine==='Source: OKX BTC perpetual (BTC-USDT-SWAP) open interest, in BTC, snapshot 19 Nov 02:50 UTC.','N1 OI template: "in the 7 days to 19 Nov" (date only), snapshot time on the source line',{l1:R.TPL.oi7.post(FS.f),src:FS.srcLine});
-ok(FS.postText==='$BTC perpetual open interest on OKX: −19.2% in the 7 days to 19 Nov (−7,172 BTC).\nAmong the lowest 2% of 7-day changes since 8 Jan 2024: 1.5% of 1,047 readings were this low or lower.\nSource: OKX BTC perpetual (BTC-USDT-SWAP) open interest, in BTC, snapshot 19 Nov 02:50 UTC.'&&FS.fit==='line 1 short form'&&R.xLen(FS.postText)<=280,'N1b full OI form is 290 characters, so the post uses the short line 1 (no level) and fits 280',{t:FS.postText,fit:FS.fit,len:R.xLen(FS.postText)});
+ok(FS.postText==='$BTC perpetual open interest on OKX: −19.2% in the 7 days to 19 Nov (−7,172 BTC), to 30,183 BTC.\nAmong the lowest 2% of 7-day changes since 8 Jan 2024: 1.5% of 1,047 readings were this low or lower.\nSource: OKX BTC perpetual open interest, snapshot 19 Nov 02:50 UTC.'&&!FS.fit&&R.xLen(FS.postText)===268,'N1 OI post (supervisor final): level kept, source line "Source: OKX BTC perpetual open interest, snapshot 19 Nov 02:50 UTC.", 268 on X\'s count',{t:FS.postText,fit:FS.fit,x:R.xLen(FS.postText)});
+ok(!/BTC-USDT-SWAP|in BTC/.test(FS.postText)&&/BTC-USDT-SWAP/.test(FS.note2)&&/, in BTC/.test(FS.note2),'N1b instrument code and "in BTC" stay on the card/note only, never in the post',FS.note2);
+{const f={...FS.f,level:'1,234,567,890'};const t=[R.TPL.oi7.post(f),FS.rarity+'.',R.TPL.source(R.POSTSRC.oi,R.TPL.oi7.src(f))].join('\n'),t2=[R.TPL.oi7.postTime(f),FS.rarity+'.',R.TPL.source(R.POSTSRC.oi)].join('\n');
+ ok(R.xLen(t2)<R.xLen(t)&&/in the 7 days to 19 Nov 02:50 UTC/.test(t2)&&/^Source: OKX BTC perpetual open interest\.$/.test(t2.split('\n').at(-1)),'N1c fallback: when too long, the snapshot time moves into line 1 and the source line becomes exactly "Source: OKX BTC perpetual open interest."',t2)}
+ok(R.xLen('−')===2&&R.xLen('-')===1&&R.xLen('a https://example.com/x')===25&&R.xLen('ok 👍🏽')===5&&R.xLen('é')===1,'X1 X weighted count: − = 2, hyphen 1, URL 23, emoji sequence 2');
 ok(FS.head==='BTC open interest on OKX: −19.2% in 7 days'&&!/UTC|\d\d:\d\d/.test(FS.head),'N2 card headline has no timestamp',FS.head);
 {const fi=R.FX.oiDrop(inp,-26),s=by(B(fi),'oi7');ok(!/weekly/i.test(s.note+s.postText)&&/7-day changes/.test(s.rarity),'N3 "7-day", never "weekly", in notes and posts')}
 {/* synthetic OKX series (deterministic): a volatile first 420 days sets wide 2% tails, a calm last 180+ days; the newest 7-day change is a new 180-day low but inside the tail */
@@ -112,7 +115,7 @@ ok(posts.every(([id,t])=>{const L=t.split('\n');return /^Source: /.test(L.at(-1)
 ok(ALL.flat().filter(s=>s.postText).every(s=>s.head&&!/UTC|\d\d:\d\d/.test(s.head)),'N7 every rare card headline is free of timestamps');
 
 // ---------- round 3 (supervisor + CNG + CRYPTO GOD, 19 Nov 13:07 IST)
-const oiDay=t=>t+8*36e5,day0=t=>new Date(t).toISOString().slice(0,10);
+const floor1x=x=>Math.floor(x*10+1e-9)/10;const oiDay=t=>t+8*36e5,day0=t=>new Date(t).toISOString().slice(0,10);
 // G: 'since' = first value of the measured (change/streak) series, generic for every series
 {const L=T.filter(s=>s.j&&s.t&&s.t.length);const bad=L.filter(s=>day0(s.since)!==day0(s.id.startsWith('oi')?oiDay(s.t[0]):s.t[0]));ok(!bad.length,'G1 every series: since = first value of its measured series',bad.map(s=>[s.id,day0(s.since),day0(s.t[0])]))}
 ok(day0(by(T,'oi7').since)==='2024-01-08'&&day0(by(T,'oilvl').since)==='2024-01-01','G2 OI 7-day change starts 8 Jan 2024 (the first change needs 7 days of OI); the OI level itself starts 1 Jan 2024');
@@ -120,7 +123,7 @@ ok(/since 8 Jan 2024:/.test(FS.postText)&&/since 8 Jan 2024/.test(FS.verdict)&&!
 ok(day0(by(T,'dollar').since)==='2016-01-28'&&day0(by(T,'dgs10').since)==='1962-01-03'&&day0(by(T,'link').since)==='2019-02-15','G4 change series start one step after their raw rows (dollar 28 Jan 2016, 10Y 3 Jan 1962, LINK 15 Feb 2019)');
 // P: thresholds at the reading's own precision
 {const dec=x=>{const m=String(x).replace(/[^\d.]/g,'').split('.');return m[1]?m[1].length:0};const L=T.concat([FS]).filter(s=>s.thr);
- ok(FS.thr.lo==='−17.9%'&&by(T,'oi7').thr.lo==='−17.5%'&&by(T,'oi7').thr.hi==='+18.9%','P1 OI 2% line shown to one decimal: −17.5% today (not −18%), +18.9% at 98%',{t:by(T,'oi7').thr,fx:FS.thr});
+ ok(FS.thr.lo==='−17.5%'&&FS.j.p2===by(T,'oi7').j.p2&&by(T,'oi7').thr.lo==='−17.5%'&&by(T,'oi7').thr.hi==='+18.9%','P1 OI 2% line shown to one decimal: −17.5% (not −18%), +18.9% at 98%; the example fires on the live lines (not recomputed with its synthetic bucket)',{t:by(T,'oi7').thr,fx:FS.thr});
  ok(L.every(s=>[s.thr.lo,s.thr.hi].filter(Boolean).every(x=>dec(x)===s.dp)&&dec(s.stats[0][1].replace(/[a-z ]+$/i,''))===s.dp),'P2 every threshold has the same decimals as its reading (dp per series)',L.map(s=>[s.id,s.dp,s.thr,s.stats[0][1]]));
  ok(L.every(s=>s.thr.kind!=='2%'||(s.thr.lo===s.fv(s.j.p2)&&s.thr.hi===s.fv(s.j.p98))),'P3 thresholds are the unrounded 2nd/98th percentiles rounded at that precision')}
 // N: notes are two short lines; stale is in the badge only
@@ -139,7 +142,7 @@ ok(['oi7','oilvl','etf','dgs10','t10y2y','dollar','link'].every(k=>typeof R.TPL[
 // 2s10s: CRYPTO GOD numbers ruling: judged on the daily change; a sign flip alone is not a signal
 // 2s10s, both triggers (supervisor 13:59): (a) a −0.01 → +0.02 pp flip fires when there was no up-crossing in the previous 180 calendar days
 {const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.T10Y2Y.points,n=P.length;P[n-2][1]=-0.01;P[n-1][1]=0.02;const i2={...inp,macro:M},s=by(B(i2),'t10y2y');
- ok(s.j.cur===3&&s.cross==='positive'&&s.j.form==='cross'&&s.status==='rare'&&s.rarity==='The 10Y–2Y spread turned positive, the first time since 6 Sep 2024'&&/^10Y–2Y Treasury spread: \+3 bp in one day, to \+0\.02 pp, turning positive\.$/.test(s.postText.split('\n')[0])&&R.audit(s.postText,s,i2).ok,'T6a 2s10s −0.01 → +0.02 pp with no up-crossing in 180 days fires (first since 6 Sep 2024) and passes the audit',{cur:s.j.cur,form:s.j.form,r:s.rarity,p:s.postText,a:s.postText&&R.audit(s.postText,s,i2).checks.filter(c=>!c.pass)})}
+ ok(s.j.cur===3&&s.cross==='positive'&&s.j.form==='cross'&&s.status==='rare'&&s.rarity==='10Y–2Y Treasury spread turned positive: +0.02 pp, from −0.01 pp the day before (first crossing this way in at least 180 days)'&&/^10Y–2Y Treasury spread: \+3 bp in one day, to 0\.02 pp\.$/.test(s.postText.split('\n')[0])&&R.audit(s.postText,s,i2).ok,'T6a 2s10s −0.01 → +0.02 pp with no up-crossing in 180 days fires with the CNG "turned positive" sentence (last up-crossing 6 Sep 2024) and passes the audit',{cur:s.j.cur,form:s.j.form,r:s.rarity,p:s.postText,a:s.postText&&R.audit(s.postText,s,i2).checks.filter(c=>!c.pass)})}
 // (b) the same flip inside the real 4–6 Sep 2024 back-and-forth does not fire (up-crossings on 28 Aug and 4 Sep are inside 180 days)
 {const M=JSON.parse(JSON.stringify(inp.macro)),S=M.series.T10Y2Y;S.points=S.points.filter(p=>p[0]<='2024-09-06');const P=S.points,n=P.length;S.last_date='2024-09-06';P[n-2][1]=-0.01;P[n-1][1]=0.02;const i2={...inp,now:Date.parse('2024-09-07T12:00:00Z'),macro:M},s=by(B(i2),'t10y2y');
  ok(P[n-1][0]==='2024-09-06'&&P[n-2][0]==='2024-09-05'&&s.cross==='positive'&&s.j.cur===3&&!s.j.fires&&s.status==='normal'&&!s.postText&&/Within its normal range/.test(s.note1),'T6b the same −0.01 → +0.02 flip on the real 4–6 Sep 2024 back-and-forth does not fire',{d:P.slice(-3),cross:s.cross,st:s.status,f:s.j.form})}
@@ -150,9 +153,32 @@ ok(['oi7','oilvl','etf','dgs10','t10y2y','dollar','link'].every(k=>typeof R.TPL[
  ok(dates.length>3&&dates.every(d=>Date.parse(d+' UTC')>=first)&&R.EARLIEST.t10y2y==='1976-06-01'&&cases.every(([s,i])=>!s.postText||R.audit(s.postText,s,i).checks.find(c=>c.k===3).pass),'T6c every 2s10s "since" date (notes, posts, details, crossing sentence) is on or after 1 Jun 1976',[...new Set(dates)])
  const fx=R.audit('10Y–2Y Treasury spread: +3 bp in one day, to +0.02 pp, turning positive.\nThe 10Y–2Y spread turned positive, the first time since 31 May 1976.\nData to 18 Nov 2026 (FRED, latest published).\nSource: FRED T10Y2Y.',cases[0][0],cases[0][1]);ok(!fx.ok&&!fx.checks.find(c=>c.k===3).pass,'T6d a 2s10s post claiming "since 31 May 1976" fails the audit (check 3)')}
 {const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.T10Y2Y.points,n=P.length;P[n-1][1]=+(P[n-2][1]-0.40).toFixed(2);const i2={...inp,macro:M},s=by(B(i2),'t10y2y');const l1=s.postText&&s.postText.split('\n')[0];
- ok(s.status==='rare'&&l1===`10Y–2Y Treasury spread: −40 bp in one day, to ${(s.level<0?'−':'+')+Math.abs(s.level).toFixed(2)} pp${s.cross?', turning '+s.cross:''}.`&&/^Among the lowest 2% of daily moves in the 10Y–2Y spread since /.test(s.postText.split('\n')[1])&&R.audit(s.postText,s,i2).ok,'T7 2s10s −40 bp in one day fires on the 2% tail of its daily change, line 1 "±X bp in one day, to Y pp."',{p:s.postText,a:s.postText&&R.audit(s.postText,s,i2).checks.filter(c=>!c.pass)})}
+ ok(s.status==='rare'&&l1===`10Y–2Y Treasury spread: −40 bp in one day, to ${(s.level<0?'−':'')+Math.abs(s.level).toFixed(2)} pp.`&&!/turned/.test(s.postText)&&/^Among the lowest 2% of daily moves in the 10Y–2Y spread since /.test(s.postText.split('\n')[1])&&R.audit(s.postText,s,i2).ok,'T7 2s10s −40 bp in one day fires on the 2% tail of its daily change, line 1 "±X bp in one day, to Y pp."',{p:s.postText,a:s.postText&&R.audit(s.postText,s,i2).checks.filter(c=>!c.pass)})}
 {const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.T10Y2Y.points,n=P.length;P[n-2][1]=-0.10;P[n-1][1]=0.25;const i2={...inp,macro:M},s=by(B(i2),'t10y2y');
- ok(s.status==='rare'&&/, turning positive\.$/.test(s.postText.split('\n')[0])&&R.audit(s.postText,s,i2).ok,'T8 2s10s: a large move that also crosses zero mentions the turn only as context',s.postText)}
+ ok(s.status==='rare'&&s.j.form==='tail'&&s.cross==='positive'&&!/turned|turning/.test(s.postText)&&/^Among the highest 2%/.test(s.postText.split('\n')[1])&&R.audit(s.postText,s,i2).ok,'T8 2s10s: a big move that also crosses zero uses the tail (stronger) form; "turned" only on a crossing-only day',s.postText)}
 ok(T.concat([FS]).filter(s=>s.thr&&s.thr.kind==='2%').every(s=>{const r=s.facts.find(f=>f[0]==='2nd / 98th percentile');return r&&r[1]===s.thr.lo+' / '+s.thr.hi}),'P4 the details panel shows the same threshold text as the card');
 ok(/, 8 Jan 2024–19 Nov 2026 · snapshot/.test(by(T,'oi7').note2)&&!/1 Jan 2024/.test(by(T,'oi7').note+FS.postText),'G5 OI note line 2 and the card footer give the window from 8 Jan 2024; no "1 Jan 2024" on the 7-day change',by(T,'oi7').note2);
+
+{const floor1x=x=>Math.floor(x*10+1e-9)/10,day0=t=>new Date(t).toISOString().slice(0,10),T=B(inp);
+// ---------- CRYPTO GOD's 2s10s daily-change figures (FRED to 18 Nov) + change counts
+{const s=by(T,'t10y2y'),rows=inp.macro.series.T10Y2Y.points.length;
+ ok(day0(s.since)==='1976-06-02'&&s.j.N===rows-1&&s.j.p2===-9&&s.j.p98===10&&s.j.win.lo===-9&&s.j.win.hi===10&&s.j.cur===-3&&!s.j.fires,'K1 2s10s: changes from 2 Jun 1976 (N = published days − 1), 2nd/98th −9/+10 bp, 180-day range −9..+10 bp, today −3 bp, no fire',{N:s.j.N,rows,since:day0(s.since)});
+ ok(Math.round(100*100*s.v.filter(x=>x<=-9).length/s.j.N)/100===2.55&&Math.round(100*100*s.v.filter(x=>x>=10).length/s.j.N)/100===2.15,'K2 2s10s: 2.55% of changes at or below −9 bp, 2.15% at or above +10 bp (both above 2.0%)')}
+const s2=(bp)=>{const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.T10Y2Y.points,n=P.length;P[n-1][1]=+(P[n-2][1]+bp/100).toFixed(2);const i2={...inp,macro:M};return[by(B(i2),'t10y2y'),i2]};
+for(const bp of [-9,10]){const [s]=s2(bp);ok(s.j.cur===bp&&!s.j.fires&&s.status==='normal'&&floor1x(bp<0?s.j.shareLo:s.j.shareHi)>2,`K3 2s10s exactly ${bp>0?'+':''}${bp} bp does not fire (tie share above 2.0%)`,{cur:s.j.cur,share:bp<0?s.j.shareLo:s.j.shareHi})}
+for(const bp of [-10,11]){const [s,i2]=s2(bp);ok(s.j.cur===bp&&s.j.fires&&s.status==='rare'&&R.audit(s.postText,s,i2).ok,`K4 2s10s ${bp>0?'+':''}${bp} bp fires and passes the audit`,{cur:s.j.cur,form:s.j.form,p:s.postText})}
+// every change series counts CHANGES, not days (N = observations − lag), and starts at the first change
+{const P=inp.derivs.assets.BTC.oi_daily.points.filter(p=>p&&p[2]!=null),oi=by(T,'oi7'),d10=by(T,'dgs10'),dl=by(T,'dollar'),lk=by(T,'link');
+ const fr=id=>inp.macro.series[id].points.filter(p=>p&&p[1]!=null&&isFinite(+p[1]));
+ const seg=(t,ok)=>{let k=0;for(let i=1;i<t.length;i++)if(!ok(t[i-1],t[i]))k=i;return k};const fT=id=>fr(id).map(p=>Date.parse(p[0]+'T00:00:00Z')),fN=id=>{const t=fT(id);return t.length-seg(t,(a,b)=>b-a<=5*DAY)};
+ const lt=inp.link.t.filter(x=>x+DAY<=inp.now),lN=lt.length-seg(lt,(a,b)=>b-a===DAY);
+ const got={oi7:[oi.j.N,P.length-7],dgs10:[d10.j.N,fN('DGS10')-1],t10y2y:[by(T,'t10y2y').j.N,fN('T10Y2Y')-1],dollar:[dl.j.N,fN('DTWEXBGS')-1],link:[lk.j.N,lN-30]};
+ ok(Object.values(got).every(([a,b])=>a===b)&&oi.j.N===1047,'K5 every series counts changes, not days: OI 1,047 (buckets − 7), FRED series rows − 1, LINK closes − 30',got)}
+// the 2% line label is ALWAYS the exact threshold the engine fires on (live and example cards)
+{const L=B(inp),ex=B(R.FX.oiDrop(inp)),bad=[];for(const x of [...L,...ex])if(x.thr&&x.j&&x.thr.kind==='2%'&&(x.thr.lo!==x.fv(x.j.p2)||x.thr.hi!==x.fv(x.j.p98)))bad.push(x.id);
+ const o=by(L,'oi7'),p2=o.j.p2,a=by(B(R.FX.oiDrop(inp,p2-0.01)),'oi7'),b=by(B(R.FX.oiDrop(inp,p2+0.01)),'oi7');
+ const ex19=by(ex,'oi7');ok(!bad.length&&a.j.p2===p2&&b.j.p2===p2&&ex19.j.p2===p2&&ex19.thr.lo===o.thr.lo&&!b.j.fires&&!b.j.tail&&o.thr.lo==='−17.5%'&&ex19.j.fires,'L1 2% line label = the exact line the engine compares against on every card (live and example: −17.5%); never above-the-line fires',{bad,p2,lab:o.thr.lo})}
+{const M=JSON.parse(JSON.stringify(inp.macro)),P=M.series.T10Y2Y.points,n=P.length;P[n-1][1]=+(P[n-2][1]-0.40).toFixed(2);const s=by(B({...inp,macro:M}),'t10y2y');
+ ok(/: under 0\.1% of 12,612 readings were this low or lower$/.test(s.rarity)&&s.j.shareTxt==='under 0.1'&&R.shareT(0.05)==='under 0.1'&&R.shareT(0.1)==='0.1'&&R.shareT(1.57)==='1.5','U1 very rare share reads "under 0.1% of N readings"',s.rarity)}
+}
 console.log('FAILS: '+F);process.exit(F?1:0);
