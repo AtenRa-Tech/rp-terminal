@@ -106,8 +106,11 @@ jobs:
           else
             FULL=false
           fi
-          echo "full=$FULL" >> "$GITHUB_OUTPUT"
-          echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL"
+          # 17 Nov light ETF re-fetch: outside the batch, re-run ONLY fetch_etf.py while etf.json's newest BTC/ETH row is pending (never the full batch)
+          ETF=$FULL
+          if [ "$FULL" != true ] && [ "$(python3 .github/scripts/refresh_slot.py --etf-pending data/etf.json)" = true ]; then ETF=true; fi
+          echo "full=$FULL" >> "$GITHUB_OUTPUT"; echo "etf=$ETF" >> "$GITHUB_OUTPUT"
+          echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL, ETF fetch=$ETF"
 
       - name: Restore published hours from live (dispatch input restore_hours only; empty = skipped)
         id: restore
@@ -142,6 +145,11 @@ jobs:
         if: steps.plan.outputs.full == 'true'
         continue-on-error: true
         run: python scripts/fetch_etf.py
+
+      - name: ETF flows, light re-fetch (hourly while the newest BTC/ETH row is pending; writes light_checked_at, never checked_at)
+        if: steps.plan.outputs.full != 'true' && steps.plan.outputs.etf == 'true'
+        continue-on-error: true
+        run: python scripts/fetch_etf.py --light
 
       - name: Record this run in data/_runs.json (run time, per-feed freshness, rolling 24h hourly sample)
         if: always()
@@ -329,6 +337,8 @@ jobs:
           PUBLISH_ALLOW_DIFF: ${{ github.event_name == 'workflow_dispatch' && inputs.repair_derivs || '' }}
         run: |
           python3 .github/scripts/no_regress.py snapshot live-before.json
+          # narrow no-rollback ruling (17 Nov: data.yml too): exact bytes live serves BEFORE this publish, for the smoke's stale-and-unchanged check
+          python3 .github/scripts/no_regress.py files live-before-files
           code=$(bash .github/scripts/tested_sha.sh); [ -n "$code" ] || { echo "::error::no tested code commit"; exit 1; }
           bash .github/scripts/snapshot.sh _site "$code"
           # data that arrived after the gates ran gets the two data-only gates again
@@ -356,7 +366,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: live-before
-          path: live-before.json
+          path: |
+            live-before.json
+            live-before-files/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -389,11 +401,13 @@ jobs:
             v=$(curl -s "${SITE_URL}data/_runs.json?v=$(date +%s)" | python3 -c "import json,sys;print((json.load(sys.stdin).get('publish') or {}).get('workflow_run'))" 2>/dev/null)
             [ "$v" = "$GITHUB_RUN_ID" ] && { echo "live serves this publish"; break; }; sleep 10
           done
-      - name: Live smoke + card presence + live never went backwards (failure rolls back)
+      - name: Live smoke + card presence + live never went backwards (failure rolls back, except stale data this publish did not change)
+        # narrow no-rollback ruling: smoke_or_stale.sh passes only when tsmoke passes or fails ONLY on freshness with every stale file byte-identical
+        # to pre-publish live (live-before-files/); backwards, card presence and any other failure still roll back (tests/tnorollback.py)
         run: |
           set -e
           python3 .github/scripts/no_regress.py after live-before.json
-          node tests/tsmoke.js "$SITE_URL"
+          bash .github/scripts/smoke_or_stale.sh "$SITE_URL" live-before-files
           node qa/card-presence.js "$SITE_URL"
       - name: End-to-end time
         if: always()

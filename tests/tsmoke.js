@@ -17,7 +17,7 @@ Object.assign(module.exports,{bizDays,etfLast,etfFresh,NYSE});
 if(require.main===module)(async()=>{
  const g=async u=>{const r=await fetch(URL+u+'?v='+now,{cache:'no-store'});return r};
  {const a=await absent(g,'india.json'),b=await absent(g,'data/india.json');ok(a.absent&&b.absent,'india.json and data/india.json serve no content (no 2xx; 5xx retried)',[a,b])}
- const J={};for(const n of ['derivs','market','etf','macro','calendar']){const r=await g('data/'+n+'.json');ok(r.ok,`data/${n}.json served`,r.status);if(r.ok)J[n]=await r.json()}
+ const J={},RAW={};for(const n of ['derivs','market','etf','macro','calendar']){const r=await g('data/'+n+'.json');ok(r.ok,`data/${n}.json served`,r.status);if(r.ok){RAW[n]=Buffer.from(await r.arrayBuffer());try{J[n]=JSON.parse(RAW[n].toString('utf8'))}catch(e){ok(false,`data/${n}.json is JSON`,String(e))}}}
  const h=u=>(now-Date.parse(u))/36e5;
  if(J.derivs)ok(h(J.derivs.updated)<=36,'derivs.json under 36h',J.derivs.updated);if(J.market)ok(h(J.market.updated)<=36,'market.json under 36h',J.market.updated);
  // each fund's last COMPLETE day (newest non-pending row); a held-back pending row is not published. Fails if EITHER fund is past 2 NYSE trading days. Same rule as the stale alarm (runs_log.py / data_age.py).
@@ -37,4 +37,15 @@ if(require.main===module)(async()=>{
  if(fed.err)ok(false,fed.err);else{ok(fed.cases.every(c=>c[2]===c[3]),'usBizDays: Mon 5 Oct->Wed 7 Oct = 2; Columbus Day 12 Oct and Veterans Day 11 Nov skipped',fed.cases);
   fed.rows.forEach(r=>ok(r.last&&r.bd<=fed.lim&&!r.st,`macro ${r.id} within ${fed.lim} US business days (app limit, card not stale)`,r))}
  ok(!errs.length,'no page errors or app console errors',errs);await b.close();
- console.log('\nSMOKE FAILS:',F.length,JSON.stringify(F));process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});
+ writeOut(F,RAW);console.log('\nSMOKE FAILS:',F.length,JSON.stringify(F));process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});
+// Narrow no-rollback ruling (12 Nov): with SMOKE_OUT=<dir>, a completed run writes <dir>/summary.json {complete, fails:[{name, fresh, file}]} and the exact
+// bytes of every data file it judged (<dir>/data/<file>.json). fresh=true + file only for a data-age check; everything else is fresh=false.
+// .github/scripts/stale_only.py reads it: rollback is skipped only when every fail is fresh AND each stale file is byte-identical to pre-deploy live.
+// A crash (no summary, or complete:false) always rolls back.
+function freshFile(name){const R=[[/^derivs\.json under \d+h$/,'derivs.json'],[/^market\.json under \d+h$/,'market.json'],[/^etf\.json .*\bwithin /,'etf.json'],[/^macro [A-Z0-9]+ within /,'macro.json']];for(const [re,f] of R)if(re.test(name))return f;return null}
+function classify(F){return F.map(name=>{const file=freshFile(name);return{name,fresh:!!file,file}})}
+function writeOut(F,RAW){const D=process.env.SMOKE_OUT;if(!D)return;const fs=require('fs'),path=require('path');fs.mkdirSync(path.join(D,'data'),{recursive:true});
+ for(const [n,b] of Object.entries(RAW||{}))fs.writeFileSync(path.join(D,'data',n+'.json'),b);
+ fs.writeFileSync(path.join(D,'summary.json'),JSON.stringify({complete:true,url:URL,fails:classify(F)},null,1))}
+Object.assign(module.exports,{freshFile,classify,writeOut});
+

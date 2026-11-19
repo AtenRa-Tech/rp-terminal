@@ -4,6 +4,9 @@
   no_regress.py snapshot <out.json>         save live updated/last_run (before a deploy)
   no_regress.py newest <site_dir>           replace each tracked data file in <site_dir> with LIVE's copy when live is newer (rollback keeps newest data)
   no_regress.py after <snapshot.json>       exit 1 if live now is older than the snapshot (live went backwards)
+  no_regress.py files <dir>                 save the exact bytes LIVE serves for data/{derivs,market,etf,macro,calendar}.json into <dir> (before a deploy;
+                                            .github/scripts/stale_only.py compares them with what live smoke judged stale). A file live cannot serve is
+                                            left out, so a stale feed with no pre-deploy copy never counts as unchanged (rollback).
 Env: SITE_URL; LIVE_DERIVS / LIVE_RUNS (local files, tests). A missing value on one side is reported, never treated as newer."""
 import datetime as d, json, os, sys, time, urllib.request
 site = os.environ.get("SITE_URL", "https://atenra-tech.github.io/rp-terminal/").rstrip("/") + "/"
@@ -17,6 +20,8 @@ def ld(path=None, url=None):
 # key -> (file, field, env override for tests)
 KEYS = {"updated": ("derivs.json", "updated", "LIVE_DERIVS"), "last_run": ("_runs.json", "last_run", "LIVE_RUNS"),
         "market_updated": ("market.json", "updated", "LIVE_MARKET"), "macro_updated": ("macro.json", "updated", "LIVE_MACRO")}
+# raw files the live smoke judges for age (narrow no-rollback ruling, 12 Nov); LIVE_FILES_DIR = local copies for tests
+FILES = ["derivs.json", "market.json", "etf.json", "macro.json", "calendar.json"]
 def live():
     o = {}
     for k, (f, fld, ev) in KEYS.items():
@@ -47,6 +52,14 @@ if __name__ == "__main__":
         print(f"no-regress: publishing {new}; live {L}")
         if bad: print("::error title=Refusing to publish older derivatives::" + "; ".join(bad)); sys.exit(1)
         print("no-regress OK")
+    elif mode == "files":
+        os.makedirs(arg, exist_ok=True)
+        for f in FILES:
+            src = os.environ.get("LIVE_FILES_DIR")
+            try:
+                b = open(os.path.join(src, f), "rb").read() if src else urllib.request.urlopen(f"{site}data/{f}?v={int(time.time())}", timeout=30).read()
+                json.loads(b); open(os.path.join(arg, f), "wb").write(b); print(f"live before deploy: {f} {len(b)} bytes")
+            except Exception as e: print(f"::warning::live {f} not saved before deploy ({e}); a stale {f} after this deploy will roll back")
     elif mode == "snapshot":
         L = live(); json.dump(L, open(arg, "w")); print("live before deploy:", L)
     elif mode == "after":
