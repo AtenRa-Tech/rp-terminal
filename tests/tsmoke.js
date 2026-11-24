@@ -26,7 +26,7 @@ if(require.main===module)(async()=>{
   /* daily Fed series are checked in-page below with the app's FEDD limit and usBizDays (one shared limit) */
   /* H.10 FX: daily values published weekly (Monday ~21:15 UTC, through the prior Friday; Tuesday after a Monday holiday), so a Friday value is legitimately up to ~11 days old just before the next release */lim.fx.forEach(id=>ok(age(id)<=H10_DAYS,`macro ${id} within ${H10_DAYS} days (H.10 weekly release)`,S[id]?.last_date));lim.weekly.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days`,S[id]?.last_date));
   lim.monthly.forEach(id=>ok(monthlyOk(age(id)),`macro ${id} within ${MONTHLY_DAYS} days of month start`,S[id]?.last_date))}
- const b=await p.launch({executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});const pg=await b.newPage();await pg.setViewport({width:412,height:915});
+ const b=await require('../qa/_launch.js').launchRetry(o=>p.launch(o),{executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});/* 24 Nov: one launch retry, longer timeout (run 44847233870) */const pg=await b.newPage();await pg.setViewport({width:412,height:915});
  const errs=[];pg.on('pageerror',e=>errs.push('pageerror '+e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|net::ERR|CORS|status of 4\d\d|status of 5\d\d/.test(m.text()))errs.push('console '+m.text())});
  await pg.goto(URL+'?v='+now,{waitUntil:'domcontentloaded',timeout:60000});await new Promise(r=>setTimeout(r,8000));
  for(const t of ['today','markets','chart','signals','macro','news','studio']){await pg.evaluate(t=>tab(t),t);await new Promise(r=>setTimeout(r,t==='signals'||t==='macro'?12000:5000));

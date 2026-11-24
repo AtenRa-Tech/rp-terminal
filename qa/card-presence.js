@@ -9,7 +9,7 @@ const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 // Their absence is by design, so they are not required.
 const GATED=/^(rv\d+(BTC|ETH|LINK)|linkbtc)$/;
 const BASE=['mayer','rainbow','ethbtc','2y','wrsi','fundBTC','hash','halv','gold','pi','dd','stable','fundETH','oicapBTC','oicapETH'];
-(async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});const p=await b.newPage({viewport:{width:412,height:915}});
+(async()=>{const b=await require('./_launch.js').launchRetry(o=>chromium.launch(o),{executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});/* 24 Nov: one launch retry (live smoke step) */const p=await b.newPage({viewport:{width:412,height:915}});
 await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now());await p.waitForTimeout(15000);
 const r=await p.evaluate(()=>({sig:(SIG||[]).map(c=>c.id),stale:(typeof SIGSTALE!=='undefined'&&Array.isArray(SIGSTALE)?SIGSTALE:[]).map(c=>({id:c.id,stale:c.stale,why:c.staleWhy})),sigt:typeof SIGT!=='undefined'?Object.keys(SIGT):[]}));await b.close();
 const known=[...new Set([...BASE,...r.sigt])].filter(id=>!GATED.test(id)),f=[];

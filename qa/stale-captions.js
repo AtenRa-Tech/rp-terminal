@@ -11,24 +11,24 @@ const PAGE_NOW=()=>process.env.FREEZE_T0?+process.env.FREEZE_T0:Date.now();
 //  C5 oi_old:    file 30m old, latest OI fresh, hourly OI ends 2d16h ago -> SIGSTALE card id oicapBTC/oicapETH stale:true, score null, usedDate<wantDate, out of SIG, no oicap value anywhere
 //  C4 status:    ruling 3 Oct: ages are XhYm under 48h, whole days above; age past limit never rounded into it;
 //                format "Funding: stale, 12h10m old, past 12h limit (OKX)". Also fails any text that says "Xh old (limit Yh)" with X <= Y (contradictory status)
-const {chromium}=require('playwright-core');const fs=require('fs'),path=require('path');
+const {chromium}=require('playwright-core');const C6=require('./_c6.js');const fs=require('fs'),path=require('path');
 const QL=require('./_load.js'); // shared page loader: waits for the app ready signal, not for network idle (11 Nov)
 const URL=process.argv[2]||'https://atenra-tech.github.io/rp-terminal/';
 const BASE=JSON.parse(fs.readFileSync(process.env.DERIVS_FIXTURE||path.join(__dirname,'../fixtures/derivs-stale.json'),'utf8'));
 const BLOCK=/fapi\.binance|okx\.com|bybit\.com|deribit\.com/i,H=36e5;
 function lastT(o){let m=0;(function w(x){if(Array.isArray(x)){if(typeof x[0]==='number'&&x[0]>1.7e12)m=Math.max(m,x[0]);x.forEach(w)}else if(x&&typeof x==='object')for(const[k,v]of Object.entries(x)){if((k==='last'||/_t$/.test(k))&&typeof v==='number')m=Math.max(m,v);w(v)}})(o);return m}
 function shift(o,d){if(Array.isArray(o)){if(typeof o[0]==='number'&&o[0]>1.7e12)o[0]+=d;o.forEach(x=>shift(x,d))}else if(o&&typeof o==='object')for(const k of Object.keys(o)){if((k==='last'||/_t$/.test(k))&&typeof o[k]==='number'&&o[k]>1.7e12)o[k]+=d;else shift(o[k],d)}return o}
-function aged(ms){const f=align(JSON.parse(JSON.stringify(BASE))),now=PAGE_NOW();shift(f,now-ms-lastT(f));f.updated=new Date(now-ms).toISOString();return f}
+function aged(ms,now=PAGE_NOW()){const f=align(JSON.parse(JSON.stringify(BASE)));shift(f,now-ms-lastT(f));f.updated=new Date(now-ms).toISOString();return f}
 // align (8 Oct ruling a): each asset's hourly series end where its latest block says, so the fixture is internally consistent.
 function align(f){for(const a of Object.values(f.assets||{})){const L=a.latest||{},end=L.oi_t||lastT(L);if(!end)continue;for(const k of ['oi_hourly','basis_hourly']){if(a[k]&&lastT(a[k]))shift(a[k],Math.floor(end/36e5)*36e5-lastT(a[k]))}}return f}
 // oiOld: hourly OI ends ms ago while latest.oi_t stays fresh -> no 00:00 UTC point for the last closed day -> oicap stale.
 // 15 Oct one-entry rule: latest = the last SETTLED print (same time and rate), age measured on that print
-function oiOld(f,ms){const now=PAGE_NOW();for(const a of Object.values(f.assets||{}))if(a.oi_hourly)shift(a.oi_hourly,now-ms-lastT(a.oi_hourly));return f}
-function fundAge(f,age){const now=PAGE_NOW();for(const a of Object.values(f.assets)){const P=a.funding?.points;if(P?.length){shift(a.funding,now-age-P.at(-1)[0]);a.latest={...(a.latest||{}),funding_t:P.at(-1)[0],funding:P.at(-1)[1]}}}return f}
+function oiOld(f,ms,now=PAGE_NOW()){for(const a of Object.values(f.assets||{}))if(a.oi_hourly)shift(a.oi_hourly,now-ms-lastT(a.oi_hourly));return f}
+function fundAge(f,age,now=PAGE_NOW()){for(const a of Object.values(f.assets)){const P=a.funding?.points;if(P?.length){shift(a.funding,now-age-P.at(-1)[0]);a.latest={...(a.latest||{}),funding_t:P.at(-1)[0],funding:P.at(-1)[1]}}}return f}
 const FUND=[/funding[^|\n]{0,40}(neutral|positive|negative|elevated|flat)/i,/neutral band/i,/funding[^|\n]{0,25}[-+]?\d+\.\d+ ?%/i];
 const OI=[/\bopen interest[^|\n]{0,30}[-+]?\d/i,/\bOI [-+−]?\d+(\.\d+)?%/];
 const hits=(rows,res)=>{const o=[];for(const [w,t] of rows)for(const re of res){const m=t.match(re);if(m)o.push(w+': "'+m[0]+'"')}return [...new Set(o)]};
-async function run(b,body){const p=await b.newPage({viewport:{width:412,height:915}});
+async function run(b,body,clock){const p=await b.newPage({viewport:{width:412,height:915}});if(clock!=null)await p.addInitScript(C6.pinClock(clock));/* C6: page clock pinned to the fixture's time */
  await p.route('**/*',r=>{const u=r.request().url();if(BLOCK.test(u))return r.abort();if(/derivs\.json/.test(u))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});r.fallback()});/* fallback (11 Nov): the request goes on to the loader's policy (recorded feeds on the data gate, preload replay in CI, network on the live site) */
  await QL.open(p,URL+(URL.includes('?')?'&':'?')+'v='+Date.now());await p.waitForTimeout(8000);
  for(const t of ['signals','macro','markets','chart','studio','today']){await p.evaluate(t=>{try{tab(t)}catch(e){}},t);await p.waitForTimeout(4000)}
@@ -48,8 +48,13 @@ async function run(b,body){const p=await b.newPage({viewport:{width:412,height:9
   P.fillText=of;rows.push(['page text',document.body.innerText]);return rows});
  const st=await p.evaluate(()=>({sigtx:Object.fromEntries((SIG||[]).filter(c=>/^oicap/.test(c.id)).map(c=>[c.id,[c.title,c.read,c.src,c.cap,(typeof SIGT!=='undefined'&&SIGT[c.id]||[]).join(' ')].join(' | ')])),sig:(SIG||[]).map(c=>c.id),stale:typeof SIGSTALE==='undefined'?null:Object.fromEntries((Array.isArray(SIGSTALE)?SIGSTALE.map(c=>[c.id,c]):Object.entries(SIGSTALE)).map(([k,c])=>[k,{stale:c.stale,usedDate:c.usedDate,wantDate:c.wantDate,staleWhy:c.staleWhy,score:c.score}]))}));
  rows.state=st;await p.close();return rows}
+// C6 runs on ONE time T6 (qa/_c6.js): the fixture, the page clock and the expected labels. Defaults to the page clock when the run starts; C6_AT=<ISO>
+// (tests/tc6clock.js) sets it. C6_ONLY=1 runs only the C6 case and its checks.
+const T6=process.env.C6_AT?Date.parse(process.env.C6_AT):PAGE_NOW(),C6ONLY=process.env.C6_ONLY==='1';
+const c6fix=T=>oiOld(fundAge(aged(30*60e3,T),7*H,T),C6.c6At(T).oiAgeMs,T);
 (async()=>{const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});
- const R={stale4d:await run(b,aged(4*24*H)),late:await run(b,fundAge(aged(5*H+10*60e3),7*H)),fund_past:await run(b,fundAge(aged(30*60e3),12*H+10*60e3)),oi_old:await run(b,oiOld(fundAge(aged(30*60e3),7*H),(2*24+16)*H)),oi_1d:await run(b,oiOld(fundAge(aged(30*60e3),7*H),Date.now()-(Math.floor(Date.now()/(24*H))*24*H-H)))};await b.close();
+ if(C6ONLY){/* C6_PAGE_AT (tests/tc6clock.js only): page clock apart from the fixture, to prove a mixed-clock run across 00:00Z fails */const r=await run(b,c6fix(T6),process.env.C6_PAGE_AT?Date.parse(process.env.C6_PAGE_AT):T6);await b.close();const u=C6.c6Fails(r.state,T6);console.log(`stale-captions C6 only at ${new Date(T6).toISOString()} (page clock pinned): ${u.length} failures`);u.forEach(f=>console.log('FAIL '+f));process.exit(u.length?1:0)}
+ const R={stale4d:await run(b,aged(4*24*H)),late:await run(b,fundAge(aged(5*H+10*60e3),7*H)),fund_past:await run(b,fundAge(aged(30*60e3),12*H+10*60e3)),oi_old:await run(b,oiOld(fundAge(aged(30*60e3),7*H),(2*24+16)*H)),oi_1d:await run(b,c6fix(T6),T6)};await b.close();
  const cap=rows=>rows.filter(r=>r[0]!=='page text');const fails=[];
  hits(cap(R.stale4d),FUND.concat(OI)).forEach(h=>fails.push('C1 stale4d reading '+h));
  if(!hits(cap(R.late),FUND).length)fails.push('C2 late file: funding 7h old (inside 12h) produced no funding captions');
@@ -65,12 +70,8 @@ async function run(b,body){const p=await b.newPage({viewport:{width:412,height:9
    if(!(s5.usedDate&&s5.wantDate&&String(s5.usedDate)<String(s5.wantDate)))fails.push('C5 '+a+' oicap: usedDate '+s5.usedDate+' not before wantDate '+s5.wantDate);if(!s5.staleWhy)fails.push('C5 '+a+' oicap: empty staleWhy')}
   if(R.oi_old.state.sig.includes('oicap'+a))fails.push('C5 oicap'+a+' still in SIG (readings, scores, POST NOW) while stale')}
  // C6 (15 Oct ruling): hourly OI ends 23:00 UTC yesterday -> newest 00:00 point is one close back -> FRESH, in SIG, label names that close.
- {const D0=Math.floor(Date.now()/(24*H))*24*H,MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],dm=t=>{const d=new Date(t);return d.getUTCDate()+' '+MO[d.getUTCMonth()]};
-  const want='('+dm(D0-2*24*H),bad='('+dm(D0-24*H)+' close';
-  for(const a of ['BTC','ETH']){const id='oicap'+a,st=R.oi_1d.state;
-   if(!st.sig.includes(id))fails.push('C6 '+id+' one close back: missing from SIG (should be fresh)');
-   else{const tx=st.sigtx[id]||'';if(!tx.includes(want))fails.push('C6 '+id+': label does not name '+want+' close)');if(tx.includes(bad))fails.push('C6 '+id+': label claims '+bad+')')}
-   if(st.stale&&st.stale[id]&&st.stale[id].stale)fails.push('C6 '+id+' one close back marked stale')}}
+ // 24 Nov: expected labels from the fixture's time T6, not the wall clock after the run (qa/_c6.js).
+ C6.c6Fails(R.oi_1d.state,T6).forEach(f=>fails.push(f));
  hits(cap(R.oi_old),OIC).forEach(h=>fails.push('C5 stale oicap value still in '+h));
  for(const [k,rows] of Object.entries(R))for(const [w,t] of rows)for(const x of (t.match(/(\d+(?:\.\d+)?)h old \(limit (\d+)h\)/g)||[])){const [,a,l]=x.match(/([\d.]+)h old \(limit (\d+)h\)/);if(+a<=+l)fails.push(`C4 ${k} ${w}: contradictory status "${x}"`)}
  const ageH=a=>{let m;if(m=a.match(/^(\d+)d$/))return +m[1]*24;m=a.match(/^(\d+)h(?:(\d+)m)?$/);return m?+m[1]+(+(m[2]||0))/60:NaN};
