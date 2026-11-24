@@ -13,6 +13,10 @@ echo "== tokx_first (py)"; python3 tokx_first.py || { echo '!! tokx_first failed
 echo "== tnyse (py)"; python3 tnyse.py || { echo '!! tnyse failed'; bad=1; }
 echo "== tetf_checked (py)"; python3 tetf_checked.py || { echo '!! tetf_checked failed'; bad=1; }
 echo "== tworker (js)"; node tworker.js || { echo '!! tworker failed'; bad=1; }
+# 24 Nov reliability: browser launch retried once (smoke), C6 on the fixture's time at 23:59Z/00:01Z, Pages deploy single retry (static + actionlint)
+echo "== tlaunch (js)"; node tlaunch.js || { echo '!! tlaunch failed'; bad=1; }
+echo "== tc6clock (js)"; node tc6clock.js || { echo '!! tc6clock failed'; bad=1; }
+echo "== tdeploy_retry (py)"; python3 tdeploy_retry.py || { echo '!! tdeploy_retry failed'; bad=1; }
 echo "== tabsent (js)"; node tabsent.js || { echo '!! tabsent failed'; bad=1; }
 echo "== tpromote_fetch (sh)"; bash tpromote_fetch.sh || { echo '!! tpromote_fetch failed'; bad=1; }
 # narrow no-rollback ruling (12 Nov): rollback decision fixtures + the ETF stale label carried through to Studio
