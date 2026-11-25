@@ -97,6 +97,9 @@ MARKET = os.path.join(os.path.dirname(DERIVS), "market.json"); MACRO = os.path.j
 FEDD = ("DGS10", "DGS2", "DFII10", "T10Y2Y"); FEDD_LIM = 3; FRESHNESS = json.load(open(os.path.join(ROOT, "shared", "freshness.json"))); MARKET_LIM_H = FRESHNESS["market_h"]  # ONE monthly limit shared with the app and smoke
 CAD = {"Monthly": FRESHNESS["monthly_days"], "Daily": 5, "Weekly": 12}
 NYSED = ("SP500",); NYSED_LIM = FRESHNESS["sp500_trading_days"]  # 25 Nov: judged in NYSE trading days (nyse.biz_days), NOT the 5-calendar-day CAD["Daily"]; RRPONTSYD and other daily series keep CAD["Daily"]
+def n_days(n, kind):
+    """'1 NYSE trading day' / '2 US business days'; kind is 'NYSE trading' or 'US business'."""
+    return f"{n} {kind} {'day' if n == 1 else 'days'}"
 def us_hol(y):
     D = _dt.date
     def f(m, d):
@@ -159,9 +162,9 @@ def macro_fresh(M, t):
         if not ld or not s.get("points"): out[sid] = {"ok": False, "why": "missing or invalid observation date"}; continue
         f = "Monthly" if str(s.get("freq", "")).startswith("Monthly") else "Weekly" if str(s.get("freq", "")).startswith("Weekly") else "Daily"
         if sid in FEDD:
-            bd = us_biz_days(ld, t); out[sid] = {"ok": bd <= FEDD_LIM, "last_date": ld, "biz_days": bd, "limit": f"{FEDD_LIM} US business days"}
+            bd = us_biz_days(ld, t); out[sid] = {"ok": bd <= FEDD_LIM, "last_date": ld, "biz_days": bd, "limit": n_days(FEDD_LIM, "US business")}
         elif sid in NYSED:
-            bd = nyse.biz_days(ld, t); out[sid] = {"ok": bd <= NYSED_LIM, "last_date": ld, "biz_days": bd, "limit_days": NYSED_LIM, "limit": f"{NYSED_LIM} NYSE trading days"}
+            bd = nyse.biz_days(ld, t); out[sid] = {"ok": bd <= NYSED_LIM, "last_date": ld, "biz_days": bd, "limit_days": NYSED_LIM, "limit": n_days(NYSED_LIM, "NYSE trading")}
         else:
             age = (t - _dt.datetime.fromisoformat(ld[:10] + "T00:00:00+00:00").timestamp() * 1000) / (24 * H)
             lim = FRESHNESS["h10_days"] if f == "Daily" and (sid.startswith("DEX") or sid.startswith("DTWEX")) else CAD[f]

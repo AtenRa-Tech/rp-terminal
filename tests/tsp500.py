@@ -85,6 +85,15 @@ rc, out = alarm({"SP500": {"ok": False, "why": "missing or invalid observation d
 ok(sp("2026-11-23", NOW1, "RRPONTSYD")["limit"] == "5 days (daily)" and sp("2026-11-23", NOW1, "RRPONTSYD")["ok"] and not sp("2026-11-19", NOW1, "RRPONTSYD")["ok"], "RRPONTSYD (other daily) keeps the 5-calendar-day rule")
 ok(rl.CAD["Daily"] == 5 and rl.FEDD == ("DGS10", "DGS2", "DFII10", "T10Y2Y") and rl.FEDD_LIM == 3 and sp("2026-11-20", NOW1, "DGS10")["limit"] == "3 US business days", "CAD Daily 5, Fed H.15 (US business days, 3) unchanged")
 
+# ---- singular 'day' when the count is 1 (audit/freshness lines; QA 25 Nov)
+ok(rl.n_days(1, "NYSE trading") == "1 NYSE trading day" and rl.n_days(2, "NYSE trading") == "2 NYSE trading days"
+   and rl.n_days(1, "US business") == "1 US business day" and rl.n_days(2, "US business") == "2 US business days"
+   and data_age.n_days(1, "NYSE trading") == rl.n_days(1, "NYSE trading") and data_age.n_days(2, "US business") == rl.n_days(2, "US business"),
+   "n_days: count 1 is singular 'day', count 2 is plural 'days', same wording in runs_log and data_age (SP500 and Fed)")
+ok("const nDays=(n,k)=>n+' '+k+(n===1?' day':' days')" in html and "${f.ageT}" in html
+   and "${bd} NYSE trading days old" not in html and "${f.bd} ${f.unit||'US business days'} old" not in html,
+   "index.html: nDays helper; audit line uses ageT; no hard-coded plural in the count+unit age line")
+
 # ---- Python and JS count identically (shared/nyse.js)
 pairs = [(l, n) for l, n, *_ in cases] + [("2026-11-20", NOW1), ("2026-11-18", NOW1), ("2026-11-19", NOW1), ("2026-11-20", "2026-11-27T12:00:00Z")]
 jr = (subprocess.run(["node", "-e", "const N=require(process.argv[1]);console.log(JSON.stringify(JSON.parse(process.argv[2]).map(([a,n])=>N.bizDays(Date.parse(a),Date.parse(n)))))", os.path.join(ROOT, "shared", "nyse.js"), json.dumps(pairs)], capture_output=True, text=True)); js = json.loads(jr.stdout) if jr.returncode == 0 else jr.stderr[:400]

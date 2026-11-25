@@ -29,6 +29,9 @@ def fmt_age_h(h, lim):
 LAST_RUN_MAX_MIN = 90
 NYSED = ('SP500',)  # = scripts/runs_log.py NYSED (tests/tsp500.py asserts both); judged in NYSE trading days, recomputed against now
 NYSED_LIM = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'shared', 'freshness.json')))['sp500_trading_days']
+def n_days(n, kind):
+    """'1 NYSE trading day' / '2 US business days'; kind is 'NYSE trading' or 'US business'."""
+    return f"{n} {kind} {'day' if n == 1 else 'days'}"
 # Daily batch at 00:20 UTC, or a catch-up once the last successful fetch is 26h old (data.yml).
 # A tighter limit_h written into older _runs.json (7, from a retired 6h cadence) is ignored:
 # hourly Refresh would otherwise go red while live series are still within their own freshness limits.
@@ -63,7 +66,7 @@ def check(d, now):
     for s, v in (d.get('macro') or {}).items():
         if s in NYSED and isinstance(v, dict) and v.get('last_date'):
             bd = nyse.biz_days(v['last_date'], now.timestamp() * 1000)
-            if bd > NYSED_LIM: bad.append(f'macro {s}: past its limit ({bd} NYSE trading days old, last value {v["last_date"]}; limit {NYSED_LIM} NYSE trading days)')
+            if bd > NYSED_LIM: bad.append(f'macro {s}: past its limit ({n_days(bd, "NYSE trading")} old, last value {v["last_date"]}; limit {n_days(NYSED_LIM, "NYSE trading")})')
             continue
         if isinstance(v, dict) and v.get('ok') is False: bad.append(f'macro {s}: past its limit ({v.get("limit")})')
     mc = d.get('macro_checked')
