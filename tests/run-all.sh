@@ -24,6 +24,8 @@ echo "== tnorollback (py)"; python3 tnorollback.py || { echo '!! tnorollback fai
 echo "== tetf_pending (py)"; python3 tetf_pending.py || { echo '!! tetf_pending failed'; bad=1; }
 # 25 Nov ruling: SP500 in NYSE trading days (limit 3) in runs_log, the stale alarm and the app (tsp500.js above)
 echo "== tsp500 (py)"; python3 tsp500.py || { echo '!! tsp500 failed'; bad=1; }
+# 25 Nov: macro re-fetched by any run once data/macro.json checked_at is >= 6h old
+echo "== tmacro_cadence (py)"; python3 tmacro_cadence.py || { echo '!! tmacro_cadence failed'; bad=1; }
 echo "== tetfstale"; out=$(timeout 1200 node -r ./freeze/preload.js tetfstale.js 2>&1); rc=$?; echo "$out" | tail -n 40
 if [ $rc -ne 0 ] || echo "$out" | grep -qE '^FAIL |FAILS: [1-9]'; then echo "!! tetfstale failed (rc=$rc)"; bad=1; fi
 exit $bad
