@@ -167,6 +167,10 @@ jobs:
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tnorollback.py
       - name: Light ETF re-fetch (blocking) - hourly runs re-run only fetch_etf.py while the newest BTC/ETH row is pending; batch logic unchanged
         run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tetf_pending.py
+      - name: SP500 in NYSE trading days (blocking) - limit 3 in runs_log, the stale alarm and the app; Thanksgiving week passes, a stalled series fails
+        run: python3 tests/tsp500.py
+      - name: Macro fetch cadence (blocking) - any refresh run re-fetches macro once macro.json checked_at is >= 6h old
+        run: python3 -c 'import yaml' 2>/dev/null || pip install -q pyyaml; python3 tests/tmacro_cadence.py
       - name: Closed hours only (blocking) - OI/basis store only CLOSED hours; fails if the last stored hour has not closed
         if: steps.scope.outputs.full == 'true'
         run: python3 tests/tclosed_hours.py

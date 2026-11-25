@@ -29,7 +29,7 @@ W = yaml.safe_load(open(os.path.join(ROOT, ".github/workflows/data.yml"))); step
 plan = next(s for s in steps if s.get("id") == "plan"); etfs = next(s for s in steps if str(s.get("run", "")).strip() == "python scripts/fetch_etf.py"); light = next(s for s in steps if str(s.get("run", "")).strip() == "python scripts/fetch_etf.py --light"); mac = next(s for s in steps if "fetch_macro.py" in str(s.get("run", "")))
 ok(etfs.get("if") == "steps.plan.outputs.full == 'true'", "batch ETF step (fetch_etf.py, no flag) runs only in the daily batch, as before", etfs.get("if"))
 ok(light.get("if") == "steps.plan.outputs.full != 'true' && steps.plan.outputs.etf == 'true'", "light ETF step (fetch_etf.py --light) runs only outside the batch when plan says etf", light.get("if"))
-ok(mac.get("if") == "steps.plan.outputs.full == 'true'", "macro step still gated on the daily batch only (a pending ETF row never runs macro)", mac.get("if"))
+ok(mac.get("if") == "steps.plan.outputs.full == 'true' || steps.plan.outputs.macro == 'true'", "macro step runs in the daily batch or when the plan says macro (checked_at >= 6h old, 25 Nov); a pending ETF row never runs it (plan sets macro from macro.json checked_at only)", mac.get("if"))
 ok(sum("scripts/fetch_etf.py" in str(s.get("run", "")) for s in steps) == 2 and "fetch_macro" not in str(plan["run"]), "fetch_etf.py runs in exactly two steps (batch, light); the plan step never fetches anything itself")
 T = tempfile.mkdtemp(prefix="tetfp-")
 def run_plan(event, schedule, full_input, etf_obj, batch_done=True):

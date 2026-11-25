@@ -100,11 +100,15 @@ jobs:
           else
             FULL=false
           fi
+          # 25 Nov macro cadence: ANY run (hourly slot or dispatch, batch or not) re-fetches macro (FRED) once data/macro.json checked_at is >= 6h old.
+          # Before, macro ran only in the daily batch (00:20 UTC + catch-up, schedule events only), so GitHub dropping crons left 15-24h gaps (24 Nov 10:11Z -> 25 Nov 01:22Z).
+          MACRO=$FULL
+          if [ "$MACRO" != true ] && [ "$(python3 .github/scripts/refresh_slot.py --macro-due data/macro.json)" = true ]; then MACRO=true; fi
           # 17 Nov light ETF re-fetch: outside the batch, re-run ONLY fetch_etf.py while etf.json's newest BTC/ETH row is pending (never the full batch)
           ETF=$FULL
           if [ "$FULL" != true ] && [ "$(python3 .github/scripts/refresh_slot.py --etf-pending data/etf.json)" = true ]; then ETF=true; fi
-          echo "full=$FULL" >> "$GITHUB_OUTPUT"; echo "etf=$ETF" >> "$GITHUB_OUTPUT"
-          echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL, ETF fetch=$ETF"
+          echo "full=$FULL" >> "$GITHUB_OUTPUT"; echo "etf=$ETF" >> "$GITHUB_OUTPUT"; echo "macro=$MACRO" >> "$GITHUB_OUTPUT"
+          echo "UTC $H:$M (dow $DOW, schedule '${{ github.event.schedule }}') -> daily batch=$FULL, ETF fetch=$ETF, macro fetch=$MACRO"
 
       - name: Derivatives OI / funding / basis (hourly)
         continue-on-error: true
@@ -114,8 +118,8 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_market.py
 
-      - name: Macro data (daily batch; daily FRED series re-pulled in full each run)
-        if: steps.plan.outputs.full == 'true'
+      - name: Macro data (daily batch, or any run once macro.json checked_at is >= 6h old; daily FRED series re-pulled in full each run)
+        if: steps.plan.outputs.full == 'true' || steps.plan.outputs.macro == 'true'
         continue-on-error: true
         run: python scripts/fetch_macro.py
 

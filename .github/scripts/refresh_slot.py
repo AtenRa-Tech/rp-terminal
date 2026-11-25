@@ -6,11 +6,12 @@ gets two chances an hour to start one; this gate keeps it to at most one real re
 
 go=false only for the two hourly schedules when main's data/_runs.json last_run (the last derivatives fetch) is under
 SKIP_MIN minutes old. Dispatches, the daily 00:20 UTC batch and the weekly Thursday run always go. An unreadable or
-missing runs log goes (fail open: a skipped fetch is worse than an extra one). 11 Nov: a slot also goes when the daily batch has
+missing runs log goes (fail open: a skipped fetch is worse than an extra one). 25 Nov: any run (also a dispatch) re-fetches macro once macro.json checked_at is >= 6h old (--macro-due). 11 Nov: a slot also goes when the daily batch has
 not run since the latest 00:20 UTC slot (GitHub dropped it), and data.yml's plan then runs the batch (--batch-due).
 """
 import datetime as dt, json, os, sys
 SKIP_MIN = 45
+MACRO_MAX_H = 6  # 25 Nov: macro (FRED) is also re-fetched by ANY run when macro.json's checked_at is >= 6h old (the daily batch alone left 15-24h gaps)
 BATCH_UTC = (0, 20)  # the daily batch slot (data.yml '20 0 * * *')
 HOURLY = ("17 * * * *", "47 * * * *")
 
@@ -27,6 +28,16 @@ def batch_due(checked, now):
         slot -= dt.timedelta(days=1)
     try:
         return min(_t(c) for c in checked) < slot
+    except Exception:
+        return True
+
+
+def macro_due(checked, now, limit_h=MACRO_MAX_H):
+    """25 Nov: True when the last successful macro fetch (macro.json checked_at) is >= limit_h old, so a run that is NOT the daily batch
+    (an hourly slot or a manual dispatch with full=false) still re-pulls macro. Bounds the gap between macro fetches to ~6h + run lag;
+    the 00:20 UTC batch and its catch-up are unchanged. ETF stays batch-only. Missing/unreadable checked_at -> due."""
+    try:
+        return (now - _t(checked)).total_seconds() / 3600 >= limit_h
     except Exception:
         return True
 
@@ -76,6 +87,12 @@ if __name__ == "__main__":
         except Exception:
             c = []
         print(str(batch_due(c, dt.datetime.now(dt.timezone.utc))).lower()); sys.exit(0)
+    if sys.argv[1] == "--macro-due":  # refresh_slot.py --macro-due data/macro.json -> true|false
+        try:
+            c = checked_at(sys.argv[2:3])[0]
+        except Exception:
+            c = None
+        print(str(macro_due(c, dt.datetime.now(dt.timezone.utc))).lower()); sys.exit(0)
     if sys.argv[1] == "--etf-pending":  # refresh_slot.py --etf-pending data/etf.json -> true|false
         try:
             e = json.load(open(sys.argv[2]))
