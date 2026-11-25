@@ -91,11 +91,12 @@ def load(p, dflt):
 
 # ---- market + macro freshness (15 Oct ruling). Same rules as the app: market.json 2h; macro per series: daily Fed H.15
 # (DGS10, DGS2, DFII10, T10Y2Y) 3 US business days with bond-market holidays skipped; weekly 12 days; H.10 daily FX shared/freshness.json h10_days (14);
-# other daily 5 days; monthly = shared/freshness.json monthly_days (100) from month start, age <= limit ok. Reported in _runs.json; they do not change the derivatives SLA ('ok').
+# SP500 = shared/freshness.json sp500_trading_days (3) NYSE trading days, counted with scripts/nyse.py like the ETF flows (25 Nov ruling); other daily 5 days; monthly = shared/freshness.json monthly_days (100) from month start, age <= limit ok. Reported in _runs.json; they do not change the derivatives SLA ('ok').
 import datetime as _dt
 MARKET = os.path.join(os.path.dirname(DERIVS), "market.json"); MACRO = os.path.join(os.path.dirname(DERIVS), "macro.json")
 FEDD = ("DGS10", "DGS2", "DFII10", "T10Y2Y"); FEDD_LIM = 3; FRESHNESS = json.load(open(os.path.join(ROOT, "shared", "freshness.json"))); MARKET_LIM_H = FRESHNESS["market_h"]  # ONE monthly limit shared with the app and smoke
 CAD = {"Monthly": FRESHNESS["monthly_days"], "Daily": 5, "Weekly": 12}
+NYSED = ("SP500",); NYSED_LIM = FRESHNESS["sp500_trading_days"]  # 25 Nov: judged in NYSE trading days (nyse.biz_days), NOT the 5-calendar-day CAD["Daily"]; RRPONTSYD and other daily series keep CAD["Daily"]
 def us_hol(y):
     D = _dt.date
     def f(m, d):
@@ -159,6 +160,8 @@ def macro_fresh(M, t):
         f = "Monthly" if str(s.get("freq", "")).startswith("Monthly") else "Weekly" if str(s.get("freq", "")).startswith("Weekly") else "Daily"
         if sid in FEDD:
             bd = us_biz_days(ld, t); out[sid] = {"ok": bd <= FEDD_LIM, "last_date": ld, "biz_days": bd, "limit": f"{FEDD_LIM} US business days"}
+        elif sid in NYSED:
+            bd = nyse.biz_days(ld, t); out[sid] = {"ok": bd <= NYSED_LIM, "last_date": ld, "biz_days": bd, "limit_days": NYSED_LIM, "limit": f"{NYSED_LIM} NYSE trading days"}
         else:
             age = (t - _dt.datetime.fromisoformat(ld[:10] + "T00:00:00+00:00").timestamp() * 1000) / (24 * H)
             lim = FRESHNESS["h10_days"] if f == "Daily" and (sid.startswith("DEX") or sid.startswith("DTWEX")) else CAD[f]

@@ -3,7 +3,7 @@
 Fails (exit 1, ::error) when live data is past its OWN limit, recomputed against now (not the age written at run time):
   - each derivatives feed in the newest runs[] entry: now - feeds[f].t > feeds[f].lim_h
   - market: now - market.updated > market.limit_h
-  - macro: any series with ok == false (judged by each series' last_date)
+  - macro: any series with ok == false (judged by each series' last_date). SP500 is recomputed against now like the ETF: NYSE trading days after its last_date through today (UTC, scripts/nyse.py) > shared/freshness.json sp500_trading_days (3), 25 Nov ruling (was 5 calendar days)
   - macro fetch: now - macro_checked.checked_at > MACRO_FETCH_LIMIT_H (26h: daily batch at 00:20 UTC, caught up by the first hourly run after a dropped slot (refresh_slot.py --batch-due); fetch_macro.py stopped running)
   - etf: each fund (BTC, ETH) judged on its own last complete day; a held-back pending newest row is named, never counted. Fails if EITHER fund's NYSE trading days after that date through today (UTC) > limit_days (2), counted with scripts/nyse.py (NYSE holidays only, twin of shared/nyse.js). The message names which fund(s) are stale.
   - last_run older than 90 min (the derivatives refresh itself stopped, e.g. workflows disabled)
@@ -27,6 +27,8 @@ def fmt_age_h(h, lim):
         return f"{s2}h"
     return f"{s}h"
 LAST_RUN_MAX_MIN = 90
+NYSED = ('SP500',)  # = scripts/runs_log.py NYSED (tests/tsp500.py asserts both); judged in NYSE trading days, recomputed against now
+NYSED_LIM = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'shared', 'freshness.json')))['sp500_trading_days']
 # Daily batch at 00:20 UTC, or a catch-up once the last successful fetch is 26h old (data.yml).
 # A tighter limit_h written into older _runs.json (7, from a retired 6h cadence) is ignored:
 # hourly Refresh would otherwise go red while live series are still within their own freshness limits.
@@ -59,6 +61,10 @@ def check(d, now):
         h = (now - P(mk['updated'])).total_seconds() / 3600
         if h > mk['limit_h']: bad.append(f'market: {fmt_age_h(h, mk["limit_h"])} old > limit {mk["limit_h"]}h')
     for s, v in (d.get('macro') or {}).items():
+        if s in NYSED and isinstance(v, dict) and v.get('last_date'):
+            bd = nyse.biz_days(v['last_date'], now.timestamp() * 1000)
+            if bd > NYSED_LIM: bad.append(f'macro {s}: past its limit ({bd} NYSE trading days old, last value {v["last_date"]}; limit {NYSED_LIM} NYSE trading days)')
+            continue
         if isinstance(v, dict) and v.get('ok') is False: bad.append(f'macro {s}: past its limit ({v.get("limit")})')
     mc = d.get('macro_checked')
     if mc is None:

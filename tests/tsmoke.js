@@ -12,7 +12,9 @@ const F=[];const ok=(c,n,x)=>{console.log((c?'PASS ':'FAIL ')+n+(x!==undefined&&
 const NYSE=require('../shared/nyse.js'),DAY=864e5,now=Date.now(),bizDays=(t,n=now)=>NYSE.bizDays(t,n),etfLast=(E,a)=>NYSE.etfLast(E,a);
 const etfFresh=(E,n=now)=>{const L=etfLast(E),lim=2,fund=a=>{const f=L.funds[a];if(!f||!f.last)return{last:null,held:f?f.held:null,biz:null,ok:false};const biz=bizDays(Date.parse(f.last+'T00:00:00Z'),n);return{last:f.last,held:f.held,biz,ok:biz<=lim}};
  const funds={btc:fund('btc'),eth:fund('eth')};return{last:L.last,held:L.held,biz:L.last?bizDays(Date.parse(L.last+'T00:00:00Z'),n):null,pass:funds.btc.ok&&funds.eth.ok,funds}};
-Object.assign(module.exports,{bizDays,etfLast,etfFresh,NYSE});
+// 25 Nov ruling: SP500 is judged like the ETF, in NYSE trading days after its last_date through today (UTC), limit shared/freshness.json sp500_trading_days (3); not 5 calendar days. Same rule as runs_log.py / data_age.py / the app.
+const SP500_DAYS=require('../shared/freshness.json').sp500_trading_days,sp500Fresh=(last,n=now)=>{const biz=last?bizDays(Date.parse(String(last).slice(0,10)+'T00:00:00Z'),n):null;return{last:last||null,biz,limit:SP500_DAYS,ok:biz!=null&&biz<=SP500_DAYS}};
+Object.assign(module.exports,{bizDays,etfLast,etfFresh,NYSE,sp500Fresh,SP500_DAYS});
 {const T=x=>Date.parse(x);const c=[[T('2026-10-05'),T('2026-10-07T10:30:00Z'),2],[T('2026-10-05'),T('2026-10-07T23:59:00Z'),2],[T('2026-10-05'),T('2026-10-08T00:01:00Z'),3],[T('2026-10-02'),T('2026-10-05T12:00:00Z'),1],[T('2026-10-02'),T('2026-10-04T12:00:00Z'),0]].map(([a,b,w])=>[bizDays(a,b),w]);ok(c.every(([g,w])=>g===w),'bizDays counts weekdays after the date through today (Fri->Mon=1, Mon->Wed=2)',c)}
 if(require.main===module)(async()=>{
  const g=async u=>{const r=await fetch(URL+u+'?v='+now,{cache:'no-store'});return r};
@@ -25,6 +27,7 @@ if(require.main===module)(async()=>{
  if(J.macro){const S=J.macro.series,age=id=>S[id]?(now-Date.parse(S[id].last_date+'T00:00:00Z'))/DAY:Infinity,lim={daily:['DGS10','DGS2','DFII10','T10Y2Y'],fx:['DEXUSEU','DEXJPUS','DEXCHUS','DTWEXBGS'],weekly:['WALCL','WDTGAL','WTREGEN'],monthly:['M2SL']};
   /* daily Fed series are checked in-page below with the app's FEDD limit and usBizDays (one shared limit) */
   /* H.10 FX: daily values published weekly (Monday ~21:15 UTC, through the prior Friday; Tuesday after a Monday holiday), so a Friday value is legitimately up to ~11 days old just before the next release */lim.fx.forEach(id=>ok(age(id)<=H10_DAYS,`macro ${id} within ${H10_DAYS} days (H.10 weekly release)`,S[id]?.last_date));lim.weekly.forEach(id=>ok(age(id)<=12,`macro ${id} within 12 days`,S[id]?.last_date));
+  {const f=sp500Fresh(S.SP500&&S.SP500.last_date);ok(f.ok,`macro SP500 within ${SP500_DAYS} NYSE trading days`,f)}
   lim.monthly.forEach(id=>ok(monthlyOk(age(id)),`macro ${id} within ${MONTHLY_DAYS} days of month start`,S[id]?.last_date))}
  const b=await require('../qa/_launch.js').launchRetry(o=>p.launch(o),{executablePath:process.env.CHROME||'/usr/bin/google-chrome',headless:'new',args:['--no-sandbox']});/* 24 Nov: one launch retry, longer timeout (run 44847233870) */const pg=await b.newPage();await pg.setViewport({width:412,height:915});
  const errs=[];pg.on('pageerror',e=>errs.push('pageerror '+e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|net::ERR|CORS|status of 4\d\d|status of 5\d\d/.test(m.text()))errs.push('console '+m.text())});
@@ -33,9 +36,10 @@ if(require.main===module)(async()=>{
   const r=await pg.evaluate(t=>{const s=document.getElementById('s-'+t);return s?{vis:s.classList.contains('on'),len:s.innerText.trim().length}:null},t);ok(r&&r.vis&&r.len>40,`tab ${t} renders`,r)}
  const fed=await pg.evaluate(()=>{const T=x=>Date.parse(x);if(typeof usBizDays!=='function'||!window.FEDD&&typeof FEDD==='undefined')return{err:'app lacks FEDD/usBizDays'};
   const cases=[['2026-10-05','2026-10-07T10:30:00Z',2],['2026-10-05','2026-10-07T23:59:00Z',2],['2026-10-05','2026-10-08T00:01:00Z',3],['2026-10-02','2026-10-05T12:00:00Z',1],['2026-10-09','2026-10-13T12:00:00Z',1],['2026-10-09','2026-10-14T12:00:00Z',2],['2026-11-10','2026-11-12T12:00:00Z',1],['2026-12-24','2026-12-28T12:00:00Z',1]].map(([a,b,w])=>[a,b,usBizDays(a,T(b)),w]);
-  const S=MAC.M?.series||{};return{lim:FEDD.lim,cases,rows:FEDD.ids.map(id=>({id,last:S[id]?.last_date,bd:S[id]?usBizDays(S[id].last_date):null,st:fresh(id).st}))}});
+  const S=MAC.M?.series||{};return{lim:FEDD.lim,cases,rows:FEDD.ids.map(id=>({id,last:S[id]?.last_date,bd:S[id]?usBizDays(S[id].last_date):null,st:fresh(id).st})),sp:(()=>{const f=fresh('SP500');return{lim:typeof NYSED!=='undefined'?NYSED.lim:null,bd:f.bd,unit:f.unit,st:f.st}})()}});
  if(fed.err)ok(false,fed.err);else{ok(fed.cases.every(c=>c[2]===c[3]),'usBizDays: Mon 5 Oct->Wed 7 Oct = 2; Columbus Day 12 Oct and Veterans Day 11 Nov skipped',fed.cases);
-  fed.rows.forEach(r=>ok(r.last&&r.bd<=fed.lim&&!r.st,`macro ${r.id} within ${fed.lim} US business days (app limit, card not stale)`,r))}
+  fed.rows.forEach(r=>ok(r.last&&r.bd<=fed.lim&&!r.st,`macro ${r.id} within ${fed.lim} US business days (app limit, card not stale)`,r));
+  ok(fed.sp.lim===SP500_DAYS&&fed.sp.unit==='NYSE trading days'&&fed.sp.bd!=null&&fed.sp.bd<=SP500_DAYS&&!fed.sp.st,`macro SP500 app limit = ${SP500_DAYS} NYSE trading days, card not stale`,fed.sp)}
  ok(!errs.length,'no page errors or app console errors',errs);await b.close();
  writeOut(F,RAW);console.log('\nSMOKE FAILS:',F.length,JSON.stringify(F));process.exit(F.length?1:0)})().catch(e=>{console.error(e);process.exit(1)});
 // Narrow no-rollback ruling (12 Nov): with SMOKE_OUT=<dir>, a completed run writes <dir>/summary.json {complete, fails:[{name, fresh, file}]} and the exact
